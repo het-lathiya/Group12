@@ -40,9 +40,19 @@ export function useSession(): SessionState {
     } = supabase.auth.onAuthStateChange((_event, next) => {
       if (active) setSession(next);
     });
+    // Back after sign-out may restore a page from the browser's back-forward cache with its old
+    // state; read the stored session again so a signed-out user is redirected (FR-002 AC3).
+    function onPageShow(event: PageTransitionEvent) {
+      if (!event.persisted) return;
+      supabase.auth.getSession().then(({ data }) => {
+        if (active) setSession(data.session);
+      });
+    }
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       active = false;
       subscription.unsubscribe();
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, []);
 
