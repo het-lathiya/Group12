@@ -70,7 +70,7 @@ Local keys: `make stack-up`, then `API_URL`, `ANON_KEY` and `SERVICE_ROLE_KEY` f
 | `make e2e ARGS='auth'` (first run) | `  12 passed (28.5s)` with 8 failed. Two locators also matched Next.js's own `role="alert"` route announcer, and the sign-in and sign-up pages read `searchParams` outside Suspense; both fixed |
 | `make e2e ARGS='auth'` (second run) | `  20 passed (21.6s)` |
 | `UPDATE_SCREENSHOTS=1 make e2e ARGS='auth'` (final run, with the signed-in dashboard width check) | `  20 passed (19.0s)` |
-| `make e2e ARGS='smoke'` (IMP-104's spec, to measure the impact) | `/` 4 passed; `/dashboard` 4 failed (`getByRole('heading', { name: /your trips/i, level: 1 })` not found; signed-out visitors now go to `/sign-in`, see Open issues) |
+| `make e2e ARGS='smoke'` (IMP-104's spec, to measure the impact) | `/` 4 passed; `/dashboard` 4 failed (`getByRole('heading', { name: /your trips/i, level: 1 })` not found; signed-out visitors now go to `/sign-in`; fixed in RUN-008b) |
 | `make lint` | `All matched files use Prettier code style!` |
 | `make typecheck` | `✓ Types generated successfully` |
 | `make imports` | `Contracts: 3 kept, 0 broken.` |
@@ -105,8 +105,34 @@ None for this part.
 
 ## Proposed decisions
 
-- **PD-IMP-109-1 (smoke spec):** `e2e/smoke.spec.ts` (IMP-104, Manasvi) checks `/dashboard` signed out, and AuthGuard now redirects that visit to `/sign-in`, so the `/dashboard` entry fails at all four widths. Proposed fix, by the file's owner or with their agreement: sign in with the `users` fixture of `e2e/fixtures/users.ts` before visiting `/dashboard`. The auth journey here already checks the signed-in dashboard for horizontal scroll at each width. CI does not run e2e, so no required check is affected.
+- **PD-IMP-109-1 (smoke spec) — resolved in this pull request (RUN-008b, see below):** `e2e/smoke.spec.ts` (IMP-104, Manasvi) checks `/dashboard` signed out, and AuthGuard now redirects that visit to `/sign-in`, so the `/dashboard` entry fails at all four widths. Proposed fix, by the file's owner or with their agreement: sign in with the `users` fixture of `e2e/fixtures/users.ts` before visiting `/dashboard`. The auth journey here already checks the signed-in dashboard for horizontal scroll at each width. CI does not run e2e, so no required check is affected.
 - **PD-IMP-109-2 (instant-navigation validation):** with `cacheComponents`, `next dev` logs `Route "/dashboard": Could not validate that a segment in your UI has instant navigation` (development only; the build is unaffected). AuthGuard renders (app) pages only after reading the browser session, as §7.1 and §7.2 require, so Next.js cannot prerender those pages to validate them. A layout-level `export const instant = false` does not silence it; validation is per page. Options: `export const instant = false` in each (app) page, or `experimental.instantInsights.validationLevel: 'manual-warning'` in `next.config.ts`. Both files belong to other members, so neither was changed.
+
+## RUN-008b: smoke spec fix (PD-IMP-109-1)
+
+- Run id: RUN-008b (fix of RUN-008, same pull request #194)
+- Owner: Krrish (Assassin-byte)
+- Status: PR_OPEN
+- Base commit: 99c7510 (unchanged; `main` had not moved)
+
+**Changed file:** `apps/web/e2e/smoke.spec.ts` (modified, Manasvi's file from IMP-104). **Reason:** this card's AuthGuard made the spec's signed-out visit to `/dashboard` fail.
+- The existing checks moved, unchanged, into one helper, `expectFitsViewport`, which runs for both pages at all four widths: the level-1 heading is visible, `document.documentElement.scrollWidth <= innerWidth`, and the clipped-control check (no control outside the viewport and none whose content overflows it). None was removed, skipped or loosened.
+- The screenshot branch is unchanged. `UPDATE_SCREENSHOTS` was unset in every run, and `md5sum -c` confirmed that `IMP-104-whole-task-360.png` and `IMP-104-whole-task-1280.png` are unchanged.
+- `/dashboard` first creates a confirmed user with `e2e/fixtures/users.ts` and signs in through `/sign-in?next=%2Fdashboard`. The user is deleted after the test, and the local `auth.users` held 0 `e2e-%` rows after the runs.
+- New check: `smoke: a signed-out visit to /dashboard lands on /sign-in`, which asserts the URL `/sign-in?next=%2Fdashboard` and the "Sign in" heading.
+- The `/` check still needs no Supabase values. It passed with none set.
+
+| Command | Result line (quoted exactly) |
+| --- | --- |
+| `make stack-up` | exit 0 (keys passed to the e2e commands as environment variables from `supabase status -o env`, as in RUN-008; none printed or written) |
+| `make e2e ARGS='smoke'` | `  12 passed (14.3s)` (`/` ×4, `/dashboard` signed in ×4, signed-out redirect ×4) |
+| `make e2e ARGS='smoke -g "smoke: / fits"'` with no `NEXT_PUBLIC_*` or service-role value set | `  4 passed (5.6s)` |
+| `make e2e ARGS='auth'` | `  20 passed (23.0s)` |
+| `make test-web` | `      Tests  48 passed (48)` |
+| `make lint` | `All matched files use Prettier code style!` |
+| `make typecheck` | `✓ Types generated successfully` |
+| `make db-up`, then `make check` | exit 0; test-api `======================== 44 passed, 1 warning in 2.48s =========================`, test-authz `1 passed`, test-web `      Tests  48 passed (48)`; last line `   Duration  4.15s (environment 61%, tests 16%, setup 12%, import 8%, transform 3%)` |
+| `make stack-down` | see the SYNC REPORT (run after this record was committed) |
 
 ## Open issues
 
