@@ -112,7 +112,18 @@ Scratch copy of `apps/api/app` and `.importlinter` outside the repository, with 
 
 ### CI on the pull request
 
-Recorded after the checks finished; see the section below.
+Pull request https://github.com/het-lathiya/Group12/pull/3, workflow run https://github.com/het-lathiya/Group12/actions/runs/41223146687 (head `958a414`, the six commits before this record was updated). `gh pr checks 3`:
+
+| Job | Conclusion | Job URL | Result line from the log |
+| --- | --- | --- | --- |
+| `lint-types` | pass (1m39s) | https://github.com/het-lathiya/Group12/actions/runs/41223146687/job/124601692156 | `Contracts: 3 kept, 0 broken.` (also `All checks passed!`, `Success: no issues found in 13 source files`, `All matched files use Prettier code style!`) |
+| `unit` | pass (1m36s) | https://github.com/het-lathiya/Group12/actions/runs/41223146687/job/124601692102 | `20 passed in 0.16s`; contract `pytest: no tests collected (exit 5 treated as success)`; web `No test files found, exiting with code 0` |
+| `guards` | pass (7s) | https://github.com/het-lathiya/Group12/actions/runs/41223146687/job/124601692264 | `6 commits scanned.` `no leaks found` |
+| `attribution` | pass (5s) | https://github.com/het-lathiya/Group12/actions/runs/41223146687/job/124601692047 | `attribution: PASS 6 commit(s) of 4e4a7fe..958a414 and the pull request body` |
+| `audit` | pass (1m38s) | https://github.com/het-lathiya/Group12/actions/runs/41223146687/job/124601692212 | `No known vulnerabilities found` (API dependencies); report-only step `Found 12 known vulnerabilities in 1 package` (the venv's `pip 25.0.1`); npm `16 moderate severity vulnerabilities`, exit 0 at `--audit-level=critical` |
+| `api` | pass (1m41s) | https://github.com/het-lathiya/Group12/actions/runs/41223146687/job/124601692325 | `db-migrate: not yet implemented (IMP-106)`; api and authz `pytest: no tests collected (exit 5 treated as success)` |
+
+CI used Python 3.12.15 (`python-version: "3.12"`); `.python-version` pins 3.12.3 locally. The commit that adds these results starts a new run on the same pull request.
 
 ## Not run
 
@@ -133,7 +144,7 @@ Recorded after the checks finished; see the section below.
 | Hook refuses a `Co-authored-by:` message and the tool and vendor words; accepts the allowed paths (IMD-61, local half) | verified | Hook test table above; also refused through `git commit` with `core.hooksPath=.githooks` |
 | Attribution check fails on a `Co-authored-by:` line, a non-team author email, a different committer and a forbidden word in the body; passes a clean team commit (IMD-61, CI half, local run) | verified | Attribution script table above |
 | TC-002: a `google.genai` import outside `app/ai/providers/gemini.py` fails `make imports` (local half) | verified | Scratch-copy run above: `Contracts: 2 kept, 1 broken.` |
-| The six jobs exist with the exact names and are green on this pull request | see "CI on the pull request" | GitHub Actions run of this pull request |
+| The six jobs exist with the exact names and are green on this pull request, attribution included | verified | Run 41223146687: all six `pass` (table above) |
 | Repository merge settings: Rebase and merge only | verified (API output; screenshot after the admin step) | `{"allow_merge_commit":false,"allow_rebase_merge":true,"allow_squash_merge":false}` |
 | All ten members are collaborators | verified | collaborator list above; no pending invitations |
 | Board holds one issue per task part | not verified | List generated (183 rows); board not created in this run |
@@ -156,7 +167,7 @@ None.
 
 ## Open issues
 
-- pip-audit of the whole local venv reports 12 advisories in `pip 24.0` (IDs PYSEC-2026-1795, -1796, -196, -2875, -2876, -3721; fixed in pip 25.3 to 26.2). The project dependencies have none. See PD-H.
+- pip-audit of the whole venv reports 12 advisories in its own `pip` (locally `pip 24.0`, in CI `pip 25.0.1`; IDs PYSEC-2026-1795, -1796, -196, -2875, -2876, -3721; fixed in pip 25.3 to 26.2). The project dependencies have none. See PD-H.
 - `unit` also runs `make test-contract` (§13.7 lists it; the card step lists `make test-unit` and `make test-web`). §13.7's coverage report is not added: no coverage tool is in the dependencies.
 - `guards` does not repeat `make imports`: the provider-isolation import rule already runs in `lint-types` as `make imports`.
 - The `edited` trigger re-runs every job when the title or body of a pull request changes; it is what lets the attribution check see body edits.
