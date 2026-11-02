@@ -82,3 +82,10 @@ None.
 
 - The constants are Proposed and are to be calibrated against routing results in Sprint 3 (§9.3.5).
 - The 1-day cache of fallback estimates (IMD-30) and the lookup order cache → OpenRouteService → estimate belong to IMP-307.
+
+## Fix runs RUN-024b to RUN-024d
+
+- A stray commit (b17e1e4, a local tool set-up made with another identity that added a `graphify-out/` cache) was removed from the branch before review. The branch was reset to 92bba70, the last of the part's own commits, and pushed with a lease pinned to b17e1e4.
+- Reason: the guards secret scan reported 9 gitleaks findings in `graphify-out/cache/stat-index.json` at b17e1e4, and the files were outside the part's scope. Because the guards push job on `main` scans every fetched branch, it also failed main's CI run 41506367439.
+- `make check` on 92bba70 (with `make db-up`): passed (`All checks passed!`, `Success: no issues found in 66 source files`, `Contracts: 4 kept, 0 broken.`, `354 passed, 1 warning`, `28 passed`, `183 passed, 1 warning`, `9 passed`, `Tests  48 passed (48)`).
+- Re-run of the failed guards job on `main` (run 41506367439): see the run's SYNC REPORT.
