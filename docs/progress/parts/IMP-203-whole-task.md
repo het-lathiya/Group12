@@ -117,6 +117,30 @@ Money-Output amount: {'type': 'string', 'title': 'Amount'}
 | New routes answer 401 without a token (IMP-108 inventory) | verified | `make test-authz` (TC-344 walks the new routes); `test_trip_routes_need_a_token` |
 | A body naming a user gets 422 (IMD-45) | verified | `test_a_body_naming_a_user_is_rejected`; TC-348 in `make test-authz` |
 
+## RUN-018b · currency rule fix (same PR #204)
+
+- Base commit: eb44ee3 (origin/main had not moved, so no rebase was needed)
+- Change: `app/trips/domain.py` gains `SupportedDestination.currency` and `validate_budget_currency(budget_currency, destination)`, which is pure. When a well-formed budget currency differs from the destination's currency, it returns a `budget.currency` error, for example "Budget currency must be GBP, the currency of Sampleton (sample)." A malformed code is still reported once, by the three-letter ISO 4217 check, and a trip without a budget is unaffected. `app/trips/service.py` passes the chosen active destination (with the currency already read by `active_destinations`) into the rule. No contract, table or envelope changed.
+- Tests added:
+  - unit (`test_trip_validation.py`): `test_a_budget_in_the_destination_currency_passes`, `test_a_budget_in_another_valid_currency_names_budget_currency`, `test_no_budget_needs_no_currency_match`, `test_a_malformed_currency_is_reported_once_by_the_format_rule`;
+  - API (`test_trips.py`): `test_the_budget_currency_must_be_the_destination_currency` (Sampleton: INR gives 422 on `budget.currency` and writes no row; GBP gives 201).
+- Existing tests and fixtures: none used a budget currency other than its destination's. Every API test budget is GBP with Sampleton (GBP), and the unit fixture is GBP; the unit test destinations gained a `currency` value (`GBP`, `EUR`). `test_traveller_counts_and_currency_are_checked` sends `gb`, which is malformed, so it still gets only the format error.
+
+All commands ran with `TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/travel_test` on the command line.
+
+| Command | Result line |
+| --- | --- |
+| `make db-up` | `Container group12-db-1 Healthy` |
+| `make test-unit ARGS='-k trip_validation'` | `35 passed, 201 deselected, 1 warning in 0.22s` |
+| `make test-api ARGS='-k trips'` | `30 passed, 62 deselected, 1 warning in 8.36s` |
+| `make test-authz` | `9 passed in 0.69s` |
+| `make lint` | `All checks passed!` / `90 files already formatted` / `All matched files use Prettier code style!` |
+| `make typecheck` | `Success: no issues found in 53 source files` |
+| `make imports` | `Contracts: 3 kept, 0 broken.` |
+| `make check` | exit 0; unit `236 passed, 1 warning in 4.40s`, contract `11 passed in 0.04s`, api `92 passed, 1 warning in 11.00s`, authz `9 passed in 0.54s`, web `Tests  48 passed (48)`; `openapi-check: not yet implemented (IMP-214)` |
+
+Acceptance (RUN-018b): the budget currency must equal the destination currency (§9.3.2): verified by the unit and API tests above.
+
 ## Blockers
 
 none
@@ -125,10 +149,11 @@ none
 
 - PD-IMP-203-1 (schema names): the card names the models `TripCreate`, `TripOut` and `TripPage`, while §6.5/§6.6.2 name them `TripIn`, `TripOut` and `Page<TripOut>`. The specification wins (CLAUDE.md), so the code uses `TripIn` and the generic `Page[TripOut]`, which OpenAPI shows as `Page_TripOut_`. Proposal: amend the card wording to the specification names.
 - PD-IMP-203-2 (supported-destination list in the 422): the §6.3 `details` entry has only `field` and `message`, so the supported destinations are listed in the message of the `destination_id` detail as `name (id)` pairs separated by `; `. The envelope shape is unchanged. Proposal: record this format so IMP-212 can show it.
+- PD-IMP-203-4 (currency rule and the §6.7 example, RUN-018b): the §6.7 worked example for API-07 creates a Sampleton trip with an INR budget, which contradicts §9.3.2 ("a known currency (ISO 4217, destination currency in the MVP)") and §9.3.1 (no currency conversion). The code follows §9.3.2: when a budget is given, `budget.currency` must equal the destination's currency, else 422 on `budget.currency`. Proposal: change the §6.7 example to a GBP budget for Sampleton, or to a destination whose currency is INR.
 - PD-IMP-203-3 (TC-073 field name): the §13 TC-073 row says `budget_total`; §6.5 has `budget {amount, currency}`. The error names `budget.amount`. Proposal: correct the TC-073 row.
 
 ## Open issues
 
-- §9.3.2 says the budget currency is "ISO 4217, destination currency in the MVP". The card asks only for three letters, so the code does not compare the budget currency with the destination's. The §6.7 example (Sampleton with an INR budget) would fail a strict comparison, and Sampleton's currency is GBP. The team should decide whether IMP-510 or the budget engine enforces this.
+- Resolved in RUN-018b: the budget currency must equal the destination currency (§9.3.2); see the RUN-018b section and PD-IMP-203-4.
 - API-08 already accepts `include_archived` (§6.6.2). Nothing can archive a trip until IMP-602, so the test sets `status` directly.
 - Every trip created in one transaction gets the same `now()`, so newest-first order is tested with rows inserted with explicit timestamps; the `updated_at` trigger runs only on update.
