@@ -1,10 +1,10 @@
 """Generation shapes (specification §6.5 GenerationOut; §6.6.4 API-22, API-23; §6.6.5 API-30,
-API-31)."""
+API-31; Amendment A1 §7.1 retrieval fields, IMD-116)."""
 
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.generation.records import FailureReason, GenerationStatus
 from app.schemas.common import UtcTimestamp
@@ -31,6 +31,9 @@ class RegenerateIn(BaseModel):
 
 
 class GenerationOut(BaseModel):
+    # Fields with a default still appear as required (nullable) in the response schema.
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     id: UUID
     trip_id: UUID
     scope: Literal["full", "day"]
@@ -53,3 +56,9 @@ class GenerationOut(BaseModel):
     plan_revision: int | None
     created_at: UtcTimestamp
     completed_at: UtcTimestamp | None
+    # A1 §7.1: declared in contract v1, null until IMP-316 fills them.
+    retrieval_mode: Literal["vector", "lexical_fallback"] | None = Field(
+        None, description="Null until retrieval is built (IMP-316)"
+    )
+    embedding_model_id: str | None = None
+    retrieval_ms: int | None = None
