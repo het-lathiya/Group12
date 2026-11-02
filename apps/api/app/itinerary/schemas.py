@@ -1,5 +1,6 @@
 """Itinerary, edit and version shapes (specification §6.5 ItineraryOut, Day, Item, Totals,
-EditResultOut, VersionOut; §6.6.5 API-09, API-24 to API-29, API-32, API-35 to API-38).
+EditResultOut, VersionOut; §6.6.5 API-09, API-24 to API-29, API-32, API-35 to API-38;
+Amendment A1 §7.1 SourceRef, IMD-116).
 
 Times are HH:MM in the destination time zone; every amount comes from the budget engine. Fields
 marked ai_written carry model text only (FR-035).
@@ -31,6 +32,19 @@ class LatestItineraryOut(BaseModel):
     updated_at: UtcTimestamp | None
 
 
+class SourceRef(BaseModel):
+    """A retrieved source behind an item (A1 §7.1); filled by IMP-316."""
+
+    chunk_id: UUID
+    kind: Literal["place", "guide"]
+    title: str
+    source_name: str
+    licence: str
+    attribution_text: str | None
+    url: str | None
+    retrieved_on: date | None
+
+
 class ItemPlace(BaseModel):
     id: UUID
     name: str
@@ -55,6 +69,9 @@ class TravelLeg(BaseModel):
 
 
 class Item(BaseModel):
+    # `sources` has a default but is always present in the response schema (A1 §7.1).
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     id: UUID
     position: int
     place: ItemPlace
@@ -69,6 +86,9 @@ class Item(BaseModel):
     note_origin: Literal["ai", "user", "none"]
     cost: ItemCost | None
     travel_from_previous: TravelLeg | None
+    sources: list[SourceRef] = Field(
+        default_factory=list, description="Empty until retrieval is built (IMP-316)"
+    )
 
 
 class DayCost(BaseModel):
