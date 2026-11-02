@@ -57,6 +57,7 @@ class TripDraft:
 class SupportedDestination:
     id: UUID
     name: str
+    currency: str
 
 
 def trip_length_days(start_date: date, end_date: date) -> int:
@@ -120,6 +121,26 @@ def validate_budget(amount: Decimal | None, currency: str | None) -> list[FieldE
             FieldError("budget.currency", "Currency must be a three-letter ISO 4217 code.")
         )
     return errors
+
+
+def validate_budget_currency(
+    budget_currency: str | None, destination: SupportedDestination
+) -> list[FieldError]:
+    """§9.3.2: in the MVP the budget is in the destination's currency (no conversion, §9.3.1).
+
+    Checked only for a well-formed code; a malformed one already fails validate_budget.
+    """
+    if budget_currency is None or not CURRENCY_PATTERN.fullmatch(budget_currency):
+        return []
+    if budget_currency != destination.currency:
+        return [
+            FieldError(
+                "budget.currency",
+                f"Budget currency must be {destination.currency}, "
+                f"the currency of {destination.name}.",
+            )
+        ]
+    return []
 
 
 def validate_trip(draft: TripDraft, *, max_days: int = MAX_TRIP_DAYS) -> list[FieldError]:
