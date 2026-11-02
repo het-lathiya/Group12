@@ -15,6 +15,5 @@
     "min_lon": 2.1,
     "max_lon": 2.3
   },
-  "is_sample": true,
-  "min_usable_places": 30
+  "is_sample": true
 }
