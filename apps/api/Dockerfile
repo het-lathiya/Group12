@@ -22,5 +22,7 @@ USER app
 # The working directory holds no source, so `app` resolves to the installed package.
 WORKDIR /tmp
 EXPOSE 8000
-# Render sets PORT; locally it defaults to 8000. exec makes uvicorn PID 1, so it receives SIGTERM.
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Render sets PORT; locally it defaults to 8000. /health reports BUILD_VERSION; when it is not set,
+# Render's RENDER_GIT_COMMIT (the deployed commit) is used, so the deploy workflows can wait for the
+# new version (IMP-112); locally it stays "dev". exec makes uvicorn PID 1, so it receives SIGTERM.
+CMD ["sh", "-c", "BUILD_VERSION=\"${BUILD_VERSION:-${RENDER_GIT_COMMIT:-dev}}\" exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
