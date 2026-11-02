@@ -15,7 +15,7 @@ from app.trips import domain
 from app.trips.domain import FieldError, SupportedDestination, TripDraft
 
 START = date(2026, 12, 4)
-SAMPLETON = SupportedDestination(id=uuid.uuid4(), name="Sampleton (sample)")
+SAMPLETON = SupportedDestination(id=uuid.uuid4(), name="Sampleton (sample)", currency="GBP")
 
 
 def valid_draft(**changes: Any) -> TripDraft:
@@ -125,8 +125,30 @@ def test_group_needs_use_the_imd_40_vocabulary() -> None:
     assert fields(domain.validate_group_needs(["children", "children"])) == ["group_needs"]
 
 
+def test_a_budget_in_the_destination_currency_passes() -> None:
+    assert domain.validate_budget_currency("GBP", SAMPLETON) == []
+
+
+def test_a_budget_in_another_valid_currency_names_budget_currency() -> None:
+    errors = domain.validate_budget_currency("INR", SAMPLETON)
+    assert errors == [
+        FieldError(
+            "budget.currency", "Budget currency must be GBP, the currency of Sampleton (sample)."
+        )
+    ]
+
+
+def test_no_budget_needs_no_currency_match() -> None:
+    assert domain.validate_budget_currency(None, SAMPLETON) == []
+
+
+def test_a_malformed_currency_is_reported_once_by_the_format_rule() -> None:
+    assert domain.validate_budget_currency("gbp", SAMPLETON) == []
+    assert fields(domain.validate_budget(Decimal("10.00"), "gbp")) == ["budget.currency"]
+
+
 def test_an_unknown_or_inactive_destination_lists_the_supported_ones() -> None:
-    other = SupportedDestination(id=uuid.uuid4(), name="Otherville")
+    other = SupportedDestination(id=uuid.uuid4(), name="Otherville", currency="EUR")
     errors = domain.validate_destination(uuid.uuid4(), [SAMPLETON, other])
     assert fields(errors) == ["destination_id"]
     for destination in (SAMPLETON, other):

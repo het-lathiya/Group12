@@ -326,6 +326,34 @@ async def test_tc_073_a_budget_of_zero_or_less_is_rejected(
 
 
 @pytest.mark.asyncio
+async def test_the_budget_currency_must_be_the_destination_currency(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    assert sampleton.currency == "GBP"
+    rejected = await api_client.post(
+        "/api/v1/trips",
+        json=trip_body(sampleton, budget={"amount": "15000.00", "currency": "INR"}),
+        headers=auth_user.headers,
+    )
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["details"] == [
+        {
+            "field": "budget.currency",
+            "message": f"Budget currency must be GBP, the currency of {sampleton.name}.",
+        }
+    ]
+    assert await trip_count(db_session, auth_user.user_id) == 0
+
+    accepted = await create(
+        api_client, auth_user, sampleton, budget={"amount": "15000.00", "currency": "GBP"}
+    )
+    assert accepted["budget"] == {"amount": "15000.00", "currency": "GBP"}
+
+
+@pytest.mark.asyncio
 async def test_traveller_counts_and_currency_are_checked(
     api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
 ) -> None:

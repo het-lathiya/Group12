@@ -67,12 +67,14 @@ def _to_out(row: TripRow) -> TripOut:
 async def create_trip(session: AsyncSession, user_id: UUID, body: TripIn) -> TripOut:
     draft = _to_draft(body)
     supported = [
-        domain.SupportedDestination(id=d.id, name=d.name)
+        domain.SupportedDestination(id=d.id, name=d.name, currency=d.currency)
         for d in await repository.active_destinations(session)
     ]
+    chosen = next((d for d in supported if d.id == draft.destination_id), None)
     errors = [
         *domain.validate_trip(draft),
         *domain.validate_destination(draft.destination_id, supported),
+        *(domain.validate_budget_currency(draft.budget_currency, chosen) if chosen else []),
     ]
     if errors:
         raise ValidationFailed(
