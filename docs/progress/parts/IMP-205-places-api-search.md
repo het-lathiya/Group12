@@ -68,6 +68,28 @@ Tag enum count: 35
 | API-16 returns active places of the requested destination, filtered by name and category, paged | verified | `test_places_returns_a_page_of_the_destinations_active_places_by_name`, `test_places_pages_with_limit_and_offset`, `test_places_filters_by_name_case_insensitively`, `test_places_filters_by_one_or_more_categories`, `test_places_hides_inactive_places_and_other_destinations`, `test_places_of_an_inactive_or_unknown_destination_are_an_empty_page`, `test_places_rejects_bad_query_values` |
 | Tags under the vocabulary; unknown suitability exposed as unknown (FR-019 AC1-AC2, TC-101, TC-102), exposure half | verified | `test_tc_101_tc_102_tags_from_the_vocabulary_and_unknown_suitability_as_null` (sample-002 `step_free` is `null`, never `false`) |
 
+## RUN-019c · service layer fix (follow-up pull request; PR #205 was already merged)
+
+- Base commit: 02d216f
+- Branch: fix/IMP-205-places-service
+- Change:
+  - `apps/api/app/places/service.py` (created): `list_destinations(session)` and `search_places(session, destination_id, *, q, categories, limit, offset)`. The session is the request's transaction from `DbSession`, as in `trips/service.py`. The service calls `places/repository.py`, maps rows with the schemas' `from_row`, and trims `q`.
+  - `apps/api/app/places/router.py` (modified): imports `places.service` instead of `places.repository`; the handlers only validate the query and call the service.
+  - No behaviour change: responses, status codes, ordering, paging, the empty page for an unknown or inactive destination (PD-IMP-205-7) and the `stay` rejection (PD-IMP-205-8) are unchanged. No test file changed.
+- Router check: `grep -n "repository\|select(\|sqlalchemy" apps/api/app/places/router.py` prints nothing (exit 1).
+
+All commands ran with `TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/travel_test` on the command line, after `make db-up` (`Container group12-db-1 Healthy`).
+
+| Command | Result line |
+| --- | --- |
+| `make test-api ARGS='-k destinations'` | `7 passed, 111 deselected, 1 warning in 1.88s` |
+| `make test-api ARGS='-k places'` | `25 passed, 93 deselected, 1 warning in 7.19s` |
+| `make test-authz` | `9 passed in 0.94s` |
+| `make lint` | `All checks passed!` / `99 files already formatted` / `All matched files use Prettier code style!` |
+| `make typecheck` | `Success: no issues found in 60 source files` |
+| `make imports` | `Contracts: 3 kept, 0 broken.` |
+| `make check` | exit 0; unit `283 passed, 1 warning in 6.21s`, contract `11 passed in 0.05s`, api `118 passed, 1 warning in 18.09s`, authz `9 passed in 0.85s`, web `Tests  48 passed (48)`; `openapi-check: not yet implemented (IMP-214)` |
+
 ## Blockers
 
 none
@@ -76,7 +98,7 @@ none
 
 - PD-IMP-205-7 (API-16 for an inactive or unknown destination): §6.2 says inactive destinations are invisible, and §6.6.3 says an empty page is valid. API-16 returns an empty page (200) for an inactive or unknown `destination_id` rather than 404, so a list request never reveals whether a destination exists.
 - PD-IMP-205-8 (`stay` in API-16): the `category` filter accepts only the offered categories (no `stay`, 422 otherwise), while `PlaceSummary.category` uses the full vocabulary so any stored row can be returned. No `stay` places exist yet.
-- PD-IMP-205-9 (no service layer): the part's file list has no `service.py`. The router calls the read-only repository and maps rows with the schemas' `from_row`, with no business rule in the router. IMP-509 may add `places/service.py` when the filters grow.
+- PD-IMP-205-9 (no service layer): **withdrawn.** Resolved in RUN-019c (follow-up pull request): the router now calls only `places/service.py`, which calls `places/repository.py` (CLAUDE.md §4 rule 1, §4.3).
 
 ## Open issues
 
