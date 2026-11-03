@@ -4,7 +4,7 @@ takes the caller's session and opens no transaction of its own. budget_settings,
 trip_places and ai_generations are only read.
 """
 
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -217,3 +217,20 @@ async def latest_completed_generation(session: AsyncSession, trip_id: UUID) -> A
         .limit(1)
     )
     return await session.scalar(query)
+
+
+async def latest_itinerary_for_user(
+    session: AsyncSession, user_id: UUID
+) -> tuple[UUID, int, datetime] | None:
+    """The caller's trip whose itinerary changed most recently (latest version created_at)."""
+    changed = func.max(ItineraryVersion.created_at)
+    query = (
+        select(Trip.id, Trip.plan_revision, changed)
+        .join(ItineraryVersion, ItineraryVersion.trip_id == Trip.id)
+        .where(Trip.user_id == user_id, Trip.deleted_at.is_(None))
+        .group_by(Trip.id, Trip.plan_revision)
+        .order_by(changed.desc(), Trip.id)
+        .limit(1)
+    )
+    row = (await session.execute(query)).first()
+    return None if row is None else (row[0], row[1], row[2])
