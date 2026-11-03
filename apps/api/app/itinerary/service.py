@@ -2,8 +2,8 @@
 
 ``save_generated_plan`` is step 11 of the pipeline (§8.2): it runs in the caller's transaction,
 which also completes the generation record, so the plan, the version and the record are saved
-together or not at all (NFR-008). ``get_itinerary`` (API-24) reads the saved plan for its owner
-(IMP-211).
+together or not at all (NFR-008). ``get_itinerary`` (API-24) and ``latest_itinerary`` (API-09)
+read the saved plan for its owner (IMP-211).
 """
 
 from dataclasses import dataclass
@@ -24,6 +24,7 @@ from app.itinerary.schemas import (
     Item,
     ItineraryOut,
     ItinerarySource,
+    LatestItineraryOut,
     Totals,
 )
 from app.schemas.ai import ItineraryOutput
@@ -203,3 +204,12 @@ def _item(item: ItineraryItem, place: Place, must_visit: bool) -> Item:
             "sources": [],  # A1 §7.1: filled from source_chunk_ids by IMP-316
         }
     )
+
+
+async def latest_itinerary(session: AsyncSession, user_id: UUID) -> LatestItineraryOut:
+    """API-09: the caller's most recently changed itinerary, or nulls when there is none."""
+    found = await repository.latest_itinerary_for_user(session, user_id)
+    if found is None:
+        return LatestItineraryOut(trip_id=None, plan_revision=None, updated_at=None)
+    trip_id, plan_revision, updated_at = found
+    return LatestItineraryOut(trip_id=trip_id, plan_revision=plan_revision, updated_at=updated_at)
