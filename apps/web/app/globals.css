@@ -5,33 +5,47 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Design tokens (IMP-104 step 2). Components use only these names (bg-primary, text-muted-foreground,
- * min-h-touch, text-lg, ...), never raw colour values. Every text and background pair below meets
- * WCAG AA (4.5:1 for text, 3:1 for the focus ring and input borders); the checked ratios are listed
- * in docs/progress/parts/IMP-104-whole-task.md.
+ * Design tokens (IMP-104 step 2, values from docs/guides/ui-design.md, IMD-118). Components use only
+ * these names (bg-primary, text-muted-foreground, bg-success-soft, min-h-touch, text-lg, ...), never raw
+ * colour values. Each oklch value is the guide's hex colour; the contrast ratios are listed in the guide.
+ * Changing a token needs an update of the guide in the same pull request.
  */
 :root {
-  --background: oklch(0.995 0.002 250);
-  --foreground: oklch(0.22 0.025 255);
+  --background: oklch(0.985 0.001 106.4); /* #FAFAF9 */
+  --foreground: oklch(0.216 0.006 56); /* #1C1917 */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.025 255);
+  --card-foreground: oklch(0.216 0.006 56);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.025 255);
-  --primary: oklch(0.46 0.13 250);
-  --primary-hover: oklch(0.4 0.12 250);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.95 0.015 250);
-  --secondary-foreground: oklch(0.27 0.04 255);
-  --muted: oklch(0.96 0.008 250);
-  --muted-foreground: oklch(0.47 0.025 255);
-  --accent: oklch(0.93 0.03 245);
-  --accent-foreground: oklch(0.27 0.05 255);
-  --destructive: oklch(0.5 0.19 27);
-  --border: oklch(0.89 0.01 255);
-  --input: oklch(0.6 0.02 255);
-  --ring: oklch(0.46 0.13 250);
-  --overlay: oklch(0.22 0.025 255 / 45%);
-  --radius: 0.625rem;
+  --popover-foreground: oklch(0.216 0.006 56);
+  --primary: oklch(0.511 0.086 186.4); /* #0F766E */
+  --primary-hover: oklch(0.437 0.071 188.2); /* #115E59 */
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.984 0.014 180.7); /* #F0FDFA */
+  --secondary-foreground: oklch(0.386 0.059 188.4); /* #134E4A */
+  --muted: oklch(0.97 0.001 106.4); /* #F5F5F4 */
+  --muted-foreground: oklch(0.444 0.01 73.6); /* #57534E */
+  --accent: oklch(0.97 0.001 106.4); /* #F5F5F4 */
+  --accent-foreground: oklch(0.216 0.006 56);
+  --destructive: oklch(0.505 0.19 27.5); /* #B91C1C */
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.923 0.003 48.7); /* #E7E5E4 */
+  --input: oklch(0.65 0.01 62.5); /* #948E89 */
+  --ring: oklch(0.511 0.086 186.4); /* #0F766E */
+  --overlay: oklch(0.216 0.006 56 / 45%);
+  /* Semantic soft pairs: -foreground is the text colour, -soft the background (status and labels only). */
+  --success-foreground: oklch(0.527 0.137 150.1); /* #15803D */
+  --success-soft: oklch(0.982 0.018 155.8); /* #F0FDF4 */
+  --warning-foreground: oklch(0.555 0.146 49); /* #B45309 */
+  --warning-soft: oklch(0.987 0.021 95.3); /* #FFFBEB */
+  --info-foreground: oklch(0.488 0.217 264.4); /* #1D4ED8 */
+  --info-soft: oklch(0.97 0.014 254.6); /* #EFF6FF */
+  --ai-foreground: oklch(0.491 0.241 292.6); /* #6D28D9 */
+  --ai-soft: oklch(0.969 0.016 293.8); /* #F5F3FF */
+  --success: var(--success-foreground);
+  --warning: var(--warning-foreground);
+  --info: var(--info-foreground);
+  --ai: var(--ai-foreground);
+  --radius: 0.75rem;
 }
 
 @theme inline {
@@ -51,11 +65,26 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-overlay: var(--overlay);
-  --font-sans: var(--font-sans);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-soft: var(--info-soft);
+  --color-ai: var(--ai);
+  --color-ai-foreground: var(--ai-foreground);
+  --color-ai-soft: var(--ai-soft);
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-heading: var(--font-sans);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
