@@ -119,7 +119,7 @@ Adding a dependency needs a reason in the pull request; adding a framework, serv
 1. The task's acceptance criteria hold and are shown by the listed tests.
 2. `make check` passes locally or in CI; `make e2e` passes when the task touches a journey.
 3. OpenAPI and web types regenerated if the API changed; migrations and drift test updated if the schema changed.
-4. No new lint, type or import-boundary violations; no secrets; labels and error states present on new screens.
+4. No new lint, type or import-boundary violations; no secrets; labels and error states present on new screens; new or changed screens follow `docs/guides/ui-design.md` (IMD-118).
 5. The part record `docs/progress/parts/IMP-NNN-<part-slug>.md` is created in the same pull request: run id, owner, status, base commit (not its own head commit: Rebase and merge changes commit IDs), changed files, the commands run with their result lines, each acceptance criterion with verified or not verified and how, blockers, proposed decisions and open issues. `docs/progress/sprint-N.md` is the sprint index; the gate card compiles it from the part records. The card's lead marks the card done when all its parts are merged and its acceptance criteria are verified.
 6. The pull request uses the template, cites the IMP task, the part and the requirement IDs, is titled like `IMP-409 · move-controls part`, is assigned to the part owner, names the reviewer (§12) and gets one approval before it is merged with Rebase and merge.
 
