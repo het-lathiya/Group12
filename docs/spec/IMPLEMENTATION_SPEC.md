@@ -1583,7 +1583,7 @@ Every non-2xx response has this body; `message` is safe to show; `details` lists
 | 401 | `UNAUTHENTICATED` | Token missing, malformed, expired or unverifiable |
 | 404 | `NOT_FOUND` | Resource missing, not owned, soft-deleted, inactive, or the route belongs to a feature switched off by `FEATURES_DISABLED` (IMD-11) |
 | 409 | `STALE_PLAN` | `plan_revision` in the request is not the stored one |
-| 409 | `GENERATION_IN_PROGRESS` | A different generation for the trip is queued, running, validating or repairing; also any edit, replace, version save or restore on that trip while it is active (IMD-23) |
+| 409 | `GENERATION_IN_PROGRESS` | A different generation for the trip is queued, running, validating or repairing; also any edit, replace, version save or restore on that trip while it is active (IMD-23). When a start is refused, `details` = `[{ "field": "generation_id", "message": "<id of the active generation>" }]` (IMD-119) |
 | 409 | `CONFLICT` | Other state conflicts: trip archived (read-only, IMD-35), itinerary already exists (use API-31, IMD-21), no itinerary yet (API-30/31/37), version name taken |
 | 422 | `VALIDATION_ERROR` | Body, path or query fails the schema or a field rule; `details` names the fields |
 | 422 | `INVALID_EDIT` | Structurally impossible edit: day out of range, position out of range, unknown or inactive place, moving or retiming a locked item |
@@ -1962,7 +1962,7 @@ Each block is the implementation contract. "Tests" name the file of contract §E
 | API-22 `POST /api/v1/trips/{trip_id}/generations` | |
 | --- | --- |
 | Body | `GenerationStartIn` `{mode: "ai" \| "rule_based"}` (default `ai`); scope is always `full` (IMD-21) |
-| Response | 202 `GenerationOut` (new); 200 `GenerationOut` (same request active); 409 `GENERATION_IN_PROGRESS`; 409 `CONFLICT` (itinerary exists or trip archived); 422 (trip incomplete, notice not acknowledged); 429 `AI_QUOTA_REACHED` |
+| Response | 202 `GenerationOut` (new); 200 `GenerationOut` (same request active); 409 `GENERATION_IN_PROGRESS` (`details` `[{field: "generation_id", message: <id of the active generation>}]`, IMD-119); 409 `CONFLICT` (itinerary exists or trip archived); 422 (trip incomplete, notice not acknowledged); 429 `AI_QUOTA_REACHED` |
 | Behaviour | Create rules of §6.4; then `jobs.submit(generation_id)` |
 | DB | Insert `ai_generations`; the task later writes days, items, warnings, versions and updates `trips` (§6.4 Complete) |
 | Downstream | Pipeline (§8): places retrieval, routing (§9), active provider, validator, budget engine |
