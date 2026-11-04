@@ -282,12 +282,15 @@ async def test_a_different_request_while_active_is_refused(
     trip: str,
     submitted: list[Job],
 ) -> None:
-    await queued_row(db_session, auth_user, trip, mode="rule_based")
+    active_id = await queued_row(db_session, auth_user, trip, mode="rule_based")
 
     response = await start(api_client, auth_user, trip)
 
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "GENERATION_IN_PROGRESS"
+    assert response.json()["error"]["details"] == [
+        {"field": "generation_id", "message": str(active_id)}
+    ]
     assert submitted == []
 
 
@@ -480,6 +483,27 @@ async def test_another_users_trip_and_generation_are_not_found(
         assert response.status_code == 404, response.text
         assert response.json()["error"]["code"] == "NOT_FOUND"
     assert len(submitted) == 1
+
+
+@pytest.mark.asyncio
+async def test_another_users_start_is_not_found_before_the_in_progress_conflict(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+) -> None:
+    other_id = await insert_auth_user(db_session)
+    other = AuthUser(user_id=other_id, email=f"{other_id}@example.test")
+    active_id = await queued_row(db_session, auth_user, trip, mode="rule_based")
+
+    response = await start(api_client, other, trip)
+
+    assert response.status_code == 404, response.text
+    assert response.json()["error"]["code"] == "NOT_FOUND"
+    assert response.json()["error"]["details"] == []
+    assert str(active_id) not in response.text
+    assert submitted == []
 
 
 @pytest.mark.asyncio
