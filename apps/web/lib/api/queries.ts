@@ -5,7 +5,7 @@ import {
   keepPreviousData,
 } from "@tanstack/react-query";
 
-import { api, unwrap } from "@/lib/api/client";
+import { ApiError, api, unwrap } from "@/lib/api/client";
 import type { components } from "@/lib/api/schema";
 
 /**
@@ -92,6 +92,68 @@ export function useCreateTrip() {
       queryClient.setQueryData(queryKeys.trip(trip.id), trip);
       await queryClient.invalidateQueries({ queryKey: queryKeys.trips() });
     },
+  });
+}
+
+/** API-22: start generating the whole trip (IMD-21: the body is the mode only). */
+export function useStartGeneration(tripId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () =>
+      unwrap(
+        await api().POST("/api/v1/trips/{trip_id}/generations", {
+          params: { path: { trip_id: tripId } },
+          body: { mode: "ai" },
+        }),
+      ),
+    // The 202 body is the first status, so the first poll waits 2 s (§7.4).
+    onSuccess: (generation) =>
+      queryClient.setQueryData(queryKeys.generation(generation.id), generation),
+  });
+}
+
+/** §7.4 polling: 2 s after the start, then 3, 4 and 5 s, then every 5 s. */
+const POLL_DELAYS_MS = [2000, 3000, 4000, 5000] as const;
+
+/**
+ * API-23: the generation's status, polled until `completed` or `failed`, or until `poll` is false
+ * (the 160 s limit of IMD-12). Polling pauses while the tab is hidden (TanStack Query's default).
+ */
+export function useGeneration(generationId: string, poll: boolean) {
+  return useQuery({
+    queryKey: queryKeys.generation(generationId),
+    queryFn: async () =>
+      unwrap(
+        await api().GET("/api/v1/generations/{generation_id}", {
+          params: { path: { generation_id: generationId } },
+        }),
+      ),
+    // Only the interval refetches, so a status seeded from the 202 waits the first 2 s.
+    staleTime: Infinity,
+    refetchInterval: (query) => {
+      const { data, status, dataUpdateCount } = query.state;
+      if (!poll || data?.status === "completed" || data?.status === "failed")
+        return false;
+      if (status === "error" && !data) return false; // the page shows the error and a retry
+      const step = Math.min(dataUpdateCount, POLL_DELAYS_MS.length) - 1;
+      return POLL_DELAYS_MS[Math.max(step, 0)];
+    },
+  });
+}
+
+/** API-24: the trip's current itinerary; a 404 means none has been saved yet. */
+export function useItinerary(tripId: string) {
+  return useQuery({
+    queryKey: queryKeys.itinerary(tripId, CURRENT_VERSION),
+    queryFn: async () =>
+      unwrap(
+        await api().GET("/api/v1/trips/{trip_id}/itinerary", {
+          params: { path: { trip_id: tripId } },
+        }),
+      ),
+    // A 404 is an answer (no itinerary yet), not a fault worth repeating.
+    retry: (failures, error) =>
+      !(error instanceof ApiError && error.status === 404) && failures < 1,
   });
 }
 
