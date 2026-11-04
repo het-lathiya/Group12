@@ -82,7 +82,10 @@ async def start_generation(
     active = await repository.find_active_for_trip(session, trip_id)
     if active is not None:
         if active.request_hash != request_hash:
-            raise GenerationInProgress()
+            # IMD-119: the generate page resumes polling this id (§7.5.6).
+            raise GenerationInProgress(
+                details=[ErrorDetail(field="generation_id", message=str(active.id))]
+            )
         return await _to_out(session, active), False
 
     metadata = provider.get_model_metadata()
