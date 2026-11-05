@@ -153,3 +153,19 @@ None.
 - **Instant-navigation warning.** `next dev` logs `Could not validate that a segment in your UI has instant navigation` for the two new routes. This is the same development-only warning recorded for `/dashboard` (PD-IMP-109-2) and `/trips/new` (IMP-212).
 - **`costs` key.** The only match of `cost` in the new web code is `queryKeys.costs(tripId)`, the §7.4 invalidation on `completed`. It computes nothing.
 - **Page titles.** Both pages are client components, which cannot export `metadata`, so they keep the root title "AI Travel Planner".
+
+## Fix run RUN-036c
+
+Owner: Krrish. Branch `fix/IMP-213-timeout-test`, base commit `ea154bd`.
+
+- **Failure.** The CI unit job on `main` (push of the IMD-120 commit) failed in `make test-web`: `GenerationProgress.test.tsx:250`, no `alert` after `await advance(1000)`. The same test passed on PR #240.
+- **Reproduction.** 30 sequential runs: 0 failed. 10 runs with `--pool=forks` beside `make test-unit` and `make test-web`: 0 failed. (`--poolOptions.forks.singleFork=false` does not exist in vitest 5.0.5; the CLI rejects it.) 10 runs pinned to 2 CPUs (`taskset -c 0,1`) against 4 busy loops: 2 failed, same test, same line. The page read "Elapsed 0:01" after 160 s of fake time.
+- **Cause.** The test moved the fake clock right after clicking Generate. The start request settles on real tasks (session, fetch, JSON, TanStack's `setTimeout` notify), so on a slow CPU `advance(159_000)` jumped the clock before `GenerationProgress` mounted. The elapsed counter, which by design counts from when the page starts watching (IMD-12), then started at t+159 s. The component is correct.
+- **Fix (test only).**
+  - The new `startGeneration()` helper clicks Generate and awaits `findByText("Elapsed 0:00")` before any clock move. It is used by the three tests that advance after the click (back-off gaps, failed, IMD-12).
+  - The test imported `GIVE_UP_AFTER_S` from the component, so it followed any change to the limit. It now uses the literal 160 from IMD-12.
+  - The assertion is unchanged: the alert "Connection problem. Reload the page." appears after 160 s. No skip, retry or longer timeout.
+- **Proof.**
+  - Final file: 30/30 sequential runs passed. 20/20 runs passed on 2 pinned CPUs with 4 busy loops. 10/10 runs passed beside `make test-unit`.
+  - With the component limit temporarily set to 170 s, the test fails (`Unable to find an accessible element with the role "alert"`). After the revert it passes.
+  - `make test-web`: `Tests  80 passed (80)`. `make lint`, `make typecheck` and `make test` (with `make db-up`) pass.
