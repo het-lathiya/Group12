@@ -3,7 +3,6 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import GeneratePage from "@/app/(app)/trips/[tripId]/generate/page";
-import { GIVE_UP_AFTER_S } from "@/components/generation/GenerationProgress";
 import type { components } from "@/lib/api/schema";
 
 // IMP-213 (US-153 AC1, FR-024, FR-025, IMD-12, IMD-119): the generate page and its polling state
@@ -20,6 +19,8 @@ vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "http://api.test/api/v1");
 const TRIP_ID = "00000000-0000-4000-8000-000000000002";
 const GEN_ID = "00000000-0000-4000-8000-0000000000a1";
 const ACTIVE_ID = "00000000-0000-4000-8000-0000000000b2";
+// IMD-12 fixes the limit; a literal, so a changed constant in the component fails this test.
+const GIVE_UP_AFTER_S = 160;
 
 const router = { push: vi.fn(), replace: vi.fn() };
 let search = new URLSearchParams();
@@ -140,6 +141,15 @@ const step = (label: string) =>
 const generateButton = () =>
   screen.getByRole("button", { name: "Generate with AI" });
 
+/**
+ * Clicks Generate and waits on the real event loop until the progress view is watching. The start
+ * request settles on real tasks, so moving the fake clock before then would skip time unwatched.
+ */
+async function startGeneration() {
+  fireEvent.click(generateButton());
+  await screen.findByText("Elapsed 0:00");
+}
+
 beforeEach(() => {
   // Only the clocks under test are fake: the poll and elapsed intervals and Date. setTimeout stays
   // real, because TanStack Query and Testing Library schedule their notifications with it.
@@ -196,7 +206,7 @@ describe("GenerationProgress", () => {
       generation(GEN_ID, "completed"),
     ]);
     renderPage();
-    fireEvent.click(generateButton());
+    await startGeneration();
     await advance(60_000);
 
     const gaps = [posts[0], ...polls.map((poll) => poll.at)]
@@ -221,7 +231,7 @@ describe("GenerationProgress", () => {
       ],
     );
     renderPage();
-    fireEvent.click(generateButton());
+    await startGeneration();
     await advance(2000);
 
     const alert = screen.getByRole("alert");
@@ -241,7 +251,7 @@ describe("GenerationProgress", () => {
   it("IMD-12: still running after 160 s shows the reload message and stops polling", async () => {
     const { polls } = fakeApi(accepted(), [generation(GEN_ID, "running")]);
     renderPage();
-    fireEvent.click(generateButton());
+    await startGeneration();
 
     await advance((GIVE_UP_AFTER_S - 1) * 1000);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
