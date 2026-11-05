@@ -95,3 +95,46 @@ None.
 - **Minimum count key:** IMP-205 adds the minimum usable-place count to `destination.json` (its step 3: "usable count vs the minimum in destination.json"). §5.6 does not list that key yet, so the README names no key and leaves it to that card.
 - **Rules not yet enforced:** the IMP-205 quality gate (bounding box, tag vocabulary, retrieved date required, usable count) does not exist yet. The README marks these rules as arriving with IMP-205; the current seed enforces only the file format and the database CHECKs.
 - **Source name:** the SAMPLE source in the fixture is "SAMPLE fixture (synthetic)", while §5.6 says "SAMPLE fixture data" (PD-IMP-107-1, already reported). It does not affect curated data.
+
+## Fix run RUN-039
+
+- Run id: RUN-039 (fix of the draft pull request #199)
+- Owner: Malhar (Malhar1112-v)
+- Status: **plan recorded; review pending (IMD-120)**
+- Base commit: ea154bd (`origin/main`; the branch was rebased on it before these commits)
+- What changed: the plan answers, prepared at a desk and accepted by the operator on 5 November 2026 under IMD-120, were recorded in `data/places/PLAN.md` and `docs/decisions/destinations.md`. The destinations are Ahmedabad (with Gandhinagar and Adalaj) and Jaipur. The minimum for destination 1 is 100, and 103 places remain after the desk check, 43 of them curated_checked. The fallback is demo destination 1 only. Sources are listed per destination with licence, and the PR-02 rule is confirmed. No new destination, source, licence, URL or count was added. Fields the answers do not cover say "Not stated in the accepted answers; to be confirmed before SG-3 (IMD-120)".
+- `data/places/README.md` is unchanged; no template field it references was renamed.
+
+### Changed files
+
+- `data/places/PLAN.md`
+- `docs/decisions/destinations.md`
+- `docs/progress/parts/IMP-115-whole-task.md`
+
+### Commands and results
+
+| Command | Result line |
+| --- | --- |
+| `git rev-parse --short origin/main` | `ea154bd` |
+| `git -c user.name=… -c user.email=… rebase origin/main` | `Successfully rebased and updated refs/heads/feat/IMP-115-whole-task.` |
+| `grep -c 'TO BE FILLED BY' data/places/PLAN.md docs/decisions/destinations.md` | `data/places/PLAN.md:0`, `docs/decisions/destinations.md:0` |
+| `git diff --name-only origin/main...HEAD` | `data/places/PLAN.md`, `data/places/README.md`, `docs/decisions/destinations.md`, `docs/progress/parts/IMP-115-whole-task.md` |
+| `make lint` | `All matched files use Prettier code style!` (exit 0) |
+| `make check` | exit 0; `Contracts: 4 kept, 0 broken.`; `385 passed, 1 warning in 9.85s`; `35 passed, 1 warning in 0.89s`; `231 passed, 1 warning in 65.11s (0:01:05)`; `28 passed in 15.74s`; `Tests  80 passed (80)` (with `make db-up` before and `make db-down` after) |
+
+### Acceptance criteria
+
+| Criterion | Status | How |
+| --- | --- | --- |
+| `data/places/PLAN.md` names two destinations, sources per destination and the minimum usable-place count (US-152 AC1) | verified | By the file: sections 1, 2 and 4 of `data/places/PLAN.md` |
+| Each source lists its licence and how facts are recorded (US-152 AC2) | verified | By the file: the section 4 tables of `data/places/PLAN.md` |
+| The "unavailable, never guessed" rule is stated (US-152 AC3) | verified | By the file: section 5 of `data/places/PLAN.md` and the decision record |
+| Card test "Review by Junaid" | not verified | Pending, due before SG-3 (IMD-120) |
+
+### Blockers
+
+- Junaid's review and Malhar's confirmation of the plan answers are due before SG-3 (IMD-120).
+
+### Open issues
+
+- The accepted answers do not state: the destination 2 slug and minimum; the data-availability counts (hours, prices, food places, category spread) and the other candidates; when destination 2 counts as slipped, what happens to its data and who decides. These fields say so in PLAN.md and are to be confirmed before SG-3.
