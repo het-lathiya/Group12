@@ -1,0 +1,20 @@
+{
+  "slug": "ahmedabad",
+  "name": "Ahmedabad",
+  "region": "Gujarat",
+  "country_code": "IN",
+  "timezone": "Asia/Kolkata",
+  "currency": "INR",
+  "center": {
+    "lat": 23.0225,
+    "lon": 72.5714
+  },
+  "bbox": {
+    "min_lat": 22.9,
+    "max_lat": 23.3,
+    "min_lon": 72.4,
+    "max_lon": 72.75
+  },
+  "is_sample": false,
+  "min_usable_places": 100
+}
