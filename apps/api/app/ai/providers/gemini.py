@@ -4,17 +4,23 @@ Uses the Interactions API (OD-14; docs/decisions/gemini-setup.md): ``_call_vendo
 vendor call, with store=false, the io-1 wire schema, the lowest thinking level the model accepts
 and no sampling parameter. One attempt per call: retries and the breaker are IMP-401, so the SDK's
 own retries are switched off. Vendor error text is never read: it can echo the prompt (NFR-024).
+
+``embed_texts`` (Amendment A1 §6.5, IMP-312) uses the models API instead, through
+``_call_embed_vendor``, with the retries of §8.4 in the adapter. It leaves ``_last_state`` alone:
+an embedding failure says nothing about generation (IMD-112). Texts and vectors are never logged.
 """
 
 import asyncio
 import json
+import random
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Final, Literal, cast
 
 import httpx
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 # The SDK exports its Interactions errors from no public module; the version is pinned for this.
@@ -38,9 +44,13 @@ from app.ai.errors import (
     ProviderUnavailable,
 )
 from app.ai.prompts import registry
-from app.core.config import GEMINI_TIME_ALLOWANCE_S, Settings
+from app.ai.providers.base import check_embed_input, l2_normalised
+from app.core.config import GEMINI_EMBEDDING_MODELS, GEMINI_TIME_ALLOWANCE_S, Settings
 from app.schemas.ai import (
+    EMBEDDING_DIMENSIONS,
     EditOperations,
+    EmbeddingPurpose,
+    EmbeddingResult,
     GenerationRequest,
     HealthStatus,
     ItineraryOutput,
@@ -72,6 +82,14 @@ BLOCKED_CODES: Final = frozenset(
 )
 TRUNCATED_STATUSES: Final = frozenset({"incomplete", "requires_continuation"})
 DROPPED_SCHEMA_KEYS: Final = frozenset({"$schema", "$id", "pattern"})
+EMBEDDING_2: Final = GEMINI_EMBEDDING_MODELS[0]
+EMBED_TASK_TYPES: Final[dict[EmbeddingPurpose, str]] = {
+    "document": "RETRIEVAL_DOCUMENT",
+    "query": "RETRIEVAL_QUERY",
+}
+RETRYABLE: Final = (ProviderTimeout, ProviderRateLimited, ProviderUnavailable)
+BACKOFF_BASE_S: Final = 1.0
+BACKOFF_JITTER: Final = 0.25
 
 Health = Literal["ok", "degraded", "down"]
 
@@ -125,6 +143,38 @@ def map_status_error(status: int, code: str, headers: httpx.Headers) -> Provider
     return ProviderBadRequest(f"Gemini refused the request: HTTP {status}")
 
 
+def _models_api_code(error: genai_errors.APIError) -> str:
+    """The code ``map_status_error`` reads, from a models API error. Its message is never read.
+
+    That API answers RESOURCE_EXHAUSTED for both limits; a per-day quota ID marks the daily quota.
+    Unverified without a key (PD-IMP-312-2).
+    """
+    body = error.details if isinstance(error.details, Mapping) else {}
+    details = body.get("error", {}).get("details") if isinstance(body.get("error"), Mapping) else []
+    for detail in details if isinstance(details, list) else []:
+        violations = detail.get("violations") if isinstance(detail, Mapping) else None
+        for violation in violations if isinstance(violations, list) else []:
+            if isinstance(violation, Mapping) and "PerDay" in str(violation.get("quotaId")):
+                return "quota_exceeded"
+    return (error.status or "").lower()
+
+
+def _embed_text(model_id: str, text: str, purpose: EmbeddingPurpose, title: str | None) -> str:
+    """A1 §6.5: gemini-embedding-2 takes no task type, so the purpose goes in a prefix."""
+    if model_id != EMBEDDING_2:
+        return text
+    if purpose == "query":
+        return f"task: search result | query: {text}"
+    return f"title: {title or 'none'} | text: {text}"
+
+
+def _embed_vector(embedding: types.ContentEmbedding) -> list[float]:
+    values = embedding.values or []
+    if len(values) != EMBEDDING_DIMENSIONS or not any(values):
+        raise ProviderInvalidOutput("schema_violation")
+    return l2_normalised(values)
+
+
 def _usage(interaction: Interaction) -> UsageMetadata:
     usage = interaction.usage
     if usage is None:
@@ -167,6 +217,8 @@ class GeminiProvider:
     def __init__(self, settings: Settings, http_client: httpx.AsyncClient | None = None) -> None:
         self._api_key = settings.gemini_api_key.get_secret_value()
         self._model_id = settings.gemini_model_id
+        self._embedding_model_id = settings.gemini_embedding_model_id
+        self._max_retries = settings.gemini_max_retries
         self._max_input_tokens = settings.ai_max_input_tokens
         self._max_output_tokens = settings.ai_max_output_tokens
         # shortcut: the whole allowance, not what is left of it; the retry loop of IMP-401 owns
@@ -280,6 +332,88 @@ class GeminiProvider:
         self, request: ModificationRequest
     ) -> ProviderResult[EditOperations]:
         raise ProviderBadRequest("modify_itinerary not enabled in the MVP")
+
+    async def _call_embed_vendor(
+        self,
+        contents: list[types.Content],
+        config: types.EmbedContentConfig,
+        timeout_s: float,
+    ) -> types.EmbedContentResponse:
+        """The only embedding call (A1 §6.5). Raises shared errors only, with no vendor text."""
+        try:
+            async with asyncio.timeout(timeout_s):
+                return await self._vendor_client().aio.models.embed_content(
+                    model=self._embedding_model_id,
+                    contents=cast(types.ContentListUnion, contents),
+                    config=config,
+                )
+        except (TimeoutError, httpx.TimeoutException):
+            raise ProviderTimeout("Gemini embedding timed out") from None
+        except genai_errors.APIError as exc:
+            raise map_status_error(
+                exc.code,
+                _models_api_code(exc),
+                httpx.Headers(getattr(exc.response, "headers", None) or {}),
+            ) from None
+        except httpx.TransportError:
+            raise ProviderUnavailable("Gemini connection failed") from None
+        except ValueError:  # the body of a 200 answer that is not an embedding response
+            raise ProviderInvalidOutput("malformed_json") from None
+
+    async def _embed_with_retries(
+        self, contents: list[types.Content], config: types.EmbedContentConfig
+    ) -> types.EmbedContentResponse:
+        """§8.4: transient errors only, backoff 1, 2, 4 s with ±25 % jitter, within the allowance."""
+        deadline = time.monotonic() + GEMINI_TIME_ALLOWANCE_S
+        attempt = 0
+        while True:
+            left = deadline - time.monotonic()
+            try:
+                return await self._call_embed_vendor(contents, config, min(self._timeout_s, left))
+            except RETRYABLE as exc:
+                backoff = BACKOFF_BASE_S * 2**attempt
+                delay = backoff * random.uniform(1 - BACKOFF_JITTER, 1 + BACKOFF_JITTER)  # noqa: S311
+                if isinstance(exc, ProviderRateLimited) and exc.retry_after_s is not None:
+                    delay = max(delay, exc.retry_after_s)
+                if attempt >= self._max_retries or delay >= deadline - time.monotonic():
+                    raise
+            attempt += 1
+            await asyncio.sleep(delay)
+
+    async def embed_texts(
+        self,
+        texts: Sequence[str],
+        purpose: EmbeddingPurpose,
+        titles: Sequence[str | None] | None = None,
+    ) -> EmbeddingResult:
+        check_embed_input(texts, titles)
+        if not self._api_key:
+            raise ProviderAuthError("GEMINI_API_KEY is not set")
+        if self._embedding_model_id not in GEMINI_EMBEDDING_MODELS:
+            raise ProviderBadRequest("GEMINI_EMBEDDING_MODEL_ID is not set or not supported")
+        model_id = self._embedding_model_id
+        started = time.perf_counter()
+        # One Content per text: gemini-embedding-2 merges the parts of one content into one vector.
+        contents = [
+            types.Content(
+                parts=[types.Part(text=_embed_text(model_id, text, purpose, title))],
+            )
+            for text, title in zip(texts, titles or [None] * len(texts), strict=True)
+        ]
+        config = types.EmbedContentConfig(
+            output_dimensionality=EMBEDDING_DIMENSIONS,
+            task_type=None if model_id == EMBEDDING_2 else EMBED_TASK_TYPES[purpose],
+        )
+        response = await self._embed_with_retries(contents, config)
+        embeddings = response.embeddings or []
+        if len(embeddings) != len(texts):
+            raise ProviderInvalidOutput("schema_violation")
+        return EmbeddingResult(
+            vectors=[_embed_vector(embedding) for embedding in embeddings],
+            model_id=model_id,
+            usage=UsageMetadata(),  # the Gemini API reports no embedding token counts
+            latency_ms=round((time.perf_counter() - started) * 1000),
+        )
 
     async def health_check(self) -> HealthStatus:
         """From the configuration and the last call; never a generation call."""

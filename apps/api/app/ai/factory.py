@@ -71,7 +71,9 @@ def _gemini(settings: Settings) -> ModelProvider:
     key = (
         settings.gemini_api_key.get_secret_value(),
         settings.gemini_model_id,
+        settings.gemini_embedding_model_id,
         settings.gemini_timeout_s,
+        settings.gemini_max_retries,
         settings.ai_max_input_tokens,
         settings.ai_max_output_tokens,
     )

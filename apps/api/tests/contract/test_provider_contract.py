@@ -13,6 +13,7 @@ Adapters join by adding one entry:
 import asyncio
 import inspect
 import json
+import math
 import socket
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -111,7 +112,13 @@ ADAPTERS: dict[str, Adapter] = {
     "gemini_recorded": Adapter(build=gemini, failing=gemini_failing),
 }
 
-OPERATIONS = ("generate_itinerary", "modify_itinerary", "health_check", "get_model_metadata")
+OPERATIONS = (
+    "generate_itinerary",
+    "modify_itinerary",
+    "embed_texts",
+    "health_check",
+    "get_model_metadata",
+)
 
 
 @pytest.fixture(params=sorted(ADAPTERS), ids=str)
@@ -268,6 +275,128 @@ def test_tc_005_gemini_failures_map_to_the_shared_types(
         asyncio.run(gemini(answer).generate_itinerary(sample_request()))
     assert "vendor text" not in str(raised.value)
     assert raised.value.__cause__ is None
+
+
+# ---------- embed_texts (IMP-312; Amendment A1 §6.5): TC-444 ----------
+
+EMBED_TEXTS = ["Old fort at sunrise", "Street food market"]
+EMBED_MODEL = "gemini-embedding-2"
+
+
+def embedding_answer(count: int, length: int = 768) -> httpx.Response:
+    # A different direction per text, and not unit length, so order and normalising both show.
+    embeddings = [{"values": [float(i + 2)] + [1.0] * (length - 1)} for i in range(count)]
+    return httpx.Response(200, json={"embeddings": embeddings})
+
+
+def embed_gemini(
+    answer: httpx.Response, seen: list[httpx.Request], model: str = EMBED_MODEL
+) -> GeminiProvider:
+    def respond(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return answer
+
+    settings = Settings(gemini_api_key="contract-key-not-real", gemini_embedding_model_id=model)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    return GeminiProvider(settings, http_client=client)
+
+
+EMBED_ADAPTERS: dict[str, Callable[[], ModelProvider]] = {
+    "mock": lambda: MockProvider("ok", app_env="test"),
+    "gemini_fake": lambda: embed_gemini(embedding_answer(len(EMBED_TEXTS)), []),
+}
+
+
+@pytest.mark.parametrize("name", sorted(EMBED_ADAPTERS))
+def test_tc_444_embed_returns_768_length_unit_vectors_in_text_order(name: str) -> None:
+    result = asyncio.run(EMBED_ADAPTERS[name]().embed_texts(EMBED_TEXTS, "document"))
+
+    assert len(result.vectors) == len(EMBED_TEXTS)
+    assert result.vectors[0] != result.vectors[1]
+    for vector in result.vectors:
+        assert len(vector) == 768
+        assert math.isclose(math.sqrt(sum(value * value for value in vector)), 1.0)
+    assert result.model_id
+    assert result.latency_ms >= 0
+
+
+@pytest.mark.parametrize("name", sorted(EMBED_ADAPTERS))
+@pytest.mark.parametrize(
+    ("texts", "titles"),
+    [([], None), (["a"] * 33, None), (["a" * 2001], None), (["a", "b"], ["only one"])],
+    ids=["empty", "too_many", "too_long", "title_count"],
+)
+def test_embed_refuses_input_outside_the_limits(
+    name: str, texts: list[str], titles: list[str | None] | None
+) -> None:
+    with pytest.raises(ProviderBadRequest):
+        asyncio.run(EMBED_ADAPTERS[name]().embed_texts(texts, "document", titles))
+
+
+def embed_requests(seen: list[httpx.Request]) -> list[dict[str, Any]]:
+    requests: list[dict[str, Any]] = json.loads(seen[-1].content)["requests"]
+    return requests
+
+
+def test_tc_444_embed_sends_one_content_per_text_with_the_embedding_2_prefixes() -> None:
+    seen: list[httpx.Request] = []
+    provider = embed_gemini(embedding_answer(2), seen)
+
+    asyncio.run(provider.embed_texts(EMBED_TEXTS, "document", ["The Fort", None]))
+    documents = embed_requests(seen)
+    asyncio.run(provider.embed_texts(EMBED_TEXTS, "query"))
+    queries = embed_requests(seen)
+
+    assert seen[-1].url.path.endswith(f"/models/{EMBED_MODEL}:batchEmbedContents")
+    assert [request["content"]["parts"] for request in documents] == [
+        [{"text": "title: The Fort | text: Old fort at sunrise"}],
+        [{"text": "title: none | text: Street food market"}],
+    ]
+    assert [request["content"]["parts"] for request in queries] == [
+        [{"text": "task: search result | query: Old fort at sunrise"}],
+        [{"text": "task: search result | query: Street food market"}],
+    ]
+    for request in [*documents, *queries]:
+        assert request["outputDimensionality"] == 768
+        assert "taskType" not in request
+
+
+@pytest.mark.parametrize(
+    ("purpose", "task_type"), [("document", "RETRIEVAL_DOCUMENT"), ("query", "RETRIEVAL_QUERY")]
+)
+def test_tc_444_embed_sets_the_task_type_and_no_prefix_for_embedding_001(
+    purpose: Any, task_type: str
+) -> None:
+    seen: list[httpx.Request] = []
+    provider = embed_gemini(embedding_answer(2), seen, "gemini-embedding-001")
+
+    asyncio.run(provider.embed_texts(EMBED_TEXTS, purpose, ["The Fort", None]))
+
+    requests = embed_requests(seen)
+    assert [r["content"]["parts"] for r in requests] == [[{"text": t}] for t in EMBED_TEXTS]
+    assert {r["taskType"] for r in requests} == {task_type}
+    assert {r["outputDimensionality"] for r in requests} == {768}
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [embedding_answer(1), embedding_answer(3), embedding_answer(2, length=767)],
+    ids=["fewer", "more", "wrong_length"],
+)
+def test_tc_444_embed_refuses_an_answer_of_the_wrong_shape(answer: httpx.Response) -> None:
+    with pytest.raises(ProviderInvalidOutput) as raised:
+        asyncio.run(embed_gemini(answer, []).embed_texts(EMBED_TEXTS, "document"))
+    assert raised.value.kind == "schema_violation"
+
+
+@pytest.mark.live
+def test_tc_444_gemini_embed_live() -> None:
+    """Manual, key holder only: make live-smoke. Never run by make test or CI (-m "not live")."""
+    settings = get_settings()
+    if not settings.gemini_api_key.get_secret_value() or not settings.gemini_embedding_model_id:
+        pytest.skip("GEMINI_API_KEY and GEMINI_EMBEDDING_MODEL_ID are needed for the live test")
+    result = asyncio.run(GeminiProvider(settings).embed_texts(EMBED_TEXTS, "document"))
+    assert [len(vector) for vector in result.vectors] == [768, 768]
 
 
 @pytest.mark.live
