@@ -1,0 +1,114 @@
+# End-to-end journey (IMP-216; specification §13, TC-369, US-153 AC1). Runs on a push to main,
+# nightly and by hand; never on pull requests, so it is not one of the six required checks.
+#
+# It starts the Supabase CLI local stack, migrates and seeds it, builds and starts the API with
+# AI_PROVIDER=MOCK and the web app, and runs the journey. No provider key exists here. The local
+# stack's keys exist only inside this job: they come from `supabase status` and are masked, and they
+# die with the stack.
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 20 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+# shell: bash adds pipefail, so a failure inside a pipe fails the step.
+defaults:
+  run:
+    shell: bash
+
+env:
+  PYTHON_VERSION: "3.12"
+  # The CLI version of the local runs; it signs tokens with asymmetric keys, hence the JWKS URL.
+  SUPABASE_CLI_VERSION: 2.122.0
+  APP_ENV: test
+  AI_PROVIDER: MOCK
+  DB_AUTH_STUB: "false"
+  DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:54322/postgres
+  ALLOWED_ORIGINS: http://localhost:3000
+  NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
+  NEXT_PUBLIC_FEATURES_DISABLED: ""
+
+jobs:
+  e2e:
+    name: e2e
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: apps/api/pyproject.toml
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - uses: supabase/setup-cli@v3
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+      - run: make setup ARGS=--with-browsers
+
+      # supabase start prints the keys, before they can be masked.
+      - name: Start the local stack
+        run: make stack-up > /dev/null
+
+      - name: Export the local stack's values into the job
+        run: |
+          eval "$(supabase status -o env 2>/dev/null)"
+          echo "::add-mask::$ANON_KEY"
+          echo "::add-mask::$SERVICE_ROLE_KEY"
+          {
+            echo "SUPABASE_URL=$API_URL"
+            echo "SUPABASE_JWKS_URL=$API_URL/auth/v1/.well-known/jwks.json"
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+          } >> "$GITHUB_ENV"
+
+      - run: make db-migrate
+      - run: make seed
+
+      - name: Start the API with MOCK
+        working-directory: apps/api
+        run: |
+          nohup .venv/bin/uvicorn app.main:app --port 8000 > "$RUNNER_TEMP/api.log" 2>&1 &
+          curl -fsS --retry 30 --retry-delay 1 --retry-all-errors http://localhost:8000/health
+
+      - name: Build and start the web app
+        working-directory: apps/web
+        run: |
+          npm run build
+          # The standalone output leaves out .next/static and public.
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public
+          cd .next/standalone
+          PORT=3000 HOSTNAME=0.0.0.0 nohup node server.js > "$RUNNER_TEMP/web.log" 2>&1 &
+          curl -fsS --retry 30 --retry-delay 1 --retry-all-errors -o /dev/null http://localhost:3000/
+
+      - name: Run the journey
+        env:
+          BASE_URL: http://localhost:3000
+        run: make e2e ARGS='journey'
+
+      - name: Upload the Playwright report and the server logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report/
+            ${{ runner.temp }}/api.log
+            ${{ runner.temp }}/web.log
+          retention-days: 14
