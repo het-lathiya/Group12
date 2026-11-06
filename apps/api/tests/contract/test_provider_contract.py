@@ -6,18 +6,21 @@ one that raises a given shared error. The in-test double stays registered next t
 
 Adapters join by adding one entry:
 - IMP-207: ``mock`` (``app.ai.providers.mock.MockProvider``, scenarios and ``raise_error``);
-- IMP-301: ``gemini_recorded`` (Gemini adapter driven by tests/fixtures/provider_recordings/);
+- IMP-301: ``gemini_recorded`` (the Gemini adapter behind a fake HTTP transport, no network);
 - IMP-512: completes the suite for every adapter (failure scenarios per error type, live marker).
 """
 
 import asyncio
 import inspect
+import json
 import socket
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
+import httpx
 import pytest
-from fixtures.ai import DoubleProvider, sample_request
+from fixtures.ai import SAMPLE_OUTPUT, DoubleProvider, sample_request
 
 from app.ai.errors import (
     ProviderAuthError,
@@ -30,8 +33,9 @@ from app.ai.errors import (
     ProviderUnavailable,
 )
 from app.ai.providers.base import ModelProvider
+from app.ai.providers.gemini import GeminiProvider
 from app.ai.providers.mock import MockProvider
-from app.core.config import MockScenario
+from app.core.config import MockScenario, Settings, get_settings
 from app.schemas.ai import (
     HealthStatus,
     ItineraryOutput,
@@ -47,13 +51,64 @@ class Adapter:
     failing: Callable[[ProviderError], ModelProvider]
 
 
+USAGE = {
+    "total_input_tokens": 120,
+    "total_output_tokens": 40,
+    "total_thought_tokens": 10,
+    "total_tokens": 170,
+}
+
+
+def interaction(text: str = "", **overrides: Any) -> dict[str, Any]:
+    """An Interactions answer in the documented shape."""
+    return {
+        "id": "sample-interaction",
+        "status": "completed",
+        "steps": [{"type": "model_output", "content": [{"type": "text", "text": text}]}],
+        "usage": USAGE,
+        **overrides,
+    }
+
+
+def vendor_error(status: int, code: str, **headers: str) -> httpx.Response:
+    body = {"error": {"code": code, "message": "vendor text that must never surface"}}
+    return httpx.Response(status, json=body, headers=headers)
+
+
+def gemini(answer: httpx.Response | Exception | None = None) -> GeminiProvider:
+    """GeminiProvider behind a fake transport: nothing leaves the process."""
+    ok = httpx.Response(200, json=interaction(json.dumps(SAMPLE_OUTPUT)))
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if isinstance(answer, Exception):
+            raise answer
+        return answer or ok
+
+    settings = Settings(gemini_api_key="contract-key-not-real", gemini_model_id="contract-model")
+    client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    return GeminiProvider(settings, http_client=client)
+
+
+def gemini_failing(error: ProviderError) -> GeminiProvider:
+    answers: dict[type[ProviderError], httpx.Response | Exception] = {
+        ProviderTimeout: httpx.ReadTimeout("slow"),
+        ProviderRateLimited: vendor_error(429, "rate_limit_exceeded", **{"retry-after": "1"}),
+        ProviderUnavailable: vendor_error(503, "service_unavailable"),
+        ProviderQuotaExhausted: vendor_error(429, "quota_exceeded"),
+        ProviderInvalidOutput: httpx.Response(200, json=interaction("not json")),
+        ProviderAuthError: vendor_error(403, "permission_denied"),
+        ProviderBadRequest: vendor_error(404, "model_not_found"),
+    }
+    return gemini(answers[type(error)])
+
+
 ADAPTERS: dict[str, Adapter] = {
     "double": Adapter(build=DoubleProvider, failing=lambda error: DoubleProvider(error)),
     "mock": Adapter(
         build=lambda: MockProvider("ok", app_env="test"),
         failing=lambda error: MockProvider("ok", app_env="test", raise_error=error),
     ),
-    # IMP-301: "gemini_recorded": Adapter(...),
+    "gemini_recorded": Adapter(build=gemini, failing=gemini_failing),
 }
 
 OPERATIONS = ("generate_itinerary", "modify_itinerary", "health_check", "get_model_metadata")
@@ -156,3 +211,71 @@ def test_tc_163_mock_failure_scenarios_raise_the_shared_error(scenario: MockScen
     with pytest.raises(expected) as raised:
         asyncio.run(provider.generate_itinerary(sample_request()))
     assert raised.value.failure_reason == expected.failure_reason
+
+
+# ---------- Gemini (IMP-301): TC-003, TC-004, TC-005, and the manual TC-029 ----------
+
+
+def test_tc_003_gemini_answers_through_the_interface_with_a_provider_result() -> None:
+    provider: ModelProvider = gemini()
+    result = asyncio.run(provider.generate_itinerary(sample_request()))
+    assert isinstance(result, ProviderResult)
+    assert result.output == ItineraryOutput.model_validate(SAMPLE_OUTPUT)
+    assert result.finish_reason == "completed"
+    assert result.provider_request_id == "sample-interaction"
+
+
+def test_tc_004_gemini_usage_is_mapped() -> None:
+    usage = asyncio.run(gemini().generate_itinerary(sample_request())).usage
+    assert usage.model_dump() == {
+        "input_tokens": 120,
+        "output_tokens": 40,
+        "thinking_tokens": 10,
+        "total_tokens": 170,
+    }
+
+
+def test_tc_004_gemini_usage_stays_null_when_absent() -> None:
+    answer = httpx.Response(200, json=interaction(json.dumps(SAMPLE_OUTPUT), usage=None))
+    usage = asyncio.run(gemini(answer).generate_itinerary(sample_request())).usage
+    assert set(usage.model_dump().values()) == {None}
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        (httpx.ReadTimeout("slow"), ProviderTimeout),
+        (vendor_error(504, "deadline_exceeded"), ProviderTimeout),
+        (vendor_error(429, "rate_limit_exceeded"), ProviderRateLimited),
+        (vendor_error(429, "too_many_requests"), ProviderRateLimited),
+        (vendor_error(429, "quota_exceeded"), ProviderQuotaExhausted),
+        (vendor_error(402, "payment_required"), ProviderQuotaExhausted),
+        (vendor_error(500, "api_error"), ProviderUnavailable),
+        (vendor_error(503, "service_unavailable"), ProviderUnavailable),
+        (httpx.ConnectError("down"), ProviderUnavailable),
+        (vendor_error(401, "authentication"), ProviderAuthError),
+        (vendor_error(403, "permission_denied"), ProviderAuthError),
+        (vendor_error(400, "invalid_request"), ProviderBadRequest),
+        (vendor_error(404, "model_not_found"), ProviderBadRequest),
+        (vendor_error(400, "safety"), ProviderInvalidOutput),
+    ],
+    ids=lambda value: getattr(value, "__name__", None),
+)
+def test_tc_005_gemini_failures_map_to_the_shared_types(
+    answer: httpx.Response | Exception, expected: type[ProviderError]
+) -> None:
+    with pytest.raises(expected) as raised:
+        asyncio.run(gemini(answer).generate_itinerary(sample_request()))
+    assert "vendor text" not in str(raised.value)
+    assert raised.value.__cause__ is None
+
+
+@pytest.mark.live
+def test_tc_029_gemini_live_smoke() -> None:
+    """Manual, key holder only: make live-smoke. Never run by make test or CI (-m "not live")."""
+    settings = get_settings()
+    if not settings.gemini_api_key.get_secret_value() or not settings.gemini_model_id:
+        pytest.skip("GEMINI_API_KEY and GEMINI_MODEL_ID are needed for the live smoke")
+    result = asyncio.run(GeminiProvider(settings).generate_itinerary(sample_request()))
+    assert result.output.days
+    assert result.finish_reason == "completed"
