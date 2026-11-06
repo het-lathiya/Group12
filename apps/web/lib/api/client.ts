@@ -15,6 +15,10 @@ export type ErrorCode = components["schemas"]["ErrorCode"];
 export type ErrorDetail = components["schemas"]["ErrorDetail"];
 type ErrorEnvelope = components["schemas"]["ErrorEnvelope"];
 
+/** What the page says when a request got no answer at all. */
+export const OFFLINE_MESSAGE =
+  "The server could not be reached. Check your connection and try again.";
+
 /** A non-2xx answer, parsed from the §6.3 error envelope. */
 export class ApiError extends Error {
   constructor(

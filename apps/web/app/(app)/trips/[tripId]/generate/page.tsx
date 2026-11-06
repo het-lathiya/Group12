@@ -5,26 +5,26 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState } from "react";
 
 import { GenerationProgress } from "@/components/generation/GenerationProgress";
+import { PrivacyNotice } from "@/components/generation/PrivacyNotice";
 import {
   ErrorState,
   type ErrorStateError,
 } from "@/components/states/ErrorState";
 import { Button } from "@/components/ui/button";
-import { ApiError } from "@/lib/api/client";
-import { useStartGeneration } from "@/lib/api/queries";
+import { ApiError, OFFLINE_MESSAGE } from "@/lib/api/client";
+import { useProfile, useStartGeneration } from "@/lib/api/queries";
 
 type StartError = { error: ErrorStateError; reload: boolean };
 
-const OFFLINE: ErrorStateError = {
-  message:
-    "The server could not be reached. Check your connection and try again.",
-};
+const OFFLINE: ErrorStateError = { message: OFFLINE_MESSAGE };
 
 /**
  * /trips/[tripId]/generate (§7.5.6; FR-024, FR-025): starts one generation (API-22, mode `ai`),
  * keeps its id in `?generation=` so a reload resumes polling, and hands it to GenerationProgress.
  * A 409 GENERATION_IN_PROGRESS names the running job (IMD-119), which is then polled instead.
- * The privacy notice and "Build without AI" arrive with IMP-305 and IMP-402.
+ * PrivacyNotice replaces the start button until the account has acknowledged it (IMD-24): API-03
+ * says so, and a 422 on field `ai_notice` says so when that read has not answered. Acknowledging
+ * starts the generation. "Build without AI" arrives with IMP-402.
  */
 export default function GeneratePage() {
   const { tripId } = useParams<{ tripId: string }>();
@@ -34,6 +34,8 @@ export default function GeneratePage() {
     searchParams.get("generation"),
   );
   const [startError, setStartError] = useState<StartError | null>(null);
+  const [noticeRefused, setNoticeRefused] = useState(false);
+  const profile = useProfile();
   const start = useStartGeneration(tripId);
   // A second click lands before React re-renders the disabled button; the ref stops it.
   const inFlight = useRef(false);
@@ -54,6 +56,8 @@ export default function GeneratePage() {
     } catch (error) {
       if (!(error instanceof ApiError)) {
         setStartError({ error: OFFLINE, reload: false });
+      } else if (error.details.some((d) => d.field === "ai_notice")) {
+        setNoticeRefused(true);
       } else if (error.code === "GENERATION_IN_PROGRESS") {
         const active = error.details.find(
           (detail) => detail.field === "generation_id",
@@ -69,6 +73,9 @@ export default function GeneratePage() {
   }
 
   const running = start.isPending;
+  const showNotice =
+    generationId === null &&
+    (noticeRefused || profile.data?.ai_notice_ack_at === null);
 
   return (
     <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6">
@@ -81,23 +88,35 @@ export default function GeneratePage() {
         </p>
       </header>
 
-      <section
-        aria-label="Start"
-        className="rounded-xl border bg-card p-4 text-card-foreground shadow-xs sm:p-6"
-      >
-        <Button
-          onClick={() => void generate()}
-          disabled={running || generationId !== null}
-          aria-busy={running}
+      {showNotice ? (
+        <PrivacyNotice
+          onAcknowledge={() => {
+            setNoticeRefused(false);
+            void generate();
+          }}
+        />
+      ) : (
+        <section
+          aria-label="Start"
+          className="rounded-xl border bg-card p-4 text-card-foreground shadow-xs sm:p-6"
         >
-          {running ? (
-            <Loader2 aria-hidden="true" className="motion-safe:animate-spin" />
-          ) : (
-            <Sparkles aria-hidden="true" />
-          )}
-          Generate with AI
-        </Button>
-      </section>
+          <Button
+            onClick={() => void generate()}
+            disabled={running || generationId !== null}
+            aria-busy={running}
+          >
+            {running ? (
+              <Loader2
+                aria-hidden="true"
+                className="motion-safe:animate-spin"
+              />
+            ) : (
+              <Sparkles aria-hidden="true" />
+            )}
+            Generate with AI
+          </Button>
+        </section>
+      )}
 
       {startError && (
         <ErrorState

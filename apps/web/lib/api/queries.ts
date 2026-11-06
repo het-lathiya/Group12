@@ -21,6 +21,7 @@ export type QueryFilters = Readonly<
 >;
 
 export const queryKeys = {
+  me: () => ["me"] as const,
   trips: (filters?: QueryFilters) =>
     filters === undefined
       ? (["trips"] as const)
@@ -44,6 +45,28 @@ export const queryKeys = {
 export const CURRENT_VERSION = "current";
 
 type Schemas = components["schemas"];
+
+/** API-03: the caller's profile, created on the first call. */
+export function useProfile() {
+  return useQuery({
+    queryKey: queryKeys.me(),
+    queryFn: async () => unwrap(await api().GET("/api/v1/me")),
+  });
+}
+
+/** API-04: acknowledge the AI notice (IMD-24; §7.4: set `me`). */
+export function useAcknowledgeAiNotice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () =>
+      unwrap(
+        await api().PATCH("/api/v1/me", {
+          body: { ai_notice_acknowledged: true },
+        }),
+      ),
+    onSuccess: (profile) => queryClient.setQueryData(queryKeys.me(), profile),
+  });
+}
 
 /** API-06: the active destinations, for the wizard's destination list. */
 export function useDestinations() {
