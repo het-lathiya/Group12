@@ -13,7 +13,8 @@ from fixtures.pipeline import Journal, recorded_gemini
 from app.ai.errors import ProviderBadRequest
 from app.ai.providers.mock import MockProvider
 from app.generation import pipeline
-from app.schemas.ai import GenerationRequest, ItineraryOutput
+from app.itinerary.schemas import PlannedDay, PlannedItem
+from app.schemas.ai import GenerationRequest
 
 
 class Spy(MockProvider):
@@ -35,8 +36,7 @@ def test_tc_133_the_recorded_gemini_answer_goes_through_every_step(
     journal.run(recorded_gemini())
 
     assert journal.steps == ["running", "build", "settings", "validating", "save", "complete"]
-    assert journal.saved is not None
-    assert journal.saved == ItineraryOutput.model_validate(journal.saved.model_dump())
+    assert journal.saved
     assert journal.completed["outcome"] == "model"
     assert journal.completed["usage"].input_tokens == 812
     assert journal.completed["adapter_version"] == "gemini-interactions-1"
@@ -77,7 +77,8 @@ def test_pipeline_records_how_many_places_the_input_limit_removed(
     assert seen == [500]
     assert journal.settings["truncated_count"] == 1
     assert journal.saved is not None
-    assert set(journal.saved.place_ids()) <= trimmed.shortlist_ids()
+    saved_ids = {item.place_id for day in journal.saved for item in day.items}
+    assert saved_ids <= trimmed.shortlist_ids()
 
 
 def test_pipeline_ends_with_config_error_when_the_prompt_cannot_fit(
@@ -112,28 +113,18 @@ def test_pipeline_saves_only_what_the_recalculation_hook_returns(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     journal = Journal(monkeypatch, sample_request())
-    replaced = ItineraryOutput.model_validate(
-        {
-            "days": [
-                {
-                    "day_number": 1,
-                    "theme": "From the hook",
-                    "items": [
-                        {
-                            "place_id": str(sample_request().shortlist[0].place_id),
-                            "start_time": "10:00",
-                            "duration_min": 60,
-                            "slot_type": "activity",
-                            "note": "",
-                        }
-                    ],
-                }
-            ],
-            "summary": None,
-            "assumptions": [],
-        }
-    )
-    monkeypatch.setattr(pipeline, "recalculate", lambda output: replaced)
+    replaced = [
+        PlannedDay(
+            1,
+            "From the hook",
+            [PlannedItem(str(sample_request().shortlist[0].place_id), "activity", "10:00", 60, "")],
+        )
+    ]
+
+    async def hook(*args: Any) -> list[PlannedDay]:
+        return replaced
+
+    monkeypatch.setattr(pipeline, "recalculate", hook)
 
     journal.run(MockProvider("ok", app_env="test"))
 

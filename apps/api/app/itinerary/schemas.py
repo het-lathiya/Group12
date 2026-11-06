@@ -6,6 +6,8 @@ Times are HH:MM in the destination time zone; every amount comes from the budget
 marked ai_written carry model text only (FR-035).
 """
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date
 from typing import Annotated, Literal
 from uuid import UUID
@@ -22,6 +24,28 @@ from app.trips.schemas import TripOut
 from app.validation.schemas import Finding, ValidationSummary
 
 GenerationOutcome = Literal["model", "model_repaired", "fallback_rule_based", "failed"]
+
+
+@dataclass(frozen=True)
+class PlannedItem:
+    """One item as step 9 calculated it (IMP-308); ``start_time`` is HH:MM."""
+
+    place_id: str
+    slot_type: str
+    start_time: str
+    duration_min: int
+    note: str
+    travel_from_prev_min: int | None = None
+    travel_from_prev_m: int | None = None
+    travel_mode: str | None = None
+    travel_source: str | None = None
+
+
+@dataclass(frozen=True)
+class PlannedDay:
+    day_number: int
+    theme: str
+    items: Sequence[PlannedItem]
 
 
 class LatestItineraryOut(BaseModel):

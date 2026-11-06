@@ -4,6 +4,7 @@ takes the caller's session and opens no transaction of its own. budget_settings,
 trip_places and ai_generations are only read.
 """
 
+from collections.abc import Sequence
 from datetime import date, datetime, time, timedelta
 from typing import Any
 from uuid import UUID
@@ -22,7 +23,7 @@ from app.db.models import (
     Trip,
     TripPlace,
 )
-from app.schemas.ai import ItineraryOutput
+from app.itinerary.schemas import PlannedDay
 
 
 async def lock_trip(session: AsyncSession, trip_id: UUID, user_id: UUID) -> Trip | None:
@@ -39,21 +40,22 @@ async def replace_plan(
     session: AsyncSession,
     trip_id: UUID,
     start_date: date,
-    output: ItineraryOutput,
+    plan: Sequence[PlannedDay],
     *,
     origin: str,
     generation_id: UUID,
 ) -> list[dict[str, Any]]:
-    """Replace the trip's days, items and warnings with the output; returns the snap-1 days.
+    """Replace the trip's days, items and warnings with the plan; returns the snap-1 days.
 
-    Times and durations are stored as the output gives them; cost and travel columns stay null
-    until the budget engine and routing fill them (IMP-308).
+    Times, durations and travel are stored as step 9 calculated them; the snapshot leaves travel
+    out, because a restore recalculates it (§5.2). Cost columns stay null until the budget engine
+    fills them (IMP-308).
     """
     await session.execute(delete(ItineraryWarning).where(ItineraryWarning.trip_id == trip_id))
     # Items go with their day (foreign key on delete cascade).
     await session.execute(delete(ItineraryDay).where(ItineraryDay.trip_id == trip_id))
     snapshot_days: list[dict[str, Any]] = []
-    for day in sorted(output.days, key=lambda d: d.day_number):
+    for day in sorted(plan, key=lambda d: d.day_number):
         plan_date = start_date + timedelta(days=day.day_number - 1)
         day_row = ItineraryDay(
             trip_id=trip_id,
@@ -82,6 +84,10 @@ async def replace_plan(
                     day_id=day_row.id,
                     place_id=UUID(item.place_id),
                     start_time=time.fromisoformat(item.start_time),
+                    travel_from_prev_min=item.travel_from_prev_min,
+                    travel_from_prev_m=item.travel_from_prev_m,
+                    travel_mode=item.travel_mode,
+                    travel_source=item.travel_source,
                     **values,
                 )
             )

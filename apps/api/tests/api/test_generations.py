@@ -558,6 +558,62 @@ async def test_the_recorded_gemini_answer_runs_the_whole_pipeline(
 
 
 @pytest.mark.asyncio
+async def test_tc_139_saved_times_are_the_recalculation_and_not_the_models(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The model's start times are injected; the saved ones are 09:00 plus durations and travel."""
+    injected = "06:06"
+    real_generate = MockProvider.generate_itinerary
+
+    async def with_odd_times(self: MockProvider, request: GenerationRequest) -> Any:
+        result = await real_generate(self, request)
+        for day in result.output.days:
+            for item in day.items:
+                item.start_time = injected
+        return result
+
+    monkeypatch.setattr(MockProvider, "generate_itinerary", with_odd_times)
+    use_provider(api_app, "ok")
+    queued = (await start(api_client, auth_user, trip)).json()
+
+    done = await poll(api_client, auth_user, queued["id"], submitted, sessions)
+
+    assert done["status"] == "completed"
+    rows = await db_session.execute(
+        select(ItineraryItem, Place, ItineraryDay.day_number)
+        .join(Place, Place.id == ItineraryItem.place_id)
+        .join(ItineraryDay, ItineraryDay.id == ItineraryItem.day_id)
+        .where(ItineraryItem.trip_id == uuid.UUID(trip))
+        .order_by(ItineraryDay.day_number, ItineraryItem.position)
+    )
+    clock, day_number, seen = 0, 0, 0
+    for item, place, number in rows:
+        seen += 1
+        assert item.start_time.strftime("%H:%M") != injected
+        assert item.duration_min == place.typical_duration_min
+        if number != day_number:
+            day_number, clock = number, 9 * 60
+            assert item.travel_from_prev_min is None
+        else:
+            assert item.travel_source == "fallback_estimate"  # no routing key in tests
+            assert item.travel_mode == "walking"
+            clock += item.travel_from_prev_min + 15
+        assert item.start_time.hour * 60 + item.start_time.minute == clock
+        clock += item.duration_min
+    assert seen > 0
+    version = await db_session.get(ItineraryVersion, uuid.UUID(done["itinerary_version_id"]))
+    assert version is not None
+    assert "travel_from_prev_min" not in version.snapshot["days"][0]["items"][0]  # §5.2
+
+
+@pytest.mark.asyncio
 async def test_a_second_generation_replaces_the_plan_and_clears_plan_stale(
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,

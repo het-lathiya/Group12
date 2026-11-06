@@ -5,7 +5,7 @@ shortlist (steps 2 to 5) -> input limit -> record
 the settings -> provider.generate_itinerary (steps 6, 7) -> mark_validating -> steps 8 and 9 -> save
 the plan and complete the record in one transaction (step 11). Each status change is its own short
 transaction, and none stays open across the provider call (§5.8). Step 8 is
-``app.validation.output_check`` (IMP-306); step 9 is a hook for the recalculation of IMP-308. Output
+``app.validation.output_check`` (IMP-306); step 9 is ``recalculate`` (IMP-308). Output
 that cannot be saved goes through ``end_invalid_output``, where IMP-402 adds the fallback; repair is
 IMP-502. Trip completeness (step 1) is checked by API-22 before the row exists.
 
@@ -25,11 +25,15 @@ from app.ai import limits
 from app.ai.errors import InvalidOutputKind, ProviderError, ProviderInvalidOutput
 from app.ai.providers.base import ModelProvider
 from app.core.config import get_settings
-from app.generation import repository, request_builder
+from app.generation import repository, request_builder, schedule
 from app.generation.records import TokenUsage
 from app.itinerary import service as itinerary_service
+from app.itinerary.schemas import PlannedDay
 from app.places import service as places_service
-from app.schemas.ai import ItineraryOutput
+from app.routing.cache import RouteCacheRepository
+from app.routing.client import get_client
+from app.routing.service import RoutingService
+from app.schemas.ai import GenerationRequest, ItineraryOutput
 from app.validation import output_check
 
 logger = logging.getLogger(__name__)
@@ -66,13 +70,24 @@ async def end_invalid_output(
         )
 
 
-def recalculate(output: ItineraryOutput) -> ItineraryOutput:
-    """Step 9, the hook of IMP-308. Only what this returns is saved.
+def routing_for(session: AsyncSession) -> schedule.Routing:
+    return RoutingService(RouteCacheRepository(session), get_client())
 
-    shortcut: times pass through as the model gave them and costs stay null; IMP-308 recalculates
-    them here.
+
+async def recalculate(
+    session: AsyncSession, output: ItineraryOutput, request: GenerationRequest
+) -> list[PlannedDay]:
+    """Step 9. Only what this returns is saved, so no saved time comes from a model field.
+
+    shortcut: costs stay null; the budget engine of IMP-308 fills them here.
     """
-    return output
+    return await schedule.recalculate(
+        output.days,
+        {str(place.place_id): place for place in request.shortlist},
+        routing_for(session),
+        request.preferences.pace,
+        mode=request.preferences.transport_pref,
+    )
 
 
 async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) -> None:
@@ -168,7 +183,8 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
         )
         return
 
-    plan = recalculate(checked.output)
+    async with sessions() as session:
+        plan = await recalculate(session, checked.output, request)
     metadata = provider.get_model_metadata()
     async with sessions() as session:
         await itinerary_service.save_generated_plan(
