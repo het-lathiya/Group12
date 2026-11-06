@@ -91,6 +91,9 @@ function fakeApi(start: () => Response, statuses: Generation[]) {
   let served = 0;
   vi.stubGlobal("fetch", async (request: Request) => {
     const path = new URL(request.url).pathname;
+    if (request.method === "GET" && path === "/api/v1/me") {
+      return json({ ai_notice_ack_at: "2026-11-01T10:00:00Z" });
+    }
     if (
       request.method === "POST" &&
       path === `/api/v1/trips/${TRIP_ID}/generations`
