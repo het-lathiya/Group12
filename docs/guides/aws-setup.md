@@ -40,6 +40,12 @@ cp infra/aws/env.sh.example infra/aws/env.sh
 
 Replace every `<placeholder>`. The file is untracked and holds no secret. Leave the blank values at the end alone: you set the two image tags in steps 7 and 9, and `06_services.sh` records the rest.
 
+Then add the JWKS URL, which the API template needs. `06_services.sh` stops with `needs SUPABASE_JWKS_URL` without it.
+
+```sh
+echo 'export SUPABASE_JWKS_URL="$STAGING_SUPABASE_URL/auth/v1/.well-known/jwks.json"' >> infra/aws/env.sh
+```
+
 ## 3. Budget
 
 ```sh
@@ -73,11 +79,11 @@ infra/aws/03_ecr.sh
 infra/aws/04_ssm.sh
 ```
 
-`04_ssm.sh` asks at hidden prompts for the RDS master password, `GEMINI_API_KEY`, `ORS_API_KEY` and `SUPABASE_JWT_SECRET`. It builds `DATABASE_URL` itself, in the form `postgresql+psycopg://<user>:<password>@<rds-endpoint>:5432/travel_staging?sslmode=require`, with the password percent-encoded. Get the Gemini key from Nidhi and the OpenRouteService key from Junaid through the password manager. An empty value stops the script, and all four must exist before step 8: a task cannot start with a missing parameter.
+`04_ssm.sh` asks at hidden prompts for the RDS master password, `GEMINI_API_KEY` and `ORS_API_KEY`. It builds `DATABASE_URL` itself, in the form `postgresql+psycopg://<user>:<password>@<rds-endpoint>:5432/travel_staging?sslmode=require`, with the password percent-encoded. Get the Gemini key from Nidhi and the OpenRouteService key from Junaid through the password manager. An empty value stops the script, and all three parameters must exist before step 8: a task cannot start with a missing parameter.
 
 To replace values later, run `infra/aws/04_ssm.sh --overwrite`, then redeploy, because tasks read parameters when they start.
 
-**OD-06 (token mode).** The template uses HS256 with `SUPABASE_JWT_SECRET`, because OD-06 is not decided. If the hosted project signs tokens with asymmetric keys, the shared secret will not verify them and sign-in will fail. In that case open a pull request that sets `SUPABASE_JWKS_URL` in `api.staging.json.tmpl` to `${STAGING_SUPABASE_URL}/auth/v1/.well-known/jwks.json` and removes the `SUPABASE_JWT_SECRET` entry.
+**Token mode.** The hosted project uses JWT Signing Keys, so the API verifies tokens through `SUPABASE_JWKS_URL` (JWKS mode, IMP-218). **Do not create `/group12/staging/SUPABASE_JWT_SECRET`:** the legacy HS256 secret is being revoked and is not used anywhere. `04_ssm.sh` asks for it only if the template references it, and the template does not.
 
 ## 6. Roles
 
@@ -94,13 +100,14 @@ The deploy role's actions, each checked against the AWS CLI reference and the Se
 | Registry login | `ecr:GetAuthorizationToken` | `*` (the action has no resource level) |
 | Push and pull | `ecr:BatchCheckLayerAvailability`, `ecr:BatchGetImage`, `ecr:CompleteLayerUpload`, `ecr:GetDownloadUrlForLayer`, `ecr:InitiateLayerUpload`, `ecr:PutImage`, `ecr:UploadLayerPart` | The two repositories |
 | Services | `ecs:DescribeExpressGatewayService`, `ecs:UpdateExpressGatewayService`, `ecs:DescribeServices` | `service/default/group12-*` |
+| Express Mode gateway | `ecs:CreateGateway`, `ecs:AssociateGatewayWithCluster`, `ecs:TagResource` | `gateway/*` and `service/default/group12-*` |
 | Task definitions | `ecs:DescribeTaskDefinition`, `ecs:RegisterTaskDefinition` | `*` |
 | Release task | `ecs:RunTask` | `task-definition/group12-api-*-release:*` |
 | Release task status | `ecs:DescribeTasks` | `task/default/*` |
 | Passing the ECS roles | `iam:PassRole`, to `ecs-tasks.amazonaws.com` and `ecs.amazonaws.com` only | The two ECS roles |
 | Log output | `logs:GetLogEvents` | `/ecs/group12-*` log groups |
 
-These are exactly the permissions of A1 §4.4. The Service Authorization Reference also lists `ecs:AssociateGatewayWithCluster` and `ecs:CreateGateway` as dependent actions of `UpdateExpressGatewayService`. They are not granted, because A1 §4.4 does not name them. If the first deploy of IMP-218 stops with an access error on one of them, report it for a decision; do not widen the role by hand.
+These are the permissions of A1 §4.4, plus the Express Mode gateway row: AWS lists those actions as dependent actions of `UpdateExpressGatewayService` (PD-IMP-217-1, IMP-218). If a deploy stops with an access error on any other action, report it for a decision; do not widen the role by hand.
 
 **Record for TC-436:**
 
@@ -112,14 +119,15 @@ The output must show `aud` equal to `sts.amazonaws.com` and exactly these three 
 
 ## 7. First API image, by hand
 
-IMP-218 automates this. For now, build from the current `main` with the IMP-112 Dockerfile. `/health` reports the version `dev` until the IMP-218 image bakes in the commit.
+The deploy workflow automates this after the set-up. The first image is built by hand from the repository root, and `/health` then reports that tag as its version.
 
 ```sh
 . infra/aws/env.sh
 registry="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 tag="$(git rev-parse --short origin/main)"
 aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
-docker build --platform linux/amd64 -t "$registry/$ECR_API_REPO:$tag" apps/api
+docker build --platform linux/amd64 -f apps/api/Dockerfile --build-arg BUILD_VERSION="$tag" \
+  -t "$registry/$ECR_API_REPO:$tag" .
 docker push "$registry/$ECR_API_REPO:$tag"
 echo "$tag"
 ```
@@ -148,42 +156,20 @@ curl -sS -o /dev/null -w '%{http_code}\n' "$STAGING_API_URL/health"
 
 ## 9. First web image, by hand
 
-The web image needs the API URL at build time, and the real Dockerfile arrives with IMP-218. Until then, use a temporary one **outside the repository**. `git archive` copies tracked files only, so no `.env.local` can reach the image.
+The web image needs the API URL at build time. `apps/web/.dockerignore` keeps env files out of the build context.
 
 ```sh
 . infra/aws/env.sh
 registry="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 tag="$(git rev-parse --short origin/main)"
-build_dir="$(mktemp -d)"
-git archive origin/main apps/web | tar -x -C "$build_dir"
-cat > "$build_dir/Dockerfile" <<'DOCKERFILE'
-FROM node:22-slim AS build
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
-COPY . .
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ARG NEXT_PUBLIC_API_BASE_URL
-ARG NEXT_PUBLIC_FEATURES_DISABLED
-RUN npm run build
-
-FROM node:22-slim
-WORKDIR /app
-ENV NODE_ENV=production
-COPY --from=build /app ./
-USER node
-EXPOSE 3000
-CMD ["sh", "-c", "exec node_modules/.bin/next start -H 0.0.0.0 -p ${PORT:-3000}"]
-DOCKERFILE
-docker build --platform linux/amd64 -f "$build_dir/Dockerfile" \
+docker build --platform linux/amd64 \
   --build-arg NEXT_PUBLIC_SUPABASE_URL="$STAGING_SUPABASE_URL" \
   --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$STAGING_SUPABASE_ANON_KEY" \
   --build-arg NEXT_PUBLIC_API_BASE_URL="$STAGING_API_URL/api/v1" \
   --build-arg NEXT_PUBLIC_FEATURES_DISABLED="$STAGING_FEATURES_DISABLED" \
-  -t "$registry/$ECR_WEB_REPO:$tag" "$build_dir/apps/web"
+  --build-arg BUILD_VERSION="$tag" \
+  -t "$registry/$ECR_WEB_REPO:$tag" apps/web
 docker push "$registry/$ECR_WEB_REPO:$tag"
-rm -rf "$build_dir"
 echo "$tag"
 ```
 
@@ -268,7 +254,7 @@ aws ecs describe-task-definition --task-definition "$td" \
   --query 'taskDefinition.containerDefinitions[0].{plain:environment[].name,secrets:secrets}'
 ```
 
-`DATABASE_URL`, `GEMINI_API_KEY`, `ORS_API_KEY` and `SUPABASE_JWT_SECRET` must appear under `secrets` only.
+`DATABASE_URL`, `GEMINI_API_KEY` and `ORS_API_KEY` must appear under `secrets` only, and `SUPABASE_JWT_SECRET` must not appear at all.
 
 **NFR-005, first-request time after a deploy.** Express Mode keeps one task running, so there is no sleep (A1 §9.2). Fill in the table in section 7 of [deployment.md](deployment.md).
 
@@ -331,7 +317,7 @@ aws rds delete-db-instance --db-instance-identifier "$RDS_INSTANCE_ID" \
 
 ```sh
 aws ssm delete-parameters --names /group12/staging/DATABASE_URL /group12/staging/GEMINI_API_KEY \
-  /group12/staging/ORS_API_KEY /group12/staging/SUPABASE_JWT_SECRET
+  /group12/staging/ORS_API_KEY
 aws ecr delete-repository --repository-name "$ECR_API_REPO" --force
 aws ecr delete-repository --repository-name "$ECR_WEB_REPO" --force
 aws logs delete-log-group --log-group-name "$API_LOG_GROUP"

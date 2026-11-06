@@ -65,7 +65,8 @@ else
     --query OpenIDConnectProviderArn --output text
 fi
 
-# Deploy role: exactly the three subjects of A1 §4.4 (TC-436).
+# Deploy role: exactly the three subjects of A1 §4.4 (TC-436). Its policy adds to A1 §4.4 the dependent
+# actions of UpdateExpressGatewayService (PD-IMP-217-1, IMP-218).
 ensure_role group12-github-deploy "$(cat <<JSON
 {
   "Version": "2012-10-17",
@@ -100,6 +101,10 @@ aws iam put-role-policy --role-name group12-github-deploy --policy-name group12-
     {"Sid": "EcsServices", "Effect": "Allow",
      "Action": ["ecs:DescribeExpressGatewayService", "ecs:UpdateExpressGatewayService", "ecs:DescribeServices"],
      "Resource": "arn:aws:ecs:$region:$account:service/$ECS_CLUSTER/group12-*"},
+    {"Sid": "EcsExpressGateway", "Effect": "Allow",
+     "Action": ["ecs:CreateGateway", "ecs:AssociateGatewayWithCluster", "ecs:TagResource"],
+     "Resource": ["arn:aws:ecs:$region:$account:gateway/*",
+                  "arn:aws:ecs:$region:$account:service/$ECS_CLUSTER/group12-*"]},
     {"Sid": "EcsTaskDefinitions", "Effect": "Allow",
      "Action": ["ecs:DescribeTaskDefinition", "ecs:RegisterTaskDefinition"], "Resource": "*"},
     {"Sid": "EcsReleaseTask", "Effect": "Allow", "Action": "ecs:RunTask",
