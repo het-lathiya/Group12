@@ -15,6 +15,8 @@ from pathlib import Path
 import pytest
 from fixtures.ai import sample_request, sample_request_data
 
+from app.ai import limits
+from app.ai.errors import ProviderBadRequest
 from app.ai.prompts import registry
 from app.schemas.ai import GenerationRequest
 
@@ -282,3 +284,88 @@ def test_prompt_new_version_directory_is_found_without_code_changes(
 
     assert registry.load("itinerary_generate", "v0-draft").version == "v0-draft"
     assert registry.load("itinerary_generate", "v1").version == "v1"
+
+
+# ---------- TC-027, TC-154, TC-155: prompt size (§8.6, FR-039) ----------
+
+
+def big_request(places: int = 200, **changes: object) -> GenerationRequest:
+    base = sample_request_data()
+    template = base["shortlist"][1]  # shopping: never needed for a meal slot
+    filler = [
+        {**template, "place_id": f"00000000-0000-4000-9000-{n:012d}", "name": f"Place {n}"}
+        for n in range(places)
+    ]
+    base["shortlist"] = [*base["shortlist"], *filler]
+    return GenerationRequest.model_validate({**base, **changes})
+
+
+def test_prompt_limits_tc_027_the_limit_is_enforced_and_the_count_reported() -> None:
+    request = big_request()
+    before = limits.estimate_tokens(request)
+    limit = before // 2
+
+    trimmed, removed = limits.enforce_input_limit(request, limit)
+
+    assert limits.estimate_tokens(trimmed) <= limit
+    assert removed == len(request.shortlist) - len(trimmed.shortlist) > 0
+    assert len(request.shortlist) == 203  # the input is left as it was
+
+
+def test_prompt_limits_nothing_changes_under_the_limit_or_without_one() -> None:
+    request = big_request(places=1)
+    assert limits.enforce_input_limit(request, None) == (request, 0)
+    assert limits.enforce_input_limit(request, 1_000_000) == (request, 0)
+
+
+def test_prompt_limits_tc_154_a_200_place_shortlist_is_cut_by_rank() -> None:
+    request = big_request()
+
+    trimmed, removed = limits.enforce_input_limit(request, limits.estimate_tokens(request) // 2)
+
+    kept = [place.place_id for place in trimmed.shortlist]
+    assert kept == [place.place_id for place in request.shortlist][: len(kept)]
+    assert removed == 203 - len(kept)
+
+
+def test_prompt_limits_tc_155_must_visit_locked_and_food_places_stay() -> None:
+    data = sample_request_data()
+    last_place = "00000000-0000-4000-9000-000000000199"
+    locked_place = "00000000-0000-4000-9000-000000000198"
+    request = big_request(
+        must_visit_place_ids=[last_place],
+        locked_items=[
+            {"day_number": 1, "place_id": locked_place, "start_time": "10:00", "duration_min": 60}
+        ],
+        day_hints=[{"day_number": 1, "place_ids": [last_place, data["shortlist"][1]["place_id"]]}],
+    )
+
+    trimmed, _ = limits.enforce_input_limit(request, limits.estimate_tokens(request) // 4)
+
+    kept = {str(place.place_id) for place in trimmed.shortlist}
+    assert {last_place, locked_place} <= kept
+    assert sum(place.category == "food" for place in trimmed.shortlist) == 1
+    hinted = {str(i) for hint in trimmed.day_hints for i in hint.place_ids}
+    assert hinted <= kept
+
+
+def test_prompt_limits_food_for_every_meal_slot_stays() -> None:
+    base = sample_request_data()
+    food = [
+        {**base["shortlist"][2], "place_id": f"00000000-0000-4000-a000-{n:012d}"} for n in range(50)
+    ]
+    request = GenerationRequest.model_validate(
+        {**base, "must_visit_place_ids": [], "shortlist": food}
+    )
+
+    trimmed, _ = limits.enforce_input_limit(request, limits.estimate_tokens(request) // 3)
+
+    assert len(trimmed.shortlist) >= 2  # 2 days x 1 meal slot
+    assert [p.place_id for p in trimmed.shortlist] == [
+        p.place_id for p in request.shortlist[: len(trimmed.shortlist)]
+    ]
+
+
+def test_prompt_limits_a_limit_no_cut_can_reach_is_a_configuration_error() -> None:
+    with pytest.raises(ProviderBadRequest, match="AI_MAX_INPUT_TOKENS"):
+        limits.enforce_input_limit(big_request(), 10)

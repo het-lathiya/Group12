@@ -526,6 +526,38 @@ async def test_another_users_start_is_not_found_before_the_in_progress_conflict(
 
 
 @pytest.mark.asyncio
+async def test_tc_121_the_request_is_built_from_the_stored_trip_with_its_notes_quoted(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    trip: str,
+) -> None:
+    from app.generation import request_builder
+
+    build = {
+        "trip_id": uuid.UUID(trip),
+        "user_id": auth_user.user_id,
+        "prompt_template_id": "itinerary_generate",
+        "prompt_version": "v1",
+    }
+    first = await request_builder.build(db_session, **build)
+    second = await request_builder.build(db_session, **build)
+
+    assert GenerationRequest.model_validate(first.model_dump(mode="json")) == first
+    assert first.preferences.notes_quoted == NOTES
+    assert (
+        NOTES
+        not in first.model_copy(
+            update={"preferences": first.preferences.model_copy(update={"notes_quoted": None})}
+        ).model_dump_json()
+    )
+    assert request_builder.generation_request_hash(
+        first
+    ) == request_builder.generation_request_hash(second)
+
+
+@pytest.mark.asyncio
 async def test_the_request_holds_only_trip_data_and_shortlisted_places(
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
