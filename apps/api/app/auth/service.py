@@ -1,12 +1,14 @@
-"""Profile service (MOD-B02): ensures and reads the caller's profile (§3.4 rule 4, IMD-14)."""
+"""Profile service (MOD-B02): ensures, reads and updates the caller's profile (§3.4 rule 4, IMD-14;
+the AI notice flag, IMD-24)."""
 
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import repository
-from app.auth.schemas import Profile
-from app.core.errors import NotFound, Unauthenticated
+from app.auth.schemas import Profile, ProfilePatch
+from app.core.errors import NotFound, Unauthenticated, ValidationFailed
+from app.schemas.common import ErrorDetail
 
 
 async def get_or_create_profile(
@@ -39,3 +41,25 @@ async def get_profile(session: AsyncSession, user_id: UUID, email: str | None) -
         default_preferences=row.default_preferences,
         ai_notice_ack_at=row.ai_notice_ack_at,
     )
+
+
+async def update_profile(
+    session: AsyncSession, user_id: UUID, email: str | None, patch: ProfilePatch
+) -> Profile:
+    """API-04, minimal form (IMP-305): only ai_notice_acknowledged true; IMP-601 adds the rest."""
+    details = [
+        ErrorDetail(field=name, message="This field cannot be changed yet.")
+        for name in sorted(patch.model_fields_set - {"ai_notice_acknowledged"})
+    ]
+    if patch.ai_notice_acknowledged is not True:
+        details.append(ErrorDetail(field="ai_notice_acknowledged", message="It must be true."))
+    if details:
+        raise ValidationFailed(details=details)
+    await repository.set_ai_notice_ack(session, user_id)
+    return await get_profile(session, user_id, email)
+
+
+async def ai_notice_acknowledged(session: AsyncSession, user_id: UUID) -> bool:
+    """Whether the caller has acknowledged the AI-provider notice (IMD-24, NFR-021)."""
+    row = await repository.get(session, user_id)
+    return row is not None and row.ai_notice_ack_at is not None

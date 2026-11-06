@@ -86,6 +86,7 @@ async def generate(
     trip_id: str,
 ) -> dict[str, Any]:
     """Start API-22, run the captured job, and return the completed generation (API-23)."""
+    await client.patch("/api/v1/me", json={"ai_notice_acknowledged": True}, headers=user.headers)
     started = await client.post(
         f"/api/v1/trips/{trip_id}/generations", json={"mode": "ai"}, headers=user.headers
     )

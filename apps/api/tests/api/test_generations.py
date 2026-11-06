@@ -1,5 +1,5 @@
-"""API-22 and API-23, the walking-skeleton generation job (§6.4, §6.6.4, §8.2; IMP-210: TC-012,
-TC-115, TC-151, TC-162; FR-024, FR-025, FR-038, NFR-008).
+"""API-22 and API-23, the generation job (§6.4, §6.6.4, §8.2; IMP-210: TC-012, TC-151, TC-162;
+IMP-305: TC-114 to TC-119, TC-309; FR-024, FR-025, FR-038, NFR-008, IMD-24).
 
 MOCK provider only; the socket guard of tests/conftest.py blocks every provider host. API-22's
 job is captured instead of started, and each test runs it with ``jobs.run`` on its rolled-back
@@ -37,7 +37,7 @@ from app.db.models import (
     Place,
     Trip,
 )
-from app.generation import jobs, records, repository
+from app.generation import jobs, pipeline, records, repository
 from app.places import seed
 from app.schemas.ai import GenerationRequest, ItineraryOutput, ProviderResult
 
@@ -93,9 +93,23 @@ def use_provider(app: FastAPI, scenario: MockScenario) -> None:
     app.dependency_overrides[get_model_provider] = lambda: MockProvider(scenario, app_env="test")
 
 
+async def acknowledge_notice(client: httpx.AsyncClient, user: AuthUser) -> None:
+    response = await client.patch(
+        "/api/v1/me", json={"ai_notice_acknowledged": True}, headers=user.headers
+    )
+    assert response.status_code == 200, response.text
+
+
 async def create_trip(
-    client: httpx.AsyncClient, user: AuthUser, destination: Destination, *, prefs: bool = True
+    client: httpx.AsyncClient,
+    user: AuthUser,
+    destination: Destination,
+    *,
+    prefs: bool = True,
+    acknowledge: bool = True,
 ) -> str:
+    if acknowledge:
+        await acknowledge_notice(client, user)
     response = await client.post(
         "/api/v1/trips",
         json={
@@ -259,11 +273,42 @@ async def test_tc_012_tc_151_the_record_names_provider_model_template_and_mappin
     assert row.embedding_model_id is None
 
 
-# FR-024: idempotency and the in-progress conflict
+# TC-114, IMD-24: the AI notice comes first
 
 
 @pytest.mark.asyncio
-async def test_same_request_while_active_returns_the_same_generation(
+async def test_tc_114_mode_ai_needs_the_ai_notice_then_answers_202(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    submitted: list[Job],
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, sampleton, acknowledge=False)
+
+    refused = await start(api_client, auth_user, trip_id)
+
+    assert refused.status_code == 422
+    error = refused.json()["error"]
+    assert error["code"] == "VALIDATION_ERROR"
+    assert [detail["field"] for detail in error["details"]] == ["ai_notice"]
+    assert submitted == []
+    rows = select(func.count()).select_from(AiGeneration)
+    assert await db_session.scalar(rows.where(AiGeneration.trip_id == uuid.UUID(trip_id))) == 0
+
+    await acknowledge_notice(api_client, auth_user)
+    started = await start(api_client, auth_user, trip_id)
+
+    assert started.status_code == 202, started.text
+    assert uuid.UUID(started.json()["id"])
+    assert len(submitted) == 1
+
+
+# TC-116, G-01: idempotency and the in-progress conflict
+
+
+@pytest.mark.asyncio
+async def test_tc_116_same_request_while_active_returns_the_same_generation(
     api_client: httpx.AsyncClient, auth_user: AuthUser, trip: str, submitted: list[Job]
 ) -> None:
     first = await start(api_client, auth_user, trip)
@@ -353,11 +398,65 @@ async def test_a_trip_with_an_itinerary_is_refused(
     assert response.json()["error"]["code"] == "CONFLICT"
 
 
+# TC-117: polling shows each status while the job runs
+
+
+class WatchingProvider(MockProvider):
+    """Reads API-23 during the provider call, when the job is running."""
+
+    def __init__(self, read: Callable[[], Any]) -> None:
+        super().__init__("ok", app_env="test")
+        self.read = read
+        self.seen: list[str] = []
+
+    async def generate_itinerary(
+        self, request: GenerationRequest
+    ) -> ProviderResult[ItineraryOutput]:
+        self.seen.append(await self.read())
+        return await super().generate_itinerary(request)
+
+
+@pytest.mark.asyncio
+async def test_tc_117_polling_returns_the_status_while_the_job_runs(
+    api_client: httpx.AsyncClient,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = await start(api_client, auth_user, trip)
+    generation_id = started.json()["id"]
+    assert started.json()["status"] == "queued"
+
+    async def status() -> str:
+        url = f"/api/v1/generations/{generation_id}"
+        response = await api_client.get(url, headers=auth_user.headers)
+        assert response.status_code == 200, response.text
+        value: str = response.json()["status"]
+        return value
+
+    provider = WatchingProvider(status)
+    seen_at_save: list[str] = []
+    real_save = pipeline.itinerary_service.save_generated_plan
+
+    async def watched_save(*args: Any, **kwargs: Any) -> Any:
+        seen_at_save.append(await status())
+        return await real_save(*args, **kwargs)
+
+    monkeypatch.setattr(pipeline.itinerary_service, "save_generated_plan", watched_save)
+    await jobs.run(uuid.UUID(generation_id), provider, sessions)
+
+    assert provider.seen == ["running"]
+    assert seen_at_save == ["validating"]
+    assert await status() == "completed"
+
+
 # NFR-008: a failing job leaves the previous plan as it was
 
 
 @pytest.mark.asyncio
-async def test_a_provider_timeout_fails_and_leaves_the_previous_plan_untouched(
+async def test_tc_118_a_failed_job_gives_a_reason_and_leaves_the_previous_plan_untouched(
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
     auth_user: AuthUser,
@@ -382,6 +481,7 @@ async def test_a_provider_timeout_fails_and_leaves_the_previous_plan_untouched(
     # Interim until IMP-403 routes a timeout to the rule-based fallback.
     assert (failed["status"], failed["outcome"]) == ("failed", "failed")
     assert failed["failure_reason"] == "provider_timeout"
+    assert failed["failure_message"] == "The AI service did not return a usable plan."
     assert failed["next_action"] == "retry_rule_based"
     assert failed["itinerary_version_id"] is None
     assert await plan_rows(db_session, trip) == before
@@ -430,7 +530,7 @@ class SlowProvider(MockProvider):
 
 
 @pytest.mark.asyncio
-async def test_the_job_timeout_fails_with_internal_and_says_timed_out(
+async def test_tc_119_the_job_timeout_fails_with_internal_and_says_timed_out(
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
     auth_user: AuthUser,
@@ -455,6 +555,94 @@ async def test_the_job_timeout_fails_with_internal_and_says_timed_out(
     assert (failed["status"], failed["failure_reason"]) == ("failed", "internal")
     assert (failed["failure_message"], failed["next_action"]) == ("Generation timed out.", "retry")
     assert await plan_rows(db_session, trip) == ([], 0)
+
+
+@pytest.mark.asyncio
+async def test_a_timeout_after_the_plan_commit_leaves_the_completed_row(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    generation_id = (await start(api_client, auth_user, trip)).json()["id"]
+    real_run = pipeline.run
+
+    async def commit_then_time_out(*args: Any) -> None:
+        await real_run(*args)
+        raise TimeoutError
+
+    monkeypatch.setattr(pipeline, "run", commit_then_time_out)
+    with caplog.at_level(logging.INFO):
+        await jobs.run(*submitted.pop(0), sessions)  # IllegalTransitionError escaped here before
+
+    done = await poll(api_client, auth_user, generation_id, submitted, sessions)
+    assert (done["status"], done["outcome"]) == ("completed", "model")
+    assert done["failure_reason"] is None
+    assert done["itinerary_version_id"] is not None
+    assert (await plan_rows(db_session, trip))[1] > 0
+    assert "timed out" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_a_job_failure_after_the_plan_commit_leaves_the_completed_row(
+    api_client: httpx.AsyncClient,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_id = (await start(api_client, auth_user, trip)).json()["id"]
+    real_run = pipeline.run
+
+    async def commit_then_fail(*args: Any) -> None:
+        await real_run(*args)
+        raise RuntimeError("after the commit")
+
+    monkeypatch.setattr(pipeline, "run", commit_then_fail)
+    await jobs.run(*submitted.pop(0), sessions)
+
+    done = await poll(api_client, auth_user, generation_id, submitted, sessions)
+    assert done["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_tc_309_the_reaper_closes_a_job_left_running_and_keeps_the_plan(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    await poll(
+        api_client,
+        auth_user,
+        (await start(api_client, auth_user, trip)).json()["id"],
+        submitted,
+        sessions,
+    )
+    before = await plan_rows(db_session, trip)
+    generation_id = await queued_row(db_session, auth_user, trip)
+    await repository.mark_running(db_session, generation_id)
+    await db_session.execute(
+        update(AiGeneration)
+        .where(AiGeneration.id == generation_id)
+        .values(created_at=func.now() - jobs.STALE_AFTER - timedelta(seconds=1))
+    )
+
+    count = await repository.fail_stale(
+        db_session, jobs.STALE_AFTER, validation_summary=jobs.TIMED_OUT
+    )
+
+    assert count == 1
+    reaped = await poll(api_client, auth_user, str(generation_id), submitted, sessions)
+    assert (reaped["status"], reaped["failure_reason"]) == ("failed", "internal")
+    assert await plan_rows(db_session, trip) == before
 
 
 @pytest.mark.asyncio

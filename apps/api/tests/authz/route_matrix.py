@@ -93,6 +93,9 @@ def preferences_body(owned: Owned) -> dict[str, Any]:
 
 MATRIX: tuple[RouteCase, ...] = (
     RouteCase("API-03", "GET", "/api/v1/me", "scoped"),
+    RouteCase(
+        "API-04", "PATCH", "/api/v1/me", "scoped", body=lambda _: {"ai_notice_acknowledged": True}
+    ),
     RouteCase("API-07", "POST", "/api/v1/trips", "scoped", body=trip_body),
     RouteCase("API-08", "GET", "/api/v1/trips", "scoped", params={"include_archived": "true"}),
     RouteCase("API-10", "GET", "/api/v1/trips/{trip_id}", "foreign"),
