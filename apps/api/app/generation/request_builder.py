@@ -2,22 +2,23 @@
 
 ``build_generation_request`` holds the allow-list: only the fields named here reach the provider.
 Never sent: e-mail, name, user ID, trip title or place descriptions (§8.6). ``build`` reads the
-rows; its shortlist is still the first 40 active places by name until IMP-305 passes the ranked
-one. ``quote_notes`` is the only way notes enter the request.
+rows and takes its shortlist from ``retrieval.ranked_shortlist`` (IMP-305). ``quote_notes`` is the
+only way notes enter the request.
 """
 
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Final
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import redact_text
-from app.generation import records, repository
-from app.places import service as places_service
+from app.db.models import PlaceOpeningHours
+from app.generation import records, repository, retrieval
 from app.places.schemas import PlaceSummary
 from app.schemas.ai import (
     Budget,
@@ -35,13 +36,13 @@ from app.trips import preference_mapping
 from app.trips import service as trips_service
 from app.trips.schemas import PreferencesOut, TripOut
 
-SHORTLIST_SIZE: Final = 40
 DAY_START: Final = "09:00"
 DAY_END: Final = "19:00"
 MEAL_SLOTS: Final = ["lunch"]
 NOTES_MAX: Final = 500
 PHONE_MIN_DIGITS: Final = 9  # a date such as 2027-01-12 has 8 digits and is left alone
 REDACTED: Final = "[redacted]"
+WEEKDAY_NAMES: Final = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")  # ISO weekdays 1 to 7
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _PHONE = re.compile(r"(?<![\w.])\+?\(?\d[\d ().-]{6,}\d(?!\w)")
 
@@ -67,7 +68,22 @@ class RequestSettings:
     scope: Scope = field(default_factory=lambda: Scope(kind="full", day_number=None))
 
 
-def shortlist_place(place: PlaceSummary) -> ShortlistPlace:
+def hours_summary(hours: Iterable[PlaceOpeningHours], weekdays: Sequence[int]) -> str:
+    """The stored hours on the trip's weekdays, for example "Tue 09:00-17:00; Wed closed" (§8.6);
+    empty when none is stored."""
+    rows = list(hours)
+    parts = []
+    for weekday in weekdays:
+        name = WEEKDAY_NAMES[weekday - 1]
+        for row in (r for r in rows if r.weekday == weekday):
+            if row.is_closed:
+                parts.append(f"{name} closed")
+            elif row.open_time is not None and row.close_time is not None:
+                parts.append(f"{name} {row.open_time:%H:%M}-{row.close_time:%H:%M}")
+    return "; ".join(parts)
+
+
+def shortlist_place(place: PlaceSummary, hours: str = "") -> ShortlistPlace:
     """Only the place fields gr-1 needs; description and URLs stay out (§8.6)."""
     return ShortlistPlace(
         place_id=place.id,
@@ -82,8 +98,7 @@ def shortlist_place(place: PlaceSummary) -> ShortlistPlace:
             f"{place.price.max:.2f}" if place.price and place.price.max is not None else None
         ),
         price_label=place.price_label.value,
-        # shortcut: label only, not the trip weekdays' hours; IMP-305 has the hours from retrieval.
-        hours_summary=f"hours {place.hours_label.value}",
+        hours_summary=hours or f"hours {place.hours_label.value}",
         suitability=Suitability(
             step_free=place.suitability.step_free,
             child_friendly=place.suitability.child_friendly,
@@ -162,15 +177,22 @@ async def build(
 ) -> GenerationRequest:
     trip = await trips_service.get_trip(session, user_id, trip_id)
     prefs = await trips_service.get_preferences(session, user_id, trip_id)
-    page = await places_service.search_places(
-        session, trip.destination_id, q=None, categories=[], limit=SHORTLIST_SIZE, offset=0
+    candidates = await retrieval.ranked_shortlist(
+        session, trip, prefs, prefs.must_visit_place_ids, meal_slots_per_day=len(MEAL_SLOTS)
     )
+    dates = (trip.start_date + timedelta(days=offset) for offset in range(trip.num_days))
+    weekdays = list(dict.fromkeys(day.isoweekday() for day in dates))
     return build_generation_request(
         trip,
         prefs,
         prefs.must_visit_place_ids,
         [],
-        [shortlist_place(place) for place in page.items],
+        [
+            shortlist_place(
+                PlaceSummary.from_row(candidate.place), hours_summary(candidate.hours, weekdays)
+            )
+            for candidate in candidates
+        ],
         RequestSettings(
             prompt_template_id=prompt_template_id,
             prompt_version=prompt_version,

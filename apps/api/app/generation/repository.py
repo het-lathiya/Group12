@@ -112,6 +112,15 @@ async def mark_repairing(session: AsyncSession, generation_id: UUID) -> AiGenera
     return await _advance(session, generation_id, "repairing")
 
 
+async def record_settings(
+    session: AsyncSession, generation_id: UUID, settings: Mapping[str, Any]
+) -> None:
+    """The settings actually sent (§8.4), known only once the request is built."""
+    row = await _locked(session, generation_id)
+    row.generation_settings = records.clean_generation_settings(settings)
+    await session.flush()
+
+
 async def complete(
     session: AsyncSession,
     generation_id: UUID,

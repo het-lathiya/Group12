@@ -59,6 +59,10 @@ async def search_places(
     return list((await session.scalars(page)).all()), int(total or 0)
 
 
+async def destination_by_id(session: AsyncSession, destination_id: UUID) -> Destination | None:
+    return await session.get(Destination, destination_id)
+
+
 async def active_places_by_ids(
     session: AsyncSession, destination_id: UUID, place_ids: Sequence[UUID]
 ) -> list[Place]:

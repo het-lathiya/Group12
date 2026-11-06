@@ -172,3 +172,24 @@ def test_request_builder_the_same_trip_state_gives_the_same_hash() -> None:
     assert request_builder.generation_request_hash(
         changed
     ) != request_builder.generation_request_hash(first)
+
+
+def test_request_builder_hours_summary_shows_the_trip_weekdays_only() -> None:
+    from datetime import time
+
+    from app.db.models import PlaceOpeningHours
+
+    hours = [
+        PlaceOpeningHours(
+            weekday=2, is_closed=False, open_time=time(9, 0), close_time=time(17, 30)
+        ),
+        PlaceOpeningHours(weekday=3, is_closed=True, open_time=None, close_time=None),
+        PlaceOpeningHours(
+            weekday=5, is_closed=False, open_time=time(10, 0), close_time=time(12, 0)
+        ),
+    ]
+
+    summary = request_builder.hours_summary(hours, [2, 3, 4])
+
+    assert summary == "Tue 09:00-17:30; Wed closed"
+    assert request_builder.hours_summary([], [2]) == ""

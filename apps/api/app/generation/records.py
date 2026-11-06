@@ -65,6 +65,7 @@ SETTINGS_KEYS: Final[frozenset[str]] = frozenset(
         "thinking_level",
         "structured_output",
         "timeout_s",
+        "truncated_count",
     }
 )
 SETTINGS_VALUE_MAX: Final = 64
