@@ -21,6 +21,8 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 # GEMINI_TIMEOUT_S x (GEMINI_MAX_RETRIES + 1) must fit the 70 s generation allowance (§8.4).
 GEMINI_TIME_ALLOWANCE_S = 70
+# A1 §6.5: the embedding models the adapter knows the prefix or task-type rule of.
+GEMINI_EMBEDDING_MODELS = ("gemini-embedding-2", "gemini-embedding-001")
 
 
 class ConfigError(Exception):
@@ -69,6 +71,7 @@ class Settings(BaseSettings):
     prompt_template_version: str = "v1"
     gemini_api_key: SecretStr = SecretStr("")
     gemini_model_id: str = ""
+    gemini_embedding_model_id: str = ""
     gemini_timeout_s: float = Field(default=35, gt=0)
     gemini_max_retries: int = Field(default=1, ge=0)
     ai_temperature: float = 0.4
@@ -147,6 +150,10 @@ def check_settings(settings: Settings, environ: Mapping[str, str]) -> list[str]:
             problems.append("GEMINI_API_KEY is empty or a placeholder")
         if _is_unset(settings.gemini_model_id):
             problems.append("GEMINI_MODEL_ID is empty or a placeholder")
+        if settings.gemini_embedding_model_id not in GEMINI_EMBEDDING_MODELS:
+            problems.append(
+                "GEMINI_EMBEDDING_MODEL_ID must be one of " + ", ".join(GEMINI_EMBEDDING_MODELS)
+            )
         attempts = settings.gemini_max_retries + 1
         if settings.gemini_timeout_s * attempts > GEMINI_TIME_ALLOWANCE_S:
             problems.append(

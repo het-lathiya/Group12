@@ -27,6 +27,10 @@ MIN_DURATION_MIN = 15
 MAX_DURATION_MIN = 480
 MAX_MUST_VISIT = 10  # IMD-40 (Provisional)
 MAX_ASSUMPTIONS = 20
+# Amendment A1 §6.5.
+EMBEDDING_DIMENSIONS = 768
+MAX_EMBED_TEXTS = 32
+MAX_EMBED_TEXT_CHARS = 2000
 
 HHMM = Annotated[
     str,
@@ -287,6 +291,18 @@ class ProviderResult[T](StrictModel):
     latency_ms: int = Field(ge=0)
     provider_request_id: str | None
     notes: list[str] = Field(default_factory=list)
+
+
+EmbeddingPurpose = Literal["document", "query"]
+
+
+class EmbeddingResult(StrictModel):
+    """A1 §6.5: one 768-length, L2-normalised vector per text, in the order of the texts."""
+
+    vectors: list[list[float]]
+    model_id: str
+    usage: UsageMetadata
+    latency_ms: int = Field(ge=0)
 
 
 class HealthStatus(StrictModel):

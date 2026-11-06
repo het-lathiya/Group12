@@ -7,12 +7,16 @@ MOCK adapter until IMP-207 adds it.
 """
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any, Literal
 
 from app.ai.errors import ProviderBadRequest, ProviderError
 from app.schemas.ai import (
+    EMBEDDING_DIMENSIONS,
     EditOperations,
+    EmbeddingPurpose,
+    EmbeddingResult,
     GenerationRequest,
     HealthStatus,
     ItineraryDayOutput,
@@ -173,6 +177,25 @@ class DoubleProvider:
     ) -> ProviderResult[EditOperations]:
         self.calls.append("modify_itinerary")
         raise ProviderBadRequest("not enabled")
+
+    async def embed_texts(
+        self,
+        texts: Sequence[str],
+        purpose: EmbeddingPurpose,
+        titles: Sequence[str | None] | None = None,
+    ) -> EmbeddingResult:
+        self.calls.append("embed_texts")
+        if self.raise_error is not None:
+            raise self.raise_error
+        return EmbeddingResult(
+            vectors=[
+                [float(index == position) for index in range(EMBEDDING_DIMENSIONS)]
+                for position in range(len(texts))
+            ],
+            model_id="double-embed",
+            usage=UsageMetadata(),
+            latency_ms=0,
+        )
 
     async def health_check(self) -> HealthStatus:
         self.calls.append("health_check")

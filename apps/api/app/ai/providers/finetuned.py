@@ -6,11 +6,14 @@ instance ever exist. Selecting ``AI_PROVIDER=FINETUNED_MODEL`` already stops sta
 (``app.core.config``); Stage 2 replaces this module after a recorded decision.
 """
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Literal
 
 from app.ai.errors import ProviderBadRequest
 from app.schemas.ai import (
     EditOperations,
+    EmbeddingPurpose,
+    EmbeddingResult,
     GenerationRequest,
     HealthStatus,
     ItineraryOutput,
@@ -36,6 +39,14 @@ class FineTunedProvider:
     async def modify_itinerary(
         self, request: ModificationRequest
     ) -> ProviderResult[EditOperations]:
+        raise ProviderBadRequest(NOT_ENABLED)
+
+    async def embed_texts(
+        self,
+        texts: Sequence[str],
+        purpose: EmbeddingPurpose,
+        titles: Sequence[str | None] | None = None,
+    ) -> EmbeddingResult:
         raise ProviderBadRequest(NOT_ENABLED)
 
     async def health_check(self) -> HealthStatus:

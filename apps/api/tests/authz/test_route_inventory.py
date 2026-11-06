@@ -112,6 +112,7 @@ def test_inventory_docs_companions_are_only_fastapi_doc_pages() -> None:
             ai_provider="GEMINI",
             gemini_api_key="unused-test-value",
             gemini_model_id="unused-test-model",
+            gemini_embedding_model_id="gemini-embedding-2",
         )
     )
     paths = {path for _, path in route_inventory(production)}

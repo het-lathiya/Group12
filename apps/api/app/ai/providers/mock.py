@@ -14,10 +14,16 @@ The same request gives an identical output. Scenarios (IMD-27) come from the con
 or from ``MOCK_PROVIDER_SCENARIO`` (validated by ``app.core.config``); they are honoured when
 ``APP_ENV`` is local, test or staging and ignored (treated as ``ok``) in production. Unit tests may
 pass ``raise_error=<ProviderError>`` to reach the other error kinds.
+
+``embed_texts`` is the hashed bag-of-words of Amendment A1 §6.5 (``mock-embed-v1``): texts that share
+words are similar. Scenarios do not affect it; unit tests pass ``embed_error=<ProviderError>``.
 """
 
+import hashlib
+import re
 import time
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Final, Literal, get_args
 
@@ -30,9 +36,13 @@ from app.ai.errors import (
     ProviderRateLimited,
     ProviderTimeout,
 )
+from app.ai.providers.base import check_embed_input, l2_normalised
 from app.core.config import AppEnv, MockScenario, get_settings
 from app.schemas.ai import (
+    EMBEDDING_DIMENSIONS,
     EditOperations,
+    EmbeddingPurpose,
+    EmbeddingResult,
     GenerationRequest,
     HealthStatus,
     ItineraryDayOutput,
@@ -47,6 +57,9 @@ from app.schemas.ai import (
 
 MODEL_ID: Final = "mock-v1"
 ADAPTER_VERSION: Final = "mock-1"
+EMBED_MODEL_ID: Final = "mock-embed-v1"
+EMBED_MIN_TOKEN: Final = 3
+_ALPHANUMERIC_RUN: Final = re.compile(r"[^\W_]+")
 SCENARIOS: Final[tuple[MockScenario, ...]] = get_args(MockScenario)
 SCENARIO_ENVIRONMENTS: Final[frozenset[AppEnv]] = frozenset({"local", "test", "staging"})
 
@@ -142,6 +155,21 @@ def _unknown_place(request: GenerationRequest) -> ItineraryOutput:
     return output
 
 
+def hashed_embedding(text: str) -> list[float]:
+    """A1 §6.5: signed token hashes, summed and normalised; nothing to hash gives e0."""
+    vector = [0.0] * EMBEDDING_DIMENSIONS
+    for token in _ALPHANUMERIC_RUN.findall(text.lower()):
+        if len(token) < EMBED_MIN_TOKEN:
+            continue
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        vector[int(digest[:8], 16) % EMBEDDING_DIMENSIONS] += (
+            1 if int(digest[8], 16) % 2 == 0 else -1
+        )
+    if not any(vector):
+        return [1.0, *[0.0] * (EMBEDDING_DIMENSIONS - 1)]
+    return l2_normalised(vector)
+
+
 class MockProvider:
     name: Literal["MOCK"] = "MOCK"
 
@@ -151,6 +179,7 @@ class MockProvider:
         *,
         app_env: AppEnv | None = None,
         raise_error: ProviderError | None = None,
+        embed_error: ProviderError | None = None,
     ) -> None:
         """``scenario`` and ``app_env`` default to MOCK_PROVIDER_SCENARIO and APP_ENV."""
         if scenario is None or app_env is None:
@@ -164,6 +193,7 @@ class MockProvider:
         self.requested_scenario: MockScenario = scenario
         self.app_env: AppEnv = app_env
         self.raise_error = raise_error
+        self.embed_error = embed_error
 
     @property
     def scenario(self) -> MockScenario:
@@ -205,6 +235,23 @@ class MockProvider:
         self, request: ModificationRequest
     ) -> ProviderResult[EditOperations]:
         raise ProviderBadRequest("modify_itinerary not enabled in the MVP")
+
+    async def embed_texts(
+        self,
+        texts: Sequence[str],
+        purpose: EmbeddingPurpose,
+        titles: Sequence[str | None] | None = None,
+    ) -> EmbeddingResult:
+        started = time.perf_counter()
+        check_embed_input(texts, titles)
+        if self.embed_error is not None:
+            raise self.embed_error
+        return EmbeddingResult(
+            vectors=[hashed_embedding(text) for text in texts],
+            model_id=EMBED_MODEL_ID,
+            usage=UsageMetadata(),
+            latency_ms=round((time.perf_counter() - started) * 1000),
+        )
 
     async def health_check(self) -> HealthStatus:
         return HealthStatus(status="ok", detail=None, checked_at=datetime.now(UTC))
