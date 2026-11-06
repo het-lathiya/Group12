@@ -165,6 +165,38 @@ def test_health_check_and_metadata_shapes(adapter: Adapter) -> None:
     assert metadata.is_tuned is False
 
 
+def test_tc_006_health_check_is_cheap_and_opens_no_connection(
+    adapter: Adapter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise AssertionError("health_check opened a network connection")
+
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    monkeypatch.setattr(socket, "getaddrinfo", refuse)
+    provider = adapter.build()
+
+    assert asyncio.run(provider.health_check()).status in ("ok", "degraded", "down")
+    assert "generate_itinerary" not in getattr(provider, "calls", [])
+
+
+def test_tc_006_gemini_health_check_sends_no_request() -> None:
+    seen: list[httpx.Request] = []
+    provider = embed_gemini(httpx.Response(200, json={}), seen)
+
+    asyncio.run(provider.health_check())
+
+    assert seen == []
+
+
+def test_tc_007_metadata_names_the_provider_model_and_adapter(adapter: Adapter) -> None:
+    provider = adapter.build()
+    metadata = provider.get_model_metadata()
+
+    assert metadata.provider == provider.name
+    assert metadata.model_id
+    assert metadata.adapter_version
+
+
 def test_modify_itinerary_is_not_enabled_in_the_mvp(adapter: Adapter) -> None:
     with pytest.raises(ProviderBadRequest):
         asyncio.run(adapter.build().modify_itinerary(ModificationRequest()))

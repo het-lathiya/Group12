@@ -2,11 +2,12 @@
 
 No database or provider call and never a secret; outside /api/v1 (§6.1).
 
-API-02 GET /health/ready: readiness (FR-123 AC2, IMP-201). ``select 1`` with a 2 s timeout, the
-applied Alembic revision against ``MIGRATION_HEAD``, and the active provider's ``health_check()``
-cached for 60 s. The database down answers 503 ``not_ready``; a provider that is not ok or a
-database behind the head answers 200 ``degraded`` (PD-12, FR-044 AC2). The ECS health check uses
-/health, not this route (Amendment A1 §4.3).
+API-02 GET /health/ready: readiness (FR-123 AC2, IMP-201, IMP-302). ``select 1`` with a 2 s
+timeout, the applied Alembic revision against ``MIGRATION_HEAD``, and the active provider's
+``health_check()`` cached for 60 s. The database down answers 503 ``not_ready``; a provider that is
+not ok or a database behind the head answers 200 ``degraded`` (PD-12, FR-044 AC2). ``ProviderCheck``
+is the allow-list of what leaves this route: ``HealthStatus.detail`` never does. The ECS health
+check uses /health, not this route (Amendment A1 §4.3).
 """
 
 import asyncio
