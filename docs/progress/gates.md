@@ -111,7 +111,7 @@ Status: **pass with listed gaps**
 | 3 | Destination 1 loaded with its quality report | pass locally; staging load not verifiable until the AWS set-up | [quality_report.md](../../data/places/ahmedabad/quality_report.md): 103 usable against a minimum of 100. In this run: `seed ahmedabad: gate loaded 103, rejected 0, flagged 0` (`--check --strict`). Local load: [IMP-206 record](parts/IMP-206-lead-curation.md) |
 | 4 | AWS staging: both Express services healthy, release task run, migration 0007 applied, `make smoke` against the staging API | not verifiable (open item, owner Kirtan, due before SG-3) | No AWS resource exists yet. [Deploy staging run 42233551590](https://github.com/het-lathiya/Group12/actions/runs/42233551590) on `0b361fc` is green only because it skips: notice `AWS staging not configured (blocked by IMP-217)`. No staging URL exists, so `make smoke` was not run. Migration 0007 is applied locally only (`alembic current`: `0007 (head)`) |
 | 5 | Contract v1 declared, including `sources[]` and the `GenerationOut` retrieval fields | pass | [IMP-214 record](parts/IMP-214-whole-task.md); `make openapi-check` `openapi-check: contracts/ and apps/web/lib/api/schema.d.ts are up to date` and `make test-contract` `35 passed, 1 warning in 0.94s` in this run |
-| 6 | Tag `contract-v1` | open item (operator) | `git tag --list 'contract-v1'` printed nothing and the remote has no such tag. To set it: `git tag contract-v1 1baa1f09b0b46d93f252602bf6f9a2364a6f543f` (the last commit of the IMP-214 merge, PR #227) and push the tag. Card step 4 also asks for the cross-squad contract review first; no record of one was found |
+| 6 | Tag `contract-v1` | open item (operator) | `git tag --list 'contract-v1'` printed nothing and the remote has no such tag. To set it: `git tag contract-v1 1baa1f09b0b46d93f252602bf6f9a2364a6f543f` (the last commit of the IMP-214 merge, PR #227) and push the tag. Card step 4 also asks for the cross-squad contract review first; no record of one was found. tag after contract review by Kirtan (CODEOWNER contracts/) and Manasvi (consumer), recorded as review comments on PR #247; operator tags 1baa1f0 |
 | 7 | `make check` | pass | Table below, exit 0; [CI run 42233148962](https://github.com/het-lathiya/Group12/actions/runs/42233148962) on `0b361fc`: success |
 | 8 | `make test-authz` | pass | Part of `make check`: `28 passed in 12.72s` |
 | 9 | `make e2e ARGS='journey'` | pass | `  4 passed (26.5s)` on the local stack, set up as in `e2e.yml`; [E2E run 42233148950](https://github.com/het-lathiya/Group12/actions/runs/42233148950) |
@@ -174,6 +174,8 @@ Every pull request merged after the SG-1 audit, from `gh pr view <n> --json revi
 
 Summary: 30 merged; **0 with an approval**; 30 with all six checks green on the merged head. **No merged pull request meets the working agreement in full.** Exceptions: all 30 lack an approving review, and #227 also requested its own part owner (kirtan-S111) as a reviewer. The SG-1 carry-over "approvals before merge from now on" was not met. Nothing was changed on these pull requests.
 
+From SG-2 onward the pre-merge gate requires reviewDecision APPROVED (operator decision of 6 November 2026)
+
 ### Gaps and open defects
 
 - Staging criteria not shown (row 4); tag `contract-v1` not set (row 6).
@@ -202,7 +204,13 @@ Summary: 30 merged; **0 with an approval**; 30 with all six checks green on the 
 | No axe tooling for NFR-025 | Krrish | IMP-513, IMP-703 |
 | Local guide lacks `SUPABASE_JWKS_URL` and the env values needed without `.env` files, and should name `make db-bootstrap` for a plain database | Kirtan | next DevOps card |
 | `docs/guides/README.md` lacks `ui-design.md` and `screen-drafts.md` | next docs change | next docs change |
-| Manasvi's commits show no GitHub account until 202301108@dau.ac.in is verified on her account (no repository change) | Manasvi | no date set |
+| Manasvi's commits show no GitHub account until her college address is verified on her account (no repository change) | Manasvi | no date set |
+| proposed decision, team to decide before SG-3: PD-IMP-203-4, `budget.currency` must equal the destination currency (§9.3.2), which contradicts the API-07 worked example in §6.7 ([record](parts/IMP-203-whole-task.md)) | team | before SG-3 |
+| proposed decision, team to decide before SG-3: PD-IMP-204-5, `PreferencesOut.must_visit_places` is in contract v1 but not in §6.5 ([record](parts/IMP-204-whole-task.md)) | team | before SG-3 |
+| proposed decision, team to decide before SG-3: PD-IMP-204-7, duplicate `interests` or `must_visit_place_ids` answer 422, a rule §6 does not state ([record](parts/IMP-204-whole-task.md)) | team | before SG-3 |
+| proposed decision, team to decide before SG-3: PD-IMP-205-3, the `min_usable_places` key in `destination.json` is not in the §5.6 file format ([record](parts/IMP-205-import-quality-gate.md)) | team | before SG-3 |
+| proposed decision, team to decide before SG-3: PD-IMP-205-7, API-16 answers an empty page for an inactive or unknown destination, while §6.2 says inactive destinations are invisible (404) ([record](parts/IMP-205-places-api-search.md)) | team | before SG-3 |
+| proposed decision, team to decide before SG-3: PD-IMP-205-8, the API-16 `category` filter refuses `stay` with 422, a rule API-16 does not state ([record](parts/IMP-205-places-api-search.md)) | team | before SG-3 |
 | PR #230 stays open outside the plan (operator decision); PR #201 stays a draft | operator | none |
 
 ## SG-3 end of week 3: Gemini vertical slice (blueprint Gate 2, IMP-399)
