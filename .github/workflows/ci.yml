@@ -47,6 +47,16 @@ jobs:
       - run: make imports
       # IMP-214 (IMD-06): fails when contracts/ or the web types are stale against the API models.
       - run: make openapi-check
+      # IMP-218: a broken production build fails the pull request. Placeholders only: the
+      # NEXT_PUBLIC_* values are inlined, and no page calls them during the build.
+      - name: Web production build
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.invalid
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+          NEXT_PUBLIC_API_BASE_URL: https://api.placeholder.invalid/api/v1
+          NEXT_PUBLIC_FEATURES_DISABLED: ""
+        run: npm run build
 
   unit:
     name: unit

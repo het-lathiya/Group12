@@ -1,9 +1,9 @@
 # Local services (IMP-105, specification §4.1 and §4.7, IMD-03).
 #   db  - PostgreSQL 16 with pgvector (IMP-311, IMD-115) for the backend test suites
 #         (TEST_DATABASE_URL); started by make db-up.
-#   api - the production API image for the local container smoke (IMP-112). It sits behind the
-#         "api" profile and its env file is optional, so make db-up works on a fresh clone with no
-#         apps/api/Dockerfile and no apps/api/.env. Start it by name: docker compose up --build api
+#   api - the production API image for the local container smoke (IMP-112, IMP-218). Its env file
+#         is optional, so it works on a fresh clone with no apps/api/.env. make db-up starts only
+#         db; no service sits behind a profile, so docker compose down stops them all.
 #   web - the production web image for the local container smoke (IMP-218). The NEXT_PUBLIC_*
 #         values are inlined at build time, so they are build arguments; the defaults are public
 #         local values. Start both with: docker compose up --build api web
@@ -27,13 +27,24 @@ services:
       retries: 10
 
   api:
-    profiles: ["api"]
     build:
-      context: apps/api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/api/Dockerfile
+      args:
+        BUILD_VERSION: ${BUILD_VERSION:-dev}
     env_file:
       - path: apps/api/.env
         required: false
+    # Fixed local values: inside the container only the compose database is reachable.
+    environment:
+      APP_ENV: local
+      AI_PROVIDER: MOCK
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/travel_test
+      ALLOWED_ORIGINS: http://localhost:3000
+      DB_AUTH_STUB: "true"
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "8000:8000"
 
