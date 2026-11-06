@@ -131,7 +131,7 @@ Infrastructure is created by idempotent shell scripts in `infra/aws/` that call 
 | `APP_ENV` | `local` | `test` | `staging` | `production` |
 | Database | Supabase CLI local Postgres (`127.0.0.1:54322`) or compose `db` | Compose/service `db` (`pgvector/pgvector:pg16`) + auth stub; blank, migrated per run | RDS database `travel_staging` + auth stub (IMD-101) | RDS database `travel_production` + auth stub |
 | `DB_AUTH_STUB` | `false` (local stack has the real auth schema); `true` against compose `db` | `true` | `true` | `true` |
-| Auth | Supabase CLI local Auth, HS256 secret from `supabase status -o env` | Minted HS256 test tokens; e2e uses the local stack | Hosted Supabase Auth project (JWKS or secret, OD-06) | Same project as staging (IMD-101) |
+| Auth | Supabase CLI local Auth, HS256 secret from `supabase status -o env` | Minted HS256 test tokens; e2e uses the local stack | Hosted Supabase Auth project (JWKS, IMD-123) | Same project as staging (IMD-101) |
 | AI provider | `MOCK` with `MOCK_PROVIDER_SCENARIO`; MOCK embeddings | `MOCK` only; no key in PR CI | `GEMINI` (generation and embeddings); `MOCK` for the failure demo (IMD-33) | `GEMINI`; `MOCK` refused at start-up |
 | RAG index | `make rag-index` after `make seed` (MOCK embeddings) | Built by test fixtures with MOCK embeddings | Built by the release task with Gemini embeddings | Same as staging |
 | URLs | Web `http://localhost:3000`, API `http://localhost:8000` | In-runner | Express Mode HTTPS URLs of `group12-web-staging` and `group12-api-staging` | Express Mode HTTPS URLs of the production services |

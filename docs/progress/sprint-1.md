@@ -25,7 +25,7 @@ Compiled by IMP-199 (RUN-017) on 2 November 2026 from the part records on `main`
 | IMP-113 | Provision accounts, keys and email sender with named owners | Gemini API key, model ID and data-use terms (gemini-key-terms) | Nidhi | 1 | IMP-113-gemini-key-terms.md | merged as template (PR #200, RUN-014); outcome pending member (Nidhi) | 0 (pending outcome) | [record](parts/IMP-113-gemini-key-terms.md) |
 | IMP-114 | Stakeholder interviews round 1 and recorded findings | Run stakeholder interviews round 1 | Junaid (lead) | 2 | | draft PR open (#201), pending member | 0 | PR #201 |
 | IMP-114 | Stakeholder interviews round 1 and recorded findings | Interview guide and recorded findings | Krrish | 1 | | draft PR open (#201), pending member | 0 | PR #201 |
-| IMP-115 | Seed-data plan and choice of the two demo destinations | Whole task | Malhar | 3 | | draft PR open (#199), pending member | 0 | PR #199 |
+| IMP-115 | Seed-data plan and choice of the two demo destinations | Whole task | Malhar | 3 | | merged (PR #199, 5 November 2026) | 0 | PR #199 |
 | IMP-199 | Sprint 1 gate SG-1: runnable skeleton and contracts in place | Whole task | Kirtan | 0 | IMP-199-whole-task.md | PR open (RUN-017) | 0 | [record](parts/IMP-199-whole-task.md) |
 
 **Points.** Sprint 1 plans 47 points over 21 parts. Credited at this gate: 38 (including IMP-112's 5, provisional). Pending: IMP-113 3, IMP-114 3, IMP-115 3.
