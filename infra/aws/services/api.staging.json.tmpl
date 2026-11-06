@@ -25,7 +25,7 @@
       { "name": "RATE_LIMIT_PER_MIN", "value": "60" },
       { "name": "FEATURES_DISABLED", "value": "${STAGING_FEATURES_DISABLED}" },
       { "name": "SUPABASE_URL", "value": "${STAGING_SUPABASE_URL}" },
-      { "name": "SUPABASE_JWKS_URL", "value": "" },
+      { "name": "SUPABASE_JWKS_URL", "value": "${SUPABASE_JWKS_URL}" },
       { "name": "DB_AUTH_STUB", "value": "true" },
       { "name": "AI_PROVIDER", "value": "MOCK" },
       { "name": "GEMINI_MODEL_ID", "value": "" },
@@ -45,8 +45,7 @@
     "secrets": [
       { "name": "DATABASE_URL", "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/group12/staging/DATABASE_URL" },
       { "name": "GEMINI_API_KEY", "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/group12/staging/GEMINI_API_KEY" },
-      { "name": "ORS_API_KEY", "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/group12/staging/ORS_API_KEY" },
-      { "name": "SUPABASE_JWT_SECRET", "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/group12/staging/SUPABASE_JWT_SECRET" }
+      { "name": "ORS_API_KEY", "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/group12/staging/ORS_API_KEY" }
     ]
   }
 }
