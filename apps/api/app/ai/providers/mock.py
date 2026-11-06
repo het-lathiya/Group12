@@ -254,7 +254,11 @@ class MockProvider:
         )
 
     async def health_check(self) -> HealthStatus:
-        return HealthStatus(status="ok", detail=None, checked_at=datetime.now(UTC))
+        """``down`` for a configuration error, as a provider with a refused key reports (§8.3)."""
+        down = isinstance(self.raise_error, ProviderConfigError)
+        return HealthStatus(
+            status="down" if down else "ok", detail=None, checked_at=datetime.now(UTC)
+        )
 
     def get_model_metadata(self) -> ModelMetadata:
         return ModelMetadata(
