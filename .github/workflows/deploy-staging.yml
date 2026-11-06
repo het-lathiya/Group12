@@ -1,12 +1,12 @@
-# Staging deployment (IMP-112, specification §4.5, IMD-38). Runs after the CI workflow succeeds on a
-# push to main; never on pull requests. Order: migrations against the staging database first
-# (make db-migrate), then the Render deploy hook, then wait until /health reports the deployed
-# commit, then make smoke. The container never migrates on start.
+# Staging deployment (IMP-218; A1 §4.4, §4.5, IMD-102, IMD-103). Runs after the CI workflow succeeds
+# on a push to main, or by hand. Order: API image, release task, API service, web image, web service,
+# smoke test. A failing release task stops the run before any service changes (TC-438). The
+# container never migrates on start (IMD-38).
 #
-# Until the hosted accounts exist (IMP-113) the four secrets below are missing: the job then prints
-# "staging not configured (blocked by IMP-113)" and ends successfully without deploying. Secrets come
-# only from the masked GitHub secrets store and are never printed. Names and purposes:
-# docs/guides/deployment.md.
+# AWS is reached only through the OIDC role; no AWS key is stored, and every value below is a
+# repository variable, not a secret. While a variable is missing, the check job prints
+# "AWS staging not configured (blocked by IMP-217)", the deploy job is skipped and the run is green.
+# Names and purposes: docs/secrets.md. The flow and rollback: docs/guides/deployment.md.
 name: Deploy staging
 
 on:
@@ -14,6 +14,12 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      simulate_release_failure:
+        description: "TC-438: run false instead of the release; no service is updated"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -23,90 +29,264 @@ concurrency:
   group: deploy-staging
   cancel-in-progress: false
 
+# shell: bash adds pipefail, so a failure inside a pipe fails the step.
+defaults:
+  run:
+    shell: bash
+
 env:
   PYTHON_VERSION: "3.12"
 
 jobs:
-  deploy-staging:
-    name: deploy-staging
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+  check:
+    name: check-configuration
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    env:
-      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+    timeout-minutes: 5
+    outputs:
+      configured: ${{ steps.config.outputs.configured }}
     steps:
-      - name: Check the staging configuration
+      - name: Check the repository variables
         id: config
         env:
-          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-          STAGING_RENDER_DEPLOY_HOOK_URL: ${{ secrets.STAGING_RENDER_DEPLOY_HOOK_URL }}
-          STAGING_API_URL: ${{ secrets.STAGING_API_URL }}
-          STAGING_WEB_ORIGIN: ${{ secrets.STAGING_WEB_ORIGIN }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          ECR_API_REPO: ${{ vars.ECR_API_REPO }}
+          ECR_WEB_REPO: ${{ vars.ECR_WEB_REPO }}
+          ECS_EXECUTION_ROLE_ARN: ${{ vars.ECS_EXECUTION_ROLE_ARN }}
+          ECS_INFRASTRUCTURE_ROLE_ARN: ${{ vars.ECS_INFRASTRUCTURE_ROLE_ARN }}
+          AWS_SUBNET_IDS: ${{ vars.AWS_SUBNET_IDS }}
+          API_TASKS_SECURITY_GROUP: ${{ vars.API_TASKS_SECURITY_GROUP }}
+          STAGING_API_SERVICE_ARN: ${{ vars.STAGING_API_SERVICE_ARN }}
+          STAGING_WEB_SERVICE_ARN: ${{ vars.STAGING_WEB_SERVICE_ARN }}
+          STAGING_API_URL: ${{ vars.STAGING_API_URL }}
+          STAGING_WEB_ORIGIN: ${{ vars.STAGING_WEB_ORIGIN }}
+          STAGING_SUPABASE_URL: ${{ vars.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_ANON_KEY: ${{ vars.STAGING_SUPABASE_ANON_KEY }}
+        # STAGING_FEATURES_DISABLED may be empty (A1 §4.4), so it is not required here.
         run: |
           missing=""
-          for name in STAGING_DATABASE_URL STAGING_RENDER_DEPLOY_HOOK_URL STAGING_API_URL STAGING_WEB_ORIGIN; do
+          for name in AWS_REGION AWS_ACCOUNT_ID AWS_DEPLOY_ROLE_ARN ECR_API_REPO ECR_WEB_REPO \
+            ECS_EXECUTION_ROLE_ARN ECS_INFRASTRUCTURE_ROLE_ARN AWS_SUBNET_IDS API_TASKS_SECURITY_GROUP \
+            STAGING_API_SERVICE_ARN STAGING_WEB_SERVICE_ARN STAGING_API_URL STAGING_WEB_ORIGIN \
+            STAGING_SUPABASE_URL STAGING_SUPABASE_ANON_KEY; do
             [ -n "${!name}" ] || missing="$missing $name"
           done
           if [ -n "$missing" ]; then
-            echo "staging not configured (blocked by IMP-113)"
-            echo "missing secrets (names only):$missing"
+            echo "::notice::AWS staging not configured (blocked by IMP-217)"
+            echo "missing variables (names only):$missing"
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
-            echo "staging configured; deploying $DEPLOY_SHA"
+            echo "AWS staging configured"
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - if: steps.config.outputs.configured == 'true'
-        uses: actions/checkout@v7
+  deploy:
+    name: deploy-staging
+    needs: check
+    if: needs.check.outputs.configured == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DEPLOY_ENV: staging
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+      API_IMAGE: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${{ vars.ECR_API_REPO }}:${{ github.event.workflow_run.head_sha || github.sha }}
+      WEB_IMAGE: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${{ vars.ECR_WEB_REPO }}:${{ github.event.workflow_run.head_sha || github.sha }}
+      ECS_EXECUTION_ROLE_ARN: ${{ vars.ECS_EXECUTION_ROLE_ARN }}
+      ECS_INFRASTRUCTURE_ROLE_ARN: ${{ vars.ECS_INFRASTRUCTURE_ROLE_ARN }}
+      AWS_SUBNET_IDS: ${{ vars.AWS_SUBNET_IDS }}
+      API_TASKS_SECURITY_GROUP: ${{ vars.API_TASKS_SECURITY_GROUP }}
+      API_SERVICE_ARN: ${{ vars.STAGING_API_SERVICE_ARN }}
+      WEB_SERVICE_ARN: ${{ vars.STAGING_WEB_SERVICE_ARN }}
+      API_URL: ${{ vars.STAGING_API_URL }}
+      STAGING_WEB_ORIGIN: ${{ vars.STAGING_WEB_ORIGIN }}
+      STAGING_SUPABASE_URL: ${{ vars.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_ANON_KEY: ${{ vars.STAGING_SUPABASE_ANON_KEY }}
+      STAGING_FEATURES_DISABLED: ${{ vars.STAGING_FEATURES_DISABLED }}
+      SUPABASE_JWKS_URL: ${{ vars.STAGING_SUPABASE_URL }}/auth/v1/.well-known/jwks.json
+    steps:
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.DEPLOY_SHA }}
           persist-credentials: false
-      - if: steps.config.outputs.configured == 'true'
-        uses: actions/setup-python@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: apps/api/pyproject.toml
-      # The API half of make setup (the web packages are not needed here).
+      # The API half of make setup (the web packages are not needed here), for make smoke.
       - name: Install the API toolchain
-        if: steps.config.outputs.configured == 'true'
         run: |
           python -m venv apps/api/.venv
           apps/api/.venv/bin/python -m pip install -e "apps/api[dev]"
 
-      - name: Apply migrations to staging (IMD-38)
-        if: steps.config.outputs.configured == 'true'
-        env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-        run: make db-migrate
+      - name: Assume the deploy role (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Trigger the Render deploy hook
-        if: steps.config.outputs.configured == 'true'
-        env:
-          HOOK_URL: ${{ secrets.STAGING_RENDER_DEPLOY_HOOK_URL }}
-        run: curl -fsS -X POST -o /dev/null "${HOOK_URL}&ref=${DEPLOY_SHA}"
+      - name: Log in to the registry
+        run: aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"
 
-      - name: Wait until staging reports the deployed commit
-        if: steps.config.outputs.configured == 'true'
-        env:
-          API_URL: ${{ secrets.STAGING_API_URL }}
+      - name: Write the deploy helpers
         run: |
-          for attempt in $(seq 1 80); do
-            version="$(curl -fsS --max-time 60 "${API_URL%/}/health" \
-              | python -c 'import json, sys; print(json.load(sys.stdin)["version"])' 2>/dev/null || true)"
+          cat > "$RUNNER_TEMP/deploy-helpers.sh" <<'HELPERS'
+          cluster_of() { # service ARN .../service/<cluster>/<name>
+            local path="${1%/*}"
+            echo "${path##*/}"
+          }
+
+          # envsubst would blank a placeholder without a variable, so that stops the deploy instead.
+          check_template() { # template
+            local name
+            [ -f "$1" ] || { echo "$1 is missing" >&2; return 1; }
+            for name in $(grep -oE '\$\{[A-Z0-9_]+\}' "$1" | tr -cd 'A-Z0-9_\n' | sort -u); do
+              [ -n "${!name+set}" ] || { echo "$1 needs $name" >&2; return 1; }
+            done
+          }
+
+          # Sends the full rendered configuration (A1 §4.3) and waits until only the new image is active.
+          update_service() { # service ARN, template, image
+            local arn="$1" template="$2" active="" attempt
+            export IMAGE="$3"
+            envsubst < "$template" \
+              | jq --arg arn "$arn" 'del(.serviceName, .cluster, .infrastructureRoleArn) + {serviceArn: $arn}' \
+              | aws ecs update-express-gateway-service --cli-input-json file:///dev/stdin \
+                --query service.serviceArn --output text
+            # services-stable alone can return before the rollout has started.
+            for attempt in $(seq 1 60); do
+              active="$(aws ecs describe-express-gateway-service --service-arn "$arn" \
+                --query 'service.activeConfigurations[].primaryContainer.image' --output text)"
+              [ "$active" = "$IMAGE" ] && break
+              echo "attempt $attempt: active images: $active"
+              sleep 15
+            done
+            [ "$active" = "$IMAGE" ] || { echo "${arn##*/} did not roll out $IMAGE in 15 minutes" >&2; return 1; }
+            aws ecs wait services-stable --cluster "$(cluster_of "$arn")" --services "${arn##*/}"
+          }
+          HELPERS
+
+      # Before anything changes: the release task migrates, and migrations are forward only.
+      - name: Check the service templates
+        env:
+          IMAGE: ${{ env.API_IMAGE }}
+        run: |
+          . "$RUNNER_TEMP/deploy-helpers.sh"
+          check_template "infra/aws/services/api.$DEPLOY_ENV.json.tmpl"
+          check_template "infra/aws/services/web.$DEPLOY_ENV.json.tmpl"
+
+      - name: Build and push the API image
+        run: |
+          docker build --platform linux/amd64 -f apps/api/Dockerfile \
+            --build-arg BUILD_VERSION="$DEPLOY_SHA" -t "$API_IMAGE" .
+          docker push "$API_IMAGE"
+
+      # run-task cannot change an image, so the task runs a release revision of the service's task
+      # definition with the new image. Its environment is the service's current one (A1 §4.5).
+      - name: Run the release task
+        env:
+          SIMULATE_RELEASE_FAILURE: ${{ inputs.simulate_release_failure }}
+        run: |
+          . "$RUNNER_TEMP/deploy-helpers.sh"
+          cluster="$(cluster_of "$API_SERVICE_ARN")"
+          service_task="$RUNNER_TEMP/service-task.json"
+          aws ecs describe-task-definition --query taskDefinition --output json --task-definition \
+            "$(aws ecs describe-services --cluster "$cluster" --services "${API_SERVICE_ARN##*/}" \
+              --query 'services[0].taskDefinition' --output text)" > "$service_task"
+          release_arn="$(jq --arg family "group12-api-$DEPLOY_ENV-release" --arg image "$API_IMAGE" '
+            del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities,
+                .registeredAt, .registeredBy, .deregisteredAt)
+            | .family = $family | .containerDefinitions[0].image = $image' "$service_task" \
+            | aws ecs register-task-definition --cli-input-json file:///dev/stdin \
+              --query taskDefinition.taskDefinitionArn --output text)"
+          echo "release revision: $release_arn"
+
+          command='["sh", "scripts/release.sh"]'
+          if [ "$SIMULATE_RELEASE_FAILURE" = "true" ]; then
+            command='["false"]'
+            echo "::warning::simulate_release_failure: running false instead of the release (TC-438)"
+          fi
+          container="$(jq -r '.containerDefinitions[0].name' "$service_task")"
+          task_arn="$(aws ecs run-task --cluster "$cluster" --task-definition "$release_arn" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$AWS_SUBNET_IDS],securityGroups=[$API_TASKS_SECURITY_GROUP],assignPublicIp=ENABLED}" \
+            --overrides "$(jq -n --arg name "$container" --argjson command "$command" \
+              '{containerOverrides: [{name: $name, command: $command}]}')" \
+            --query 'tasks[0].taskArn' --output text)"
+          case "$task_arn" in
+            arn:*) echo "release task: $task_arn" ;;
+            *) echo "::error::the release task did not start"; exit 1 ;;
+          esac
+
+          # Each wait gives up after 10 minutes; the exit code below decides either way.
+          aws ecs wait tasks-stopped --cluster "$cluster" --tasks "$task_arn" \
+            || aws ecs wait tasks-stopped --cluster "$cluster" --tasks "$task_arn" \
+            || echo "::warning::the release task has not stopped after 20 minutes"
+
+          log_group="$(jq -r '.containerDefinitions[0].logConfiguration.options["awslogs-group"]' "$service_task")"
+          log_prefix="$(jq -r '.containerDefinitions[0].logConfiguration.options["awslogs-stream-prefix"]' "$service_task")"
+          sleep 10 # CloudWatch receives the last lines shortly after the task stops.
+          # shortcut: one page of log events (1 MB), far more than the script prints; follow nextForwardToken if that changes.
+          aws logs get-log-events --log-group-name "$log_group" --start-from-head --output json \
+            --log-stream-name "$log_prefix/$container/${task_arn##*/}" | jq -r '.events[].message' \
+            || echo "::warning::the release task log could not be read"
+
+          exit_code="$(aws ecs describe-tasks --cluster "$cluster" --tasks "$task_arn" \
+            --query "tasks[0].containers[?name=='$container'] | [0].exitCode" --output text)"
+          if [ "$exit_code" != "0" ]; then
+            reason="$(aws ecs describe-tasks --cluster "$cluster" --tasks "$task_arn" \
+              --query 'tasks[0].stoppedReason' --output text)"
+            echo "::error::release task exit code $exit_code ($reason); no service was updated"
+            exit 1
+          fi
+
+      - name: Update the API service
+        run: |
+          . "$RUNNER_TEMP/deploy-helpers.sh"
+          update_service "$API_SERVICE_ARN" "infra/aws/services/api.$DEPLOY_ENV.json.tmpl" "$API_IMAGE"
+
+      - name: Wait until the API reports the deployed commit
+        run: |
+          for attempt in $(seq 1 40); do
+            version="$(curl -fsS --max-time 30 "${API_URL%/}/health" | jq -r .version || true)"
             if [ "$version" = "$DEPLOY_SHA" ]; then
-              echo "staging runs $DEPLOY_SHA (attempt $attempt)"
+              echo "the API runs $DEPLOY_SHA (attempt $attempt)"
               exit 0
             fi
-            echo "attempt $attempt: staging reports '${version:-no answer}', waiting for $DEPLOY_SHA"
+            echo "attempt $attempt: the API reports '${version:-no answer}', waiting for $DEPLOY_SHA"
             sleep 15
           done
-          echo "staging did not report $DEPLOY_SHA within 20 minutes"
+          echo "::error::the API did not report $DEPLOY_SHA within 10 minutes"
           exit 1
 
-      - name: Smoke test staging
-        if: steps.config.outputs.configured == 'true'
+      - name: Build and push the web image
+        run: |
+          docker build --platform linux/amd64 \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL="$STAGING_SUPABASE_URL" \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$STAGING_SUPABASE_ANON_KEY" \
+            --build-arg NEXT_PUBLIC_API_BASE_URL="${API_URL%/}/api/v1" \
+            --build-arg NEXT_PUBLIC_FEATURES_DISABLED="$STAGING_FEATURES_DISABLED" \
+            --build-arg BUILD_VERSION="$DEPLOY_SHA" -t "$WEB_IMAGE" apps/web
+          docker push "$WEB_IMAGE"
+
+      - name: Update the web service
+        run: |
+          . "$RUNNER_TEMP/deploy-helpers.sh"
+          update_service "$WEB_SERVICE_ARN" "infra/aws/services/web.$DEPLOY_ENV.json.tmpl" "$WEB_IMAGE"
+
+      - name: Smoke test and CORS check
         env:
-          API_URL: ${{ secrets.STAGING_API_URL }}
-          WEB_ORIGIN: ${{ secrets.STAGING_WEB_ORIGIN }}
-        run: make smoke URL="$API_URL" ARGS="--web-origin $WEB_ORIGIN"
+          BUILD_VERSION: ${{ env.DEPLOY_SHA }}
+        run: |
+          curl -fsS --max-time 30 -o /dev/null "$STAGING_WEB_ORIGIN/"
+          make smoke URL="$API_URL" ARGS="--web-origin $STAGING_WEB_ORIGIN"
