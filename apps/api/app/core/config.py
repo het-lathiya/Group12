@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     # routing
     ors_api_key: SecretStr = SecretStr("")
     ors_timeout_s: float = Field(default=8, gt=0)
+    # Unverified until IMP-113 records the key's real allowance; 2,000 is the free Directions quota.
+    ors_daily_allowance: int = Field(default=2000, gt=0)
 
     # AI provider
     ai_provider: AiProvider = "MOCK"
