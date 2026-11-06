@@ -2,16 +2,17 @@
 
 Destinations and places are shared reference data with no owner, so no query takes a user_id;
 every query reads active rows only (§6.2: inactive destinations and places are invisible). Only
-the seed writes these tables.
+the seed writes these tables, except that ``insert_data_source`` adds the source of a guide (A1 §5.1).
 """
 
 from collections.abc import Sequence
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Destination, Place, PlaceOpeningHours
+from app.db.models import DataSource, Destination, Place, PlaceOpeningHours
 
 
 async def active_destinations(session: AsyncSession) -> Sequence[Destination]:
@@ -81,6 +82,47 @@ async def active_places_by_ids(
         .order_by(Place.name, Place.id)
     )
     return list((await session.scalars(query)).all())
+
+
+async def active_places_with_source_date(
+    session: AsyncSession, destination_id: UUID
+) -> list[tuple[Place, date | None]]:
+    """Every active place of a destination, with its data source's retrieval date."""
+    query = (
+        select(Place, DataSource.retrieved_on)
+        .join(DataSource, DataSource.id == Place.source_id)
+        .where(Place.destination_id == destination_id, Place.is_active.is_(True))
+        .order_by(Place.name, Place.id)
+    )
+    return [(row[0], row[1]) for row in await session.execute(query)]
+
+
+async def data_sources_by_name(session: AsyncSession, names: Sequence[str]) -> list[DataSource]:
+    query = select(DataSource).where(DataSource.name.in_(list(names)))
+    return list((await session.scalars(query)).all())
+
+
+async def insert_data_source(
+    session: AsyncSession,
+    *,
+    name: str,
+    source_type: str,
+    licence: str,
+    url: str | None,
+    retrieved_on: date | None,
+    attribution_text: str | None,
+) -> DataSource:
+    row = DataSource(
+        name=name,
+        source_type=source_type,
+        licence=licence,
+        url=url,
+        retrieved_on=retrieved_on,
+        attribution_text=attribution_text,
+    )
+    session.add(row)
+    await session.flush()
+    return row
 
 
 async def candidates(

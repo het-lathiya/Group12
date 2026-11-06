@@ -67,6 +67,9 @@ type = forbidden
 source_modules =
     app.routing.estimate
     app.generation.ranking
+    app.rag.documents
+    app.rag.guides
+    app.rag.chunker
 forbidden_modules =
     fastapi
     sqlalchemy
@@ -89,3 +92,16 @@ source_modules =
 forbidden_modules =
     httpx
 allow_indirect_imports = True
+
+; A1 §8.2 Service order (IMP-313): the RAG module sits below everything that calls it.
+[importlinter:contract:rag-service-order]
+name = Service order: app.rag imports no generation, itinerary, budget, validation or evaluation
+type = forbidden
+source_modules =
+    app.rag
+forbidden_modules =
+    app.generation
+    app.itinerary
+    app.budget
+    app.validation
+    app.evaluation

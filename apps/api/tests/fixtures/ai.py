@@ -135,6 +135,7 @@ class DoubleProvider:
     """In-test ModelProvider: no SDK, no network, deterministic."""
 
     name: Literal["MOCK"] = "MOCK"
+    embedding_model_id: str = "double-embed"
 
     def __init__(self, raise_error: ProviderError | None = None) -> None:
         self.raise_error = raise_error

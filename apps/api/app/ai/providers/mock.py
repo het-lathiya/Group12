@@ -172,6 +172,7 @@ def hashed_embedding(text: str) -> list[float]:
 
 class MockProvider:
     name: Literal["MOCK"] = "MOCK"
+    embedding_model_id: str = EMBED_MODEL_ID
 
     def __init__(
         self,

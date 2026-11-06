@@ -28,6 +28,8 @@ NOT_ENABLED = "FINETUNED_MODEL not enabled in Stage 1"
 class FineTunedProvider:
     name: Literal["FINETUNED_MODEL"] = "FINETUNED_MODEL"
 
+    embedding_model_id: str = ""
+
     def __init__(self) -> None:
         raise ProviderBadRequest(NOT_ENABLED)
 

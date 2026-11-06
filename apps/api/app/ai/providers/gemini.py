@@ -217,7 +217,7 @@ class GeminiProvider:
     def __init__(self, settings: Settings, http_client: httpx.AsyncClient | None = None) -> None:
         self._api_key = settings.gemini_api_key.get_secret_value()
         self._model_id = settings.gemini_model_id
-        self._embedding_model_id = settings.gemini_embedding_model_id
+        self.embedding_model_id = settings.gemini_embedding_model_id
         self._max_retries = settings.gemini_max_retries
         self._max_input_tokens = settings.ai_max_input_tokens
         self._max_output_tokens = settings.ai_max_output_tokens
@@ -343,7 +343,7 @@ class GeminiProvider:
         try:
             async with asyncio.timeout(timeout_s):
                 return await self._vendor_client().aio.models.embed_content(
-                    model=self._embedding_model_id,
+                    model=self.embedding_model_id,
                     contents=cast(types.ContentListUnion, contents),
                     config=config,
                 )
@@ -389,9 +389,9 @@ class GeminiProvider:
         check_embed_input(texts, titles)
         if not self._api_key:
             raise ProviderAuthError("GEMINI_API_KEY is not set")
-        if self._embedding_model_id not in GEMINI_EMBEDDING_MODELS:
+        if self.embedding_model_id not in GEMINI_EMBEDDING_MODELS:
             raise ProviderBadRequest("GEMINI_EMBEDDING_MODEL_ID is not set or not supported")
-        model_id = self._embedding_model_id
+        model_id = self.embedding_model_id
         started = time.perf_counter()
         # One Content per text: gemini-embedding-2 merges the parts of one content into one vector.
         contents = [
