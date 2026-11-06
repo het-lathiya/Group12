@@ -106,7 +106,12 @@ class Journal:
         monkeypatch.setattr(repository, "mark_validating", mark_validating)
         monkeypatch.setattr(repository, "complete", complete)
         monkeypatch.setattr(repository, "fail", fail)
+
+        async def add_costs(session: object, days: list[PlannedDay], *ids: UUID) -> Any:
+            return days
+
         monkeypatch.setattr(pipeline, "routing_for", lambda session: FixedRouting())
+        monkeypatch.setattr(pipeline, "add_costs", add_costs)
         monkeypatch.setattr(pipeline.request_builder, "retrieve", retrieve)
         monkeypatch.setattr(pipeline.request_builder, "build", build)
         monkeypatch.setattr(pipeline.itinerary_service, "save_generated_plan", save)

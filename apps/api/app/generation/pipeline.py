@@ -14,8 +14,9 @@ Never logged: the request built for the provider, its raw output, notes or promp
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
+from dataclasses import replace
 from typing import Final
 from uuid import UUID
 
@@ -24,16 +25,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import limits
 from app.ai.errors import InvalidOutputKind, ProviderError, ProviderInvalidOutput
 from app.ai.providers.base import ModelProvider
+from app.budget import engine
 from app.core.config import get_settings
 from app.generation import repository, request_builder, schedule
 from app.generation.records import TokenUsage
 from app.itinerary import service as itinerary_service
-from app.itinerary.schemas import PlannedDay
+from app.itinerary.schemas import PlannedDay, PlannedItem
+from app.places import repository as places_repository
 from app.places import service as places_service
 from app.routing.cache import RouteCacheRepository
 from app.routing.client import get_client
 from app.routing.service import RoutingService
 from app.schemas.ai import GenerationRequest, ItineraryOutput
+from app.trips import service as trips_service
 from app.validation import output_check
 
 logger = logging.getLogger(__name__)
@@ -74,20 +78,50 @@ def routing_for(session: AsyncSession) -> schedule.Routing:
     return RoutingService(RouteCacheRepository(session), get_client())
 
 
-async def recalculate(
-    session: AsyncSession, output: ItineraryOutput, request: GenerationRequest
+async def add_costs(
+    session: AsyncSession, days: Sequence[PlannedDay], trip_id: UUID, user_id: UUID
 ) -> list[PlannedDay]:
-    """Step 9. Only what this returns is saved, so no saved time comes from a model field.
+    """BF-01 to BF-04 from the ``places`` rows, so nothing the model wrote can become a price."""
+    trip = await trips_service.get_trip(session, user_id, trip_id)
+    currency = itinerary_service.trip_currency(trip)
+    ids = {UUID(item.place_id) for day in days for item in day.items}
+    rows = await places_repository.active_places_by_ids(session, trip.destination_id, list(ids))
+    places = {str(row.id): row for row in rows}
 
-    shortcut: costs stay null; the budget engine of IMP-308 fills them here.
-    """
-    return await schedule.recalculate(
+    def priced(item: PlannedItem) -> PlannedItem:
+        place = places.get(item.place_id)  # gone inactive since step 8: its price is unknown
+        cost = engine.ITEM_UNAVAILABLE
+        if place is not None:
+            cost = engine.item_cost(
+                place, adults=trip.adults, children=trip.children, currency=currency
+            )
+        return replace(
+            item,
+            cost_min=None if cost.lo is None else engine.from_minor(cost.lo),
+            cost_max=None if cost.hi is None else engine.from_minor(cost.hi),
+            cost_currency=currency,
+            cost_label=cost.label,
+        )
+
+    return [replace(day, items=[priced(item) for item in day.items]) for day in days]
+
+
+async def recalculate(
+    session: AsyncSession,
+    output: ItineraryOutput,
+    request: GenerationRequest,
+    trip_id: UUID,
+    user_id: UUID,
+) -> list[PlannedDay]:
+    """Step 9. Only what this returns is saved, so no saved time or cost is a model value."""
+    days = await schedule.recalculate(
         output.days,
         {str(place.place_id): place for place in request.shortlist},
         routing_for(session),
         request.preferences.pace,
         mode=request.preferences.transport_pref,
     )
+    return await add_costs(session, days, trip_id, user_id)
 
 
 async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) -> None:
@@ -184,7 +218,7 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
         return
 
     async with sessions() as session:
-        plan = await recalculate(session, checked.output, request)
+        plan = await recalculate(session, checked.output, request, trip_id, user_id)
     metadata = provider.get_model_metadata()
     async with sessions() as session:
         await itinerary_service.save_generated_plan(

@@ -9,6 +9,7 @@ marked ai_written carry model text only (FR-035).
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -39,6 +40,10 @@ class PlannedItem:
     travel_from_prev_m: int | None = None
     travel_mode: str | None = None
     travel_source: str | None = None
+    cost_min: Decimal | None = None
+    cost_max: Decimal | None = None
+    cost_currency: str | None = None
+    cost_label: str | None = None
 
 
 @dataclass(frozen=True)

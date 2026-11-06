@@ -15,9 +15,13 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.budget import engine
+from app.budget import repository as budget_repository
 from app.budget.schemas import AmountRange
+from app.core.config import get_settings
 from app.core.errors import EndpointNotImplemented, NotFound
-from app.db.models import ItineraryItem, Place
+from app.core.flags import is_enabled
+from app.db.models import ItineraryDay, ItineraryItem, Place
 from app.itinerary import repository
 from app.itinerary.schemas import (
     Day,
@@ -30,6 +34,7 @@ from app.itinerary.schemas import (
     Totals,
 )
 from app.trips import service as trips_service
+from app.trips.schemas import TripOut
 
 SNAPSHOT_SCHEMA = "snap-1"
 
@@ -84,6 +89,59 @@ async def saved_plan_for_generation(session: AsyncSession, generation_id: UUID) 
 NO_ITINERARY = "No itinerary yet."
 AI_OUTCOMES = frozenset({"model", "model_repaired"})
 ZERO = Decimal("0.00")
+DEFAULT_CONTINGENCY_PCT = 10
+
+
+def trip_currency(trip: TripOut) -> str:
+    """§6.5: the budget's currency, else the destination's."""
+    return trip.budget.currency if trip.budget else trip.destination.currency
+
+
+async def _summary(
+    session: AsyncSession,
+    trip: TripOut,
+    days: list[ItineraryDay],
+    rows: list[tuple[ItineraryItem, Place, bool]],
+) -> tuple[engine.CostSummary, int]:
+    settings = await budget_repository.get_settings(session, trip.id)
+    pct = int(settings.contingency_pct) if settings else DEFAULT_CONTINGENCY_PCT
+    if not is_enabled(get_settings(), "contingency"):
+        pct = 0  # BF-08
+
+    def minor(amount: Decimal | None) -> int | None:
+        return None if amount is None else engine.to_minor(amount)
+
+    numbers = {day.id: day.day_number for day in days}
+    summary = engine.compute_costs(
+        [
+            engine.CostedItem(
+                item_id=item.id,
+                day_number=numbers[item.day_id],
+                place_category=place.category,
+                lo=minor(item.cost_min),
+                hi=minor(item.cost_max),
+                label=item.cost_label or engine.UNAVAILABLE,
+            )
+            for item, place, _ in rows
+        ],
+        engine.CostInputs(
+            num_days=trip.num_days,
+            adults=trip.adults,
+            children=trip.children,
+            currency=trip_currency(trip),
+            budget=minor(trip.budget.amount) if trip.budget else None,
+            transport_per_day=minor(settings.transport_allowance_per_day) if settings else None,
+            stay_per_night=minor(settings.stay_budget_per_night) if settings else None,
+            contingency_pct=pct,
+        ),
+    )
+    return summary, pct
+
+
+async def cost_summary(session: AsyncSession, trip: TripOut) -> tuple[engine.CostSummary, int]:
+    """The engine's result over the stored plan and the contingency percentage it used."""
+    days = await repository.plan_days(session, trip.id)
+    return await _summary(session, trip, days, await repository.plan_items(session, trip.id))
 
 
 async def get_itinerary(
@@ -99,7 +157,7 @@ async def get_itinerary(
     rows = await repository.plan_items(session, trip_id)
     generation = await repository.latest_completed_generation(session, trip_id)
     ai_text = generation is not None and generation.outcome in AI_OUTCOMES
-    currency = trip.destination.currency
+    currency = trip_currency(trip)
 
     items_by_day: dict[UUID, list[tuple[ItineraryItem, Place, bool]]] = {}
     for row in rows:
@@ -119,8 +177,7 @@ async def get_itinerary(
             )
         )
 
-    total = _cost_sum([item for item, _, _ in rows])
-    incomplete = sum(1 for item, _, _ in rows if item.cost_min is None)
+    summary, _ = await _summary(session, trip, days, rows)
     return ItineraryOut(
         trip_id=trip.id,
         plan_revision=trip.plan_revision,
@@ -140,12 +197,13 @@ async def get_itinerary(
         findings=[],  # warnings of the revision arrive with the validator (IMP-405)
         totals=Totals(
             currency=currency,
-            estimate=AmountRange(min=total["min"], max=total["max"]),
-            # shortcut: no transport, stay or contingency lines yet (BF-05 to BF-09); the
-            # budget engine of IMP-308 replaces these totals and fills the item costs.
-            planning_total=total["max"],
-            complete=total["complete"],
-            incomplete_count=incomplete,
+            estimate=AmountRange(
+                min=engine.from_minor(summary.estimate_lo),
+                max=engine.from_minor(summary.estimate_hi),
+            ),
+            planning_total=engine.from_minor(summary.planning_total),
+            complete=summary.complete,
+            incomplete_count=len(summary.incomplete_items),
         ),
     )
 

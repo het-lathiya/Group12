@@ -155,9 +155,12 @@ def test_tc_028_a_price_written_in_a_note_reaches_the_save_only_as_note_text(
 
     assert journal.saved is not None
     travel = {"travel_from_prev_min", "travel_from_prev_m", "travel_mode", "travel_source"}
+    costs = {"cost_min", "cost_max", "cost_currency", "cost_label"}
     for day in map(asdict, journal.saved):
         assert set(day) == {"day_number", "theme", "items"}
-        assert all(set(item) == ITEM_FIELDS | travel for item in day["items"])
+        assert all(set(item) == ITEM_FIELDS | travel | costs for item in day["items"])
+        # Costs come only from add_costs, a stand-in here: the model's text filled none of them.
+        assert all(item[name] is None for item in day["items"] for name in costs)
 
 
 @pytest.mark.parametrize("note", [ADD_A_PLACE, SET_A_PRICE, IGNORE_RULES, *hostile_notes()])
