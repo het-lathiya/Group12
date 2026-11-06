@@ -232,6 +232,11 @@ async def contingency_pct(session: AsyncSession, trip_id: UUID) -> float:
     return 10.0 if value is None else float(value)
 
 
+async def budget_settings(session: AsyncSession, trip_id: UUID) -> BudgetSettings | None:
+    """The trip's budget_settings row for the activity budget (read only; MOD-B09 writes it)."""
+    return await session.get(BudgetSettings, trip_id)
+
+
 async def lock_trip(session: AsyncSession, trip_id: UUID, user_id: UUID) -> None:
     """Lock the caller's trip row so two starts for one trip run one after the other (§5.8)."""
     await session.execute(

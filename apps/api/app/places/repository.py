@@ -11,7 +11,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Destination, Place
+from app.db.models import Destination, Place, PlaceOpeningHours
 
 
 async def active_destinations(session: AsyncSession) -> Sequence[Destination]:
@@ -77,3 +77,30 @@ async def active_places_by_ids(
         .order_by(Place.name, Place.id)
     )
     return list((await session.scalars(query)).all())
+
+
+async def candidates(
+    session: AsyncSession, destination_id: UUID
+) -> list[tuple[Place, list[PlaceOpeningHours]]]:
+    """Every active place of an active destination with its opening hours (§8.9), in one query.
+
+    Category ``stay`` is not removed here: a must-visit place must reach the filters to keep its
+    conflict note (FR-027 AC2).
+    """
+    query = (
+        select(Place, PlaceOpeningHours)
+        .join(Destination, Destination.id == Place.destination_id)
+        .outerjoin(PlaceOpeningHours, PlaceOpeningHours.place_id == Place.id)
+        .where(
+            Place.destination_id == destination_id,
+            Place.is_active.is_(True),
+            Destination.is_active.is_(True),
+        )
+        .order_by(Place.id, PlaceOpeningHours.weekday)
+    )
+    grouped: dict[UUID, tuple[Place, list[PlaceOpeningHours]]] = {}
+    for place, hours in (await session.execute(query)).all():
+        entry = grouped.setdefault(place.id, (place, []))
+        if hours is not None:
+            entry[1].append(hours)
+    return list(grouped.values())
