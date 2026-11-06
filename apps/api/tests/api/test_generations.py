@@ -1,13 +1,17 @@
 """API-22 and API-23, the generation job (§6.4, §6.6.4, §8.2; IMP-210: TC-012, TC-151, TC-162;
-IMP-305: TC-114 to TC-119, TC-309; FR-024, FR-025, FR-038, NFR-008, IMD-24).
+IMP-305: TC-114 to TC-119, TC-134, TC-135, TC-309; FR-024, FR-025, FR-031, FR-038, NFR-008,
+IMD-24).
 
-MOCK provider only; the socket guard of tests/conftest.py blocks every provider host. API-22's
+MOCK provider, or the Gemini adapter replaying the ok fixture through a fake transport; the socket
+guard of tests/conftest.py blocks every provider host. API-22's
 job is captured instead of started, and each test runs it with ``jobs.run`` on its rolled-back
 session, so the request and the job never share the session at the same time.
 """
 
 import asyncio
+import json
 import logging
+import re
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -26,8 +30,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.factory import get_model_provider
 from app.ai.providers.base import ModelProvider
+from app.ai.providers.gemini import GeminiProvider
 from app.ai.providers.mock import MockProvider
-from app.core.config import MockScenario
+from app.core.config import MockScenario, Settings
 from app.db.models import (
     AiGeneration,
     Destination,
@@ -37,12 +42,15 @@ from app.db.models import (
     Place,
     Trip,
 )
-from app.generation import jobs, pipeline, records, repository
+from app.generation import jobs, pipeline, ranking, records, repository
+from app.itinerary import repository as itinerary_repository
 from app.places import seed
 from app.schemas.ai import GenerationRequest, ItineraryOutput, ProviderResult
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SAMPLETON = REPO_ROOT / "data" / "fixtures" / "sampleton"
+GEMINI_OK = REPO_ROOT / "apps/api/tests/fixtures/provider_recordings/gemini/ok.json"
+FIXTURE_PLACES = ("00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000005")
 NOTES = "We like quiet mornings near the river."
 PREFERENCES: dict[str, Any] = {
     "interests": ["museum", "food"],
@@ -192,11 +200,11 @@ async def queued_row(
     )
 
 
-# TC-162, TC-012, TC-151
+# TC-134, TC-162, TC-012, TC-151
 
 
 @pytest.mark.asyncio
-async def test_tc_162_mock_generation_completes_and_saves_the_plan(
+async def test_tc_134_tc_162_mock_generation_completes_with_no_network_call(
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
     auth_user: AuthUser,
@@ -269,6 +277,8 @@ async def test_tc_012_tc_151_the_record_names_provider_model_template_and_mappin
         "v1",
     )
     assert (row.mapping_version, row.adapter_version) == ("pm-1", "mock-1")
+    assert row.generation_settings == {"truncated_count": 0}
+    assert len(row.request_hash) == 64
     assert row.retrieval_mode is None
     assert row.embedding_model_id is None
 
@@ -490,8 +500,137 @@ async def test_tc_118_a_failed_job_gives_a_reason_and_leaves_the_previous_plan_u
     assert trip_row.plan_revision == 1
 
 
+def replaying_gemini() -> GeminiProvider:
+    """The Gemini adapter answering with the ok fixture, naming two places of the real prompt.
+
+    The fixture's place IDs belong to the SAMPLE unit-test request, so they are swapped for IDs
+    the request carried; the fake transport keeps everything else as recorded.
+    """
+    recording = json.loads(GEMINI_OK.read_text(encoding="utf-8"))
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        sent = re.findall(r'place_id\\?": ?\\?"([0-9a-f-]{36})', request.content.decode())
+        body = json.dumps(recording["body"])
+        for fixture_id, real_id in zip(FIXTURE_PLACES, sent, strict=False):
+            body = body.replace(fixture_id, real_id)
+        return httpx.Response(recording["http_status"], json=json.loads(body))
+
+    settings = Settings(gemini_api_key="not-a-real-key", gemini_model_id="gemini-3.5-flash-lite")
+    client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    return GeminiProvider(settings, http_client=client)
+
+
 @pytest.mark.asyncio
-async def test_an_answer_outside_the_shortlist_fails_with_invalid_output(
+async def test_the_recorded_gemini_answer_runs_the_whole_pipeline(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    provider = replaying_gemini()
+    api_app.dependency_overrides[get_model_provider] = lambda: provider
+    generation_id = (await start(api_client, auth_user, trip)).json()["id"]
+
+    done = await poll(api_client, auth_user, generation_id, submitted, sessions)
+
+    assert (done["status"], done["outcome"]) == ("completed", "model")
+    assert (done["provider"], done["model_id"]) == ("GEMINI", "gemini-3.5-flash-lite")
+    row = await db_session.get(AiGeneration, uuid.UUID(generation_id), populate_existing=True)
+    assert row is not None
+    assert (row.input_tokens, row.output_tokens, row.thinking_tokens) == (812, 146, 37)
+    assert row.adapter_version == "gemini-interactions-1"
+    assert row.generation_settings["api_style"] == "interactions"
+    assert row.generation_settings["structured_output"] is True
+    assert row.generation_settings["truncated_count"] == 0
+    items = list(
+        await db_session.scalars(
+            select(ItineraryItem)
+            .where(ItineraryItem.trip_id == uuid.UUID(trip))
+            .order_by(ItineraryItem.position)
+        )
+    )
+    assert [(item.origin, item.note_origin) for item in items] == [("model", "ai")] * 2
+    assert items[0].note == "Start at the fort while it is cool."
+    assert all(item.cost_min is None for item in items)
+
+
+@pytest.mark.asyncio
+async def test_a_second_generation_replaces_the_plan_and_clears_plan_stale(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    await poll(
+        api_client,
+        auth_user,
+        (await start(api_client, auth_user, trip)).json()["id"],
+        submitted,
+        sessions,
+    )
+    first_days, _ = await plan_rows(db_session, trip)
+    await db_session.execute(update(Trip).where(Trip.id == uuid.UUID(trip)).values(plan_stale=True))
+
+    generation_id = await queued_row(db_session, auth_user, trip)
+    await jobs.run(generation_id, MockProvider("ok", app_env="test"), sessions)
+
+    done = await poll(api_client, auth_user, str(generation_id), submitted, sessions)
+    assert (done["status"], done["plan_revision"]) == ("completed", 2)
+    second_days, _ = await plan_rows(db_session, trip)
+    assert len(second_days) == len(first_days)
+    assert not set(second_days) & set(first_days)
+    version = await db_session.get(ItineraryVersion, uuid.UUID(done["itinerary_version_id"]))
+    assert version is not None
+    assert (version.version_no, version.reason, version.plan_revision) == (2, "generation", 2)
+    trip_row = await db_session.get(Trip, uuid.UUID(trip), populate_existing=True)
+    assert trip_row is not None
+    assert (trip_row.plan_revision, trip_row.plan_stale) == (2, False)
+
+
+@pytest.mark.asyncio
+async def test_a_crash_between_items_and_version_leaves_the_previous_plan_intact(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await poll(
+        api_client,
+        auth_user,
+        (await start(api_client, auth_user, trip)).json()["id"],
+        submitted,
+        sessions,
+    )
+    before = await plan_rows(db_session, trip)
+
+    async def crash(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("injected crash after the items were written")
+
+    monkeypatch.setattr(itinerary_repository, "insert_version", crash)
+    generation_id = await queued_row(db_session, auth_user, trip)
+    await jobs.run(generation_id, MockProvider("ok", app_env="test"), sessions)
+
+    failed = await poll(api_client, auth_user, str(generation_id), submitted, sessions)
+    assert (failed["status"], failed["failure_reason"]) == ("failed", "internal")
+    assert failed["itinerary_version_id"] is None
+    assert await plan_rows(db_session, trip) == before
+    trip_row = await db_session.get(Trip, uuid.UUID(trip), populate_existing=True)
+    assert trip_row is not None
+    assert trip_row.plan_revision == 1
+    versions = select(func.count()).select_from(ItineraryVersion)
+    assert await db_session.scalar(versions.where(ItineraryVersion.trip_id == trip_row.id)) == 1
+
+
+@pytest.mark.asyncio
+async def test_tc_135_an_id_outside_the_shortlist_is_rejected_before_saving(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
@@ -507,6 +646,8 @@ async def test_an_answer_outside_the_shortlist_fails_with_invalid_output(
 
     assert (failed["status"], failed["failure_reason"]) == ("failed", "invalid_output")
     assert await plan_rows(db_session, trip) == ([], 0)
+    versions = select(func.count()).select_from(ItineraryVersion)
+    assert await db_session.scalar(versions.where(ItineraryVersion.trip_id == uuid.UUID(trip))) == 0
 
 
 class SlowProvider(MockProvider):
@@ -763,15 +904,20 @@ async def test_the_request_holds_only_trip_data_and_shortlisted_places(
         prompt_version="v1",
     )
 
-    active = list(
-        await db_session.scalars(
-            select(Place.id)
-            .where(Place.destination_id == sampleton.id, Place.is_active.is_(True))
-            .order_by(Place.name, Place.id)
-            .limit(40)
-        )
+    active = dict(
+        (
+            await db_session.execute(
+                select(Place.id, Place.category).where(
+                    Place.destination_id == sampleton.id, Place.is_active.is_(True)
+                )
+            )
+        ).all()
     )
-    assert [p.place_id for p in request.shortlist] == active
+    place_ids = [p.place_id for p in request.shortlist]
+    assert len(set(place_ids)) == len(place_ids)
+    assert set(place_ids) <= set(active)
+    assert len(place_ids) <= ranking.shortlist_size(3) + 3  # the meal slots may add food places
+    assert "stay" not in {active[place_id] for place_id in place_ids}
     assert request.trip.num_days == 3
     assert request.scope.kind == "full"
     assert request.preferences.notes_quoted == NOTES

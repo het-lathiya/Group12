@@ -1,7 +1,8 @@
 """The ModelProvider interface (specification §8.3, FR-040, IMD-06).
 
-Code outside ``app/ai/`` uses a provider only through this module, ``app.ai.errors`` and
-``app.ai.factory`` (IMP-207); it never imports an adapter or a vendor SDK (§4.4, NFR-031). The
+Code outside ``app/ai/`` uses a provider only through this module, ``app.ai.errors``,
+``app.ai.factory`` (IMP-207) and ``app.ai.limits`` (IMP-305); it never imports an adapter or a
+vendor SDK (§4.4, NFR-031). The
 types of the interface are defined in ``app.schemas.ai`` and re-exported here.
 """
 

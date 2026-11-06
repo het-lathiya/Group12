@@ -4,7 +4,7 @@ The filters come from pm-1 (``trips/preference_mapping.py``) and run in the card
 excluded categories, closed on every trip day (explicit closed rows only), minimum group cost
 above the activity budget. The children rule of pm-1 runs after step-free. A place that fails is
 removed unless it is a must-visit place, which stays with ``conflict_note`` set (FR-027 AC2).
-Ranking and the shortlist cut are in ``generation/ranking.py``.
+Ranking and the shortlist cut are in ``generation/ranking.py``; ``ranked_shortlist`` runs both.
 """
 
 from collections.abc import Collection, Iterable, Sequence
@@ -16,8 +16,9 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import NotFound
 from app.db.models import Place, PlaceOpeningHours
-from app.generation import repository
+from app.generation import ranking, repository
 from app.places import repository as places_repository
 from app.trips import preference_mapping
 from app.trips.schemas import PreferencesOut, TripOut
@@ -128,17 +129,55 @@ def apply_filters(
     return kept
 
 
-async def retrieve_candidates(
-    session: AsyncSession, trip: TripOut, prefs: PreferencesOut, must_visit: Collection[UUID]
-) -> list[Candidate]:
-    """The filtered candidates of the trip's destination (§8.9 Retrieve and Hard filters)."""
+async def _trip_activity_budget(session: AsyncSession, trip: TripOut) -> Decimal | None:
     settings = await repository.budget_settings(session, trip.id)
-    budget = activity_budget(
+    return activity_budget(
         trip.budget.amount if trip.budget else None,
         num_days=trip.num_days,
         transport_per_day=settings.transport_allowance_per_day if settings else None,
         stay_per_night=settings.stay_budget_per_night if settings else None,
         contingency_pct=settings.contingency_pct if settings else DEFAULT_CONTINGENCY_PCT,
     )
+
+
+async def retrieve_candidates(
+    session: AsyncSession, trip: TripOut, prefs: PreferencesOut, must_visit: Collection[UUID]
+) -> list[Candidate]:
+    """The filtered candidates of the trip's destination (§8.9 Retrieve and Hard filters)."""
+    budget = await _trip_activity_budget(session, trip)
     rows = await places_repository.candidates(session, trip.destination_id)
     return apply_filters(rows, trip, prefs, must_visit, budget)
+
+
+async def ranked_shortlist(
+    session: AsyncSession,
+    trip: TripOut,
+    prefs: PreferencesOut,
+    must_visit: Collection[UUID],
+    *,
+    meal_slots_per_day: int,
+) -> list[Candidate]:
+    """Steps 3 and 4 of §8.2: the candidates that make the shortlist, best first."""
+    candidates = await retrieve_candidates(session, trip, prefs, must_visit)
+    destination = await places_repository.destination_by_id(session, trip.destination_id)
+    if destination is None:
+        raise NotFound()
+    mapped = preference_mapping.map_preferences(
+        preference_mapping.Preferences(
+            interests=[interest.value for interest in prefs.interests],
+            pace=preference_mapping.Pace(prefs.pace),
+            budget_priority=preference_mapping.BudgetPriority(prefs.budget_priority),
+            step_free_required=prefs.step_free_required,
+            must_visit_place_ids=list(must_visit),
+        ),
+        preference_mapping.TripFacts(children=trip.children),
+    )
+    context = ranking.build_context(
+        candidates,
+        mapped,
+        destination,
+        num_days=trip.num_days,
+        meal_slots_per_day=meal_slots_per_day,
+        activity_budget=await _trip_activity_budget(session, trip),
+    )
+    return [entry.candidate for entry in ranking.rank_shortlist(candidates, context).entries]
