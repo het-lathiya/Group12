@@ -246,7 +246,7 @@ async def test_tc_134_tc_162_mock_generation_completes_with_no_network_call(
         )
     )
     assert {item.origin for item in item_rows} == {"model"}
-    assert all(item.cost_min is None and item.source_chunk_ids == [] for item in item_rows)
+    assert all(item.cost_label is not None and item.source_chunk_ids == [] for item in item_rows)
     # FR-125 AC2: notes and model text never reach the log.
     assert NOTES not in caplog.text
     assert "SAMPLE note" not in caplog.text
@@ -554,7 +554,7 @@ async def test_the_recorded_gemini_answer_runs_the_whole_pipeline(
     )
     assert [(item.origin, item.note_origin) for item in items] == [("model", "ai")] * 2
     assert items[0].note == "Start at the fort while it is cool."
-    assert all(item.cost_min is None for item in items)
+    assert all(item.cost_currency == "GBP" and item.cost_label for item in items)
 
 
 @pytest.mark.asyncio

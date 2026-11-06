@@ -3,10 +3,10 @@
 Every amount is computed by budget/engine.py in minor units and travels as an IMD-05 string.
 """
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.common import MoneyAmount
 from app.validation.schemas import Finding
@@ -35,6 +35,12 @@ class BudgetStatus(BaseModel):
     status: Literal["none", "near", "exceeded"]
     ratio_pct: int | None
     excess: MoneyAmount | None = Field(description="Null unless the status is exceeded")
+
+    @model_validator(mode="after")
+    def _excess_only_when_exceeded(self) -> Self:
+        if (self.excess is not None) != (self.status == "exceeded"):
+            raise ValueError("excess is set exactly when the status is exceeded")
+        return self
 
 
 class DayCostLine(BaseModel):

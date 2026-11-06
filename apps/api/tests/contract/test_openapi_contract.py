@@ -151,12 +151,12 @@ def test_ai_schemas_are_exported_with_the_contract() -> None:
 def test_declared_route_answers_501_with_the_envelope(
     clean_settings_env: pytest.MonkeyPatch,
 ) -> None:
-    # API-33 is an IMD-37 stub until IMP-308; the token check is overridden, so no database.
+    # API-34 is an IMD-37 stub until IMP-411; the token check is overridden, so no database.
     settings = Settings(
         app_env="test", ai_provider="MOCK", database_url="postgresql+psycopg://t@db.invalid/t"
     )
     app = create_app(settings)
     app.dependency_overrides[current_user] = lambda: None
-    response = TestClient(app).get(f"{V1}/trips/{uuid.uuid4()}/costs")
+    response = TestClient(app).patch(f"{V1}/trips/{uuid.uuid4()}/budget-settings", json={})
     assert response.status_code == 501
     assert response.json()["error"]["code"] == "NOT_IMPLEMENTED"
