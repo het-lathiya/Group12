@@ -77,6 +77,11 @@ class ModelProvider(Protocol):
         """
         ...
 
+    @property
+    def embedding_model_id(self) -> str:
+        """The model ``embed_texts`` uses; indexing compares it with stored chunks (A1 §6.6)."""
+        ...
+
     async def generate_itinerary(
         self, request: GenerationRequest
     ) -> ProviderResult[ItineraryOutput]:

@@ -23,7 +23,8 @@ API_PENDING := not yet implemented (IMP-101 api-pyproject-guard part)
 # pytest exits 5 when it collects no tests; an empty suite counts as success.
 PYTEST_EXIT := rc=$$?; if [ $$rc -eq 5 ]; then echo "pytest: no tests collected (exit 5 treated as success)"; exit 0; fi; exit $$rc
 
-.PHONY: help setup stack-up stack-down db-up db-down db-migrate db-bootstrap db-reset seed api web \
+.PHONY: help setup stack-up stack-down db-up db-down db-migrate db-bootstrap db-reset seed rag-index \
+	api web \
 	lint typecheck imports test-unit test-contract test-api test-authz test-web test e2e \
 	openapi openapi-check eval check smoke live-smoke
 
@@ -34,6 +35,7 @@ help:
 	@echo "  db-up | db-down               docker compose test Postgres"
 	@echo "  db-migrate | db-reset | seed  migrations, local/test reset, seed data (SEED_DIRS=...)"
 	@echo "  db-bootstrap                  auth stub when schema auth is missing, then migrations (A1)"
+	@echo "  rag-index [ARGS=...]          build or check the RAG index (ARGS='--destination sampleton --check --strict')"
 	@echo "  api | web                     run the API (port 8000) or the web app (port 3000)"
 	@echo "  lint | typecheck | imports    quality checks"
 	@echo "  test-unit | test-contract | test-api | test-authz | test-web | test"
@@ -95,6 +97,11 @@ db-reset:
 # Loads the SAMPLE fixture plus any directories in SEED_DIRS into DATABASE_URL (§5.6).
 seed:
 	cd $(API_DIR) && .venv/bin/python -m app.places.seed $(CURDIR)/data/fixtures/sampleton $(foreach d,$(SEED_DIRS),$(abspath $(d))) $(ARGS)
+
+# A1 §7.3 (IMP-313): needs a migrated, seeded database. Exit 1 gate errors with --strict, 2 usage,
+# 3 embedding provider unavailable.
+rag-index:
+	cd $(API_DIR) && .venv/bin/python -m app.rag.index $(ARGS)
 
 api:
 	@if [ -f $(API_DIR)/app/main.py ]; then cd $(API_DIR) && .venv/bin/uvicorn app.main:app --reload --port 8000; \
