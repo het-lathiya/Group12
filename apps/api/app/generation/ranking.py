@@ -1,11 +1,13 @@
 """Scoring and shortlist ranking (§8.9; FR-028, IMP-304). Pure: no I/O and no framework imports.
 
-score = w_interest·interest + w_price·price + w_distance·distance + w_pace·pace + w_signal·signal.
-The weights, the budget-priority shift and the pace factors come only from pm-1
-(``trips/preference_mapping.py``, IMD-29); the signal weight is 0 in the MVP.
+score = w_interest·interest + w_semantic·semantic + w_price·price + w_distance·distance
++ w_pace·pace + w_signal·signal. The weights, the budget-priority shift and the pace factors come
+only from pm-2 (``trips/preference_mapping.py``, IMD-29, IMD-108); the signal weight is 0 in the MVP.
 
 - interest: the trip's interests the place matches, by tag or by category, ÷ interests. Interests
   are category names (§6.5) and tags are not, so tags alone could never match a museum.
+- semantic: the place's similarity to the query, min-max normalised over the candidates, 0.5 when
+  all are equal or there is one, 0 without an embedded chunk (A1 §6.7).
 - price: 1 up to the per-item share of the activity budget, falling to 0 at twice that share,
   0.5 when unavailable. The share is the budget ÷ (days x the pace's items per day).
 - distance: 1 - d/radius to the must-visit centroid or the destination centre, never below 0. The
@@ -16,10 +18,10 @@ The share and the radius are PD-IMP-304-4: blueprint §20.2 is not in the reposi
 """
 
 import logging
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Final, Protocol
+from typing import Any, Final, Protocol
 
 from app.routing.estimate import haversine_m
 from app.trips.preference_mapping import MAPPING_VERSION, MappedPreferences
@@ -83,11 +85,13 @@ class RankingContext:
     centre_lat: float
     centre_lon: float
     radius_m: float
+    semantic: Mapping[object, float] = field(default_factory=dict)  # by place ID
 
 
 @dataclass(frozen=True)
 class ScoreParts:
     interest: float
+    semantic: float
     price: float
     distance: float
     pace: float
@@ -107,6 +111,19 @@ class Shortlist[C: Rankable]:
     mapping_version: str = MAPPING_VERSION
 
 
+def c_semantic(
+    place_ids: Iterable[object], similarities: Mapping[Any, float]
+) -> dict[object, float]:
+    """The normalised similarity of the places that have one; the others score 0 in ``score``."""
+    known = {id_: similarities[id_] for id_ in place_ids if id_ in similarities}
+    if not known:
+        return {}
+    low, high = min(known.values()), max(known.values())
+    if low == high:
+        return dict.fromkeys(known, 0.5)
+    return {id_: (value - low) / (high - low) for id_, value in known.items()}
+
+
 def build_context(
     candidates: Iterable[Rankable],
     mapped: MappedPreferences,
@@ -115,8 +132,10 @@ def build_context(
     num_days: int,
     meal_slots_per_day: int,
     activity_budget: Decimal | None,
+    similarities: Mapping[Any, float] | None = None,
 ) -> RankingContext:
     """The context of one trip: its centre is the must-visit centroid, else the destination's."""
+    candidates = list(candidates)
     must_visit = [c.place for c in candidates if c.must_visit]
     if must_visit:
         lat = sum(float(place.lat) for place in must_visit) / len(must_visit)
@@ -137,6 +156,7 @@ def build_context(
         centre_lat=lat,
         centre_lon=lon,
         radius_m=max(diagonal / 2, 1.0),
+        semantic=c_semantic((c.place.id for c in candidates), similarities or {}),
     )
 
 
@@ -164,18 +184,20 @@ def _distance(place: RankablePlace, ctx: RankingContext) -> float:
 def score(candidate: Rankable, ctx: RankingContext) -> ScoreParts:
     place, weights = candidate.place, ctx.mapped.weights
     interest = _interest(place, weights.interests)
+    semantic = ctx.semantic.get(place.id, 0.0)
     price = _price(candidate.min_group_cost, ctx)
     distance = _distance(place, ctx)
     pace = weights.duration_component(place.typical_duration_min)
     signal = 0.0  # no saved or rejected signals in the MVP; its weight is 0 (§8.9)
     total = (
         weights.interest * interest
+        + weights.semantic * semantic
         + weights.price * price
         + weights.distance * distance
         + weights.duration * pace
         + weights.c_signal * signal
     )
-    return ScoreParts(interest, price, distance, pace, signal, total)
+    return ScoreParts(interest, semantic, price, distance, pace, signal, total)
 
 
 def shortlist_size(num_days: int) -> int:
@@ -211,9 +233,11 @@ def rank_shortlist[C: Rankable](candidates: Iterable[C], ctx: RankingContext) ->
     for entry in chosen:
         parts = entry.parts
         logger.debug(
-            "score place=%s interest=%.3f price=%.3f distance=%.3f pace=%.3f signal=%.3f total=%.3f",
+            "score place=%s interest=%.3f semantic=%.3f price=%.3f distance=%.3f pace=%.3f "
+            "signal=%.3f total=%.3f",
             entry.candidate.place.id,
             parts.interest,
+            parts.semantic,
             parts.price,
             parts.distance,
             parts.pace,

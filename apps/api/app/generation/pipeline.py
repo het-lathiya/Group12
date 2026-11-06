@@ -1,6 +1,7 @@
 """Generation pipeline (§8.2 steps 1 to 11; IMP-305).
 
-mark_running -> build the request from the ranked shortlist (steps 2 to 5) -> input limit -> record
+mark_running -> retrieval (A1 §6.7, never fails the job) -> build the request from the ranked
+shortlist (steps 2 to 5) -> input limit -> record
 the settings -> provider.generate_itinerary (steps 6, 7) -> mark_validating -> steps 8 and 9 -> save
 the plan and complete the record in one transaction (step 11). Each status change is its own short
 transaction, and none stays open across the provider call (§5.8). Step 8 is
@@ -83,12 +84,22 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
     async with sessions() as session:
         row = await repository.mark_running(session, generation_id)
         trip_id, user_id = row.trip_id, row.user_id
+        prompt_template_id, prompt_version = row.prompt_template_id, row.prompt_version
+
+    # shortcut: kept in this function only; IMP-316 writes mode, model and ms to the record.
+    retrieved = await request_builder.retrieve(trip_id, user_id, provider, sessions)
+    logger.info(
+        "generation %s retrieval %s in %d ms", generation_id, retrieved.mode, retrieved.retrieval_ms
+    )
+
+    async with sessions() as session:
         request = await request_builder.build(
             session,
             trip_id=trip_id,
             user_id=user_id,
-            prompt_template_id=row.prompt_template_id,
-            prompt_version=row.prompt_version,
+            prompt_template_id=prompt_template_id,
+            prompt_version=prompt_version,
+            retrieved=retrieved,
         )
 
     try:

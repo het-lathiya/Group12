@@ -15,6 +15,7 @@ from app.ai.providers.base import ModelProvider
 from app.ai.providers.gemini import GeminiProvider
 from app.core.config import Settings
 from app.generation import pipeline
+from app.rag.service import RetrievalResult
 from app.schemas.ai import GenerationRequest, ItineraryOutput
 
 RECORDINGS = Path(__file__).resolve().parent / "provider_recordings" / "gemini"
@@ -56,6 +57,9 @@ class Journal:
                 },
             )
 
+        async def retrieve(*args: Any) -> RetrievalResult:
+            return RetrievalResult("lexical_fallback", None, {}, {}, [], 0)
+
         async def build(session: object, **kwargs: Any) -> GenerationRequest:
             self.steps.append("build")
             return request
@@ -93,6 +97,7 @@ class Journal:
         monkeypatch.setattr(repository, "mark_validating", mark_validating)
         monkeypatch.setattr(repository, "complete", complete)
         monkeypatch.setattr(repository, "fail", fail)
+        monkeypatch.setattr(pipeline.request_builder, "retrieve", retrieve)
         monkeypatch.setattr(pipeline.request_builder, "build", build)
         monkeypatch.setattr(pipeline.itinerary_service, "save_generated_plan", save)
         monkeypatch.setattr(pipeline.places_service, "active_place_names", active_place_names)

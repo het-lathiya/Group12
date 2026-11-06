@@ -70,6 +70,8 @@ source_modules =
     app.rag.documents
     app.rag.guides
     app.rag.chunker
+    app.rag.query
+    app.rag.mmr
 forbidden_modules =
     fastapi
     sqlalchemy

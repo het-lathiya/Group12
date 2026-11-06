@@ -56,15 +56,17 @@ def context(
     days: int = 3,
     budget: str | None = None,
     meals: int = 1,
+    similarities: dict[Any, float] | None = None,
     **prefs: Any,
 ) -> ranking.RankingContext:
     return ranking.build_context(
         candidates,
-        pm.map_preferences(pm.Preferences(**prefs), pm.TripFacts()),
+        pm.map_preferences(pm.Preferences(**prefs), pm.TripFacts(), semantic=bool(similarities)),
         AREA,
         num_days=days,
         meal_slots_per_day=meals,
         activity_budget=Decimal(budget) if budget else None,
+        similarities=similarities,
     )
 
 
@@ -118,18 +120,64 @@ def test_tc_128_score_parts_are_logged_at_debug_only(caplog: pytest.LogCaptureFi
     (record,) = caplog.records
     assert record.levelno == logging.DEBUG
     message = record.getMessage()
-    for name in ("interest=", "price=", "distance=", "pace=", "signal=", "total="):
+    for name in ("interest=", "semantic=", "price=", "distance=", "pace=", "signal=", "total="):
         assert name in message
     assert "private" not in message
 
 
-def test_the_score_uses_the_renormalised_pm_1_weights() -> None:
+def test_the_lexical_score_uses_the_renormalised_pm_2_weights() -> None:
     candidate = fake(cost=Decimal("0.00"), typical_duration_min=180, tags=["history"])
     ctx = context([candidate], budget="90.00", interests=["history"], pace=pm.Pace.BUSY)
     parts = ranking.score(candidate, ctx)
     assert (parts.interest, parts.price, parts.distance, parts.pace) == (1, 1, 1, 1)
-    assert parts.signal == 0
+    assert (parts.semantic, parts.signal) == (0, 0)
     assert parts.total == pytest.approx(1)
+
+
+def test_the_vector_score_adds_the_semantic_part_at_its_weight() -> None:
+    candidate = fake(cost=Decimal("0.00"), typical_duration_min=180, tags=["history"])
+    ctx = context(
+        [candidate],
+        budget="90.00",
+        interests=["history"],
+        pace=pm.Pace.BUSY,
+        similarities={candidate.place.id: 0.4},
+    )
+    parts = ranking.score(candidate, ctx)
+    assert parts.semantic == 0.5  # one candidate
+    assert parts.total == pytest.approx(0.9)
+
+
+def test_c_semantic_is_min_max_over_the_candidates_with_a_chunk() -> None:
+    low, mid, high, none = "low", "mid", "high", "no chunk"
+    similarities = {low: 0.2, mid: 0.3, high: 0.6, "not a candidate": 0.9}
+    scores = ranking.c_semantic([low, mid, high, none], similarities)
+    assert scores == {low: 0.0, mid: pytest.approx(0.25), high: 1.0}
+
+
+def test_c_semantic_is_half_when_all_are_equal_and_empty_without_similarities() -> None:
+    assert ranking.c_semantic(["a", "b"], {"a": 0.3, "b": 0.3}) == {"a": 0.5, "b": 0.5}
+    assert ranking.c_semantic(["a"], {}) == {}
+
+
+def test_tc_451_a_similar_place_outranks_an_equal_one_and_the_order_repeats() -> None:
+    plain, similar = fake(), fake()
+    ids = {plain.place.id: 0.1, similar.place.id: 0.8}
+    ctx = context([plain, similar], similarities=ids)
+    first = ranking.rank_shortlist([plain, similar], ctx)
+    again = ranking.rank_shortlist([similar, plain], ctx)
+    assert [entry.candidate for entry in first.entries] == [similar, plain]
+    assert first.entries == again.entries
+
+
+def test_tc_451_a_must_visit_place_with_the_lowest_similarity_stays() -> None:
+    must = fake(must_visit=True)
+    others = [fake() for _ in range(ranking.SHORTLIST_MIN)]
+    similarities = {place.place.id: 0.9 for place in others} | {must.place.id: 0.0}
+    candidates = [must, *others]
+    ctx = context(candidates, days=1, similarities=similarities)
+    chosen = [entry.candidate for entry in ranking.rank_shortlist(candidates, ctx).entries]
+    assert must in chosen
 
 
 def test_saving_moves_weight_from_interest_to_price() -> None:
@@ -211,7 +259,7 @@ def test_stay_is_left_out_unless_it_is_a_must_visit_place() -> None:
 
 
 def test_the_mapping_version_is_exposed() -> None:
-    assert ranking.rank_shortlist([], context([])).mapping_version == "pm-1"
+    assert ranking.rank_shortlist([], context([])).mapping_version == "pm-2"
 
 
 def test_sample_ranking_keeps_the_size_rule_food_and_must_visit() -> None:
