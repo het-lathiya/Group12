@@ -1,17 +1,18 @@
-# Deployment: staging and production (IMP-112)
+# Deployment: staging and production
 
-- **Card:** IMP-112 · Hello-world deployment to Vercel, Render and Supabase staging with deploy workflows (US-002; FR-123; NFR-005, NFR-015, NFR-035)
+- **Cards:** IMP-112 (image, smoke tests, workflows), IMP-217 (AWS foundation), IMP-218 (AWS deploy workflows) (US-002; FR-123; NFR-005, NFR-015, NFR-035)
 - **Owner:** Kirtan (DevOps Engineer and Integration Lead)
 - **Status:**
   - The local container path works.
-  - The hosted steps (sections 3 to 5 and 7) are **blocked by IMP-113 (owner Kirtan)**: the Supabase staging project and the Render account do not exist yet (as of 2026-11-02).
-  - Both deploy workflows skip until their secrets exist.
+  - Hosting is AWS (IMD-99). Vercel and Render are not used. The set-up is in [aws-setup.md](aws-setup.md); it is run by Kirtan, and its results are not recorded yet.
+  - The deploy workflows still hold the IMP-112 Render steps, skip while their secrets are missing, and are replaced by IMP-218.
 
 | Part | Where it runs | How it is deployed |
 | --- | --- | --- |
-| Web app (`apps/web`) | Vercel: production, staging and pull-request previews | Vercel's GitHub integration builds every push |
-| API (`apps/api/Dockerfile`) | Render web service (Docker), staging and production | Render deploy hook, called by `deploy-staging.yml` and `deploy-production.yml` |
-| Database and Auth | Supabase staging project; production per OD-15 | Migrations from the deploy workflows (`make db-migrate`), never on container start (IMD-38) |
+| Web app (`apps/web`) | Amazon ECS Express Mode service `group12-web-<env>` | Image pushed to ECR; by hand until IMP-218 |
+| API (`apps/api/Dockerfile`) | Amazon ECS Express Mode service `group12-api-<env>` | Image pushed to ECR; by hand until IMP-218 |
+| Database | Amazon RDS PostgreSQL 16, private, `travel_<env>` | Migrations from the release task (A1 §4.5, IMP-218), never on container start (IMD-38) |
+| Auth | Hosted Supabase project, sign-in only (IMD-101) | Settings in the Supabase dashboard |
 
 ## 1. The API image
 
@@ -20,8 +21,8 @@
 - **Base and install:** `python:3.12-slim` with a normal (non-editable) wheel install of `apps/api`, so the prompt templates ship as package data (IMP-111).
 - **Contents:** no dev extras, tests or migrations.
 - **User:** a non-root user (`app`, uid 10001).
-- **Command:** `uvicorn app.main:app` on `${PORT:-8000}`. Render sets `PORT`.
-- **Version:** `/health` reports `BUILD_VERSION`. When that is not set, the start command uses Render's `RENDER_GIT_COMMIT`, the deployed commit, and locally it falls back to `dev`. The deploy workflows wait for this value.
+- **Command:** `uvicorn app.main:app` on `${PORT:-8000}`. The service template sets `PORT`.
+- **Version:** `/health` reports `BUILD_VERSION`, or `dev` when it is not set. IMP-218 bakes the commit SHA into the image at build time (IMD-103).
 - **No migrations on start:** the container never runs migrations (IMD-38).
 - **Bad configuration:** the API refuses to start on a bad configuration and names the variable, never its value (FR-124).
 
@@ -59,65 +60,25 @@ make smoke URL=http://localhost:8000 ARGS='--web-origin http://localhost:3000'
 docker compose --profile api down   # stops api and db
 ```
 
-## 2. Deploy secrets (GitHub Actions secrets store)
+## 2. Deploy configuration
 
-The deploy workflows read only these repository secrets. GitHub masks them in logs, and the workflows never print them. Their rows in `docs/secrets.md` are added by IMP-113's follow-up run (owner, store and rotation rule). This file never holds a value.
+Deploys on AWS use the repository variables of A1 §4.4 and an OIDC role, so no AWS key and no deploy secret is stored. The names are in [docs/secrets.md](../secrets.md); the values are set in [aws-setup.md](aws-setup.md) section 12. The service secrets live in SSM Parameter Store.
 
-| Secret | Purpose | Used by |
-| --- | --- | --- |
-| `STAGING_DATABASE_URL` | Connection string of the Supabase staging database, for `make db-migrate` before each deploy | `deploy-staging.yml` |
-| `STAGING_RENDER_DEPLOY_HOOK_URL` | Deploy hook URL of the Render staging service (from Render: Settings, Deploy Hook) | `deploy-staging.yml` |
-| `STAGING_API_URL` | Base URL of the staging API on Render, for the version wait and `make smoke` | `deploy-staging.yml` |
-| `STAGING_WEB_ORIGIN` | Origin of the staging web app on Vercel (scheme and host, no path), for the CORS allow check in `make smoke` | `deploy-staging.yml` |
-| `PRODUCTION_DATABASE_URL` | Connection string of the production database (OD-15) | `deploy-production.yml` |
-| `PRODUCTION_RENDER_DEPLOY_HOOK_URL` | Deploy hook URL of the Render production service | `deploy-production.yml` |
-| `PRODUCTION_API_URL` | Base URL of the production API | `deploy-production.yml` |
-| `PRODUCTION_WEB_ORIGIN` | Origin of the production web app | `deploy-production.yml` |
+## 3. API service
 
-`STAGING_API_URL`, `STAGING_WEB_ORIGIN` and their production pairs are not secret. They are kept in the secrets store so that each workflow checks a single set of four values.
+Replaced by the AWS set-up: see [aws-setup.md](aws-setup.md) sections 7 and 8. Render is not used (IMD-99).
 
-## 3. Render web service (card step 2), blocked by IMP-113 (owner Kirtan)
+## 4. Web service
 
-When the Render account exists:
+Replaced by the AWS set-up: see [aws-setup.md](aws-setup.md) sections 9 and 10. Vercel is not used (IMD-99), so there are no pull-request previews. The staging API allows only the exact staging web origin (NFR-015).
 
-1. **GitHub access:** ask the repository owner (het-lathiya) to approve Render's GitHub access to `het-lathiya/Group12`. Only the owner can approve it (`docs/decisions/accounts.md`).
-2. **Create the service:** a **Web Service** from the repository, with:
-   - runtime **Docker**;
-   - root directory `apps/api` and Dockerfile path `apps/api/Dockerfile`;
-   - branch `main`;
-   - health check path `/health`.
-3. **Auto-deploy: off.** The deploy workflow triggers each deploy through the hook after the migrations, so the schema is always ahead of the code (IMD-38).
-4. **Environment variables** in the Render dashboard (values from the password manager, never from this repository):
-   - `APP_ENV=staging`;
-   - `DATABASE_URL`: the staging Supabase connection string;
-   - `SUPABASE_URL`;
-   - `SUPABASE_JWKS_URL` or `SUPABASE_JWT_SECRET`, per OD-06 (both are implemented, IMD-04);
-   - `ALLOWED_ORIGINS`: the exact staging web origin (NFR-015);
-   - `AI_PROVIDER=MOCK` until Sprint 3;
-   - leave `BUILD_VERSION` unset, so `/health` reports the deployed commit.
-5. **Store the four staging secrets** of section 2 in the GitHub Actions secrets store: the deploy hook URL, the API URL, the web origin and the staging database connection string.
+## 5. Database and Auth
 
-## 4. Vercel project (card step 3), blocked by IMP-113 (owner Kirtan)
+The database is RDS, set up in [aws-setup.md](aws-setup.md) section 4. It holds the auth stub, applied by `python -m app.db.auth_stub --if-missing` (IMP-219). Supabase serves sign-in only: its URL settings are in section 11 of the same guide, and e-mail confirmation follows IMP-113 section 2, so that the confirmation link reaches `/auth/callback` (IMP-109).
 
-The Vercel account exists, but the API URL and the Supabase staging values it needs do not yet.
+## 6. Deploy workflows
 
-1. **GitHub access:** the Vercel GitHub app's access to `het-lathiya/Group12` is approved by het-lathiya.
-2. **Import the project:** import `het-lathiya/Group12` with root directory `apps/web` and framework preset Next.js. The production branch is `main`, and preview deployments for pull requests are on.
-3. **Environment variables:** set the browser-safe variables only (CLAUDE.md §6) for Production and Preview:
-   - `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (the staging project);
-   - `NEXT_PUBLIC_API_BASE_URL` (`<staging API URL>/api/v1`);
-   - `NEXT_PUBLIC_FEATURES_DISABLED` (the same list as the API's `FEATURES_DISABLED`).
-4. **Record the origin:** put the staging web origin in Render's `ALLOWED_ORIGINS` and in `STAGING_WEB_ORIGIN`.
-
-Preview deployments have their own origins, which the staging API does not allow (exact origins only, NFR-015). A preview can show its pages, but its API calls are refused by CORS.
-
-## 5. Supabase staging project, blocked by IMP-113 (owner Kirtan)
-
-- **The project:** created under IMP-113 (OD-15). The connection string goes into `STAGING_DATABASE_URL` and Render's `DATABASE_URL`.
-- **The auth stub:** never applied here. Supabase already has the `auth` schema, and the stub is for plain PostgreSQL only.
-- **Auth settings:** email confirmation on or off per IMP-113 section 2. The site URL and the redirect allow list include the staging web origin, so that the confirmation link reaches `/auth/callback` (IMP-109).
-
-## 6. Deploy workflows (card step 4)
+**These still describe the IMP-112 Render steps.** While their secrets are missing they end green without deploying. IMP-218 replaces them with the AWS flow of A1 §4.5.
 
 ### `deploy-staging.yml`
 
@@ -137,20 +98,11 @@ Preview deployments have their own origins, which the staging API does not allow
   1. checks that the tag is on `main`;
   2. runs the same four steps against production.
 
-### Not yet verified
+## 7. First-request time (NFR-005), not measured yet
 
-These two points are first checked on the first configured deploy:
+Express Mode keeps one task running, so there is no sleep (A1 §9.2). After a deploy, Kirtan records the time of the first request with `curl -s -o /dev/null -w '%{time_total}\n' <staging API URL>/health`.
 
-- that Render's deploy hook honours the `ref` query parameter;
-- that `RENDER_GIT_COMMIT` is set in the running container.
-
-If either fails, the wait step times out and the run fails visibly. The fix is to set `BUILD_VERSION` from the deploy, or to drop `ref` and let Render deploy the head of `main`.
-
-## 7. Cold start (card step 6, NFR-005), blocked by IMP-113 (owner Kirtan)
-
-Measure after at least 15 minutes without requests, three times, with `curl -s -o /dev/null -w '%{time_total}\n' <staging API URL>/health`.
-
-| Measurement | Date (YYYY-MM-DD) | Idle time before (minutes) | First `/health` response time (s) |
+| Measurement | Date (YYYY-MM-DD) | Time since the deploy (minutes) | First `/health` response time (s) |
 | --- | --- | --- | --- |
 | 1 | | | |
 | 2 | | | |
