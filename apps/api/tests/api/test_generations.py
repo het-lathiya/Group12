@@ -648,6 +648,50 @@ async def test_tc_135_an_id_outside_the_shortlist_is_rejected_before_saving(
     assert await plan_rows(db_session, trip) == ([], 0)
     versions = select(func.count()).select_from(ItineraryVersion)
     assert await db_session.scalar(versions.where(ItineraryVersion.trip_id == uuid.UUID(trip))) == 0
+    row = await db_session.get(AiGeneration, uuid.UUID(generation_id), populate_existing=True)
+    assert row is not None
+    assert row.validation_summary == {
+        "errors": 1,
+        "warnings": 0,
+        "infos": 0,
+        "invalid_ids": 1,
+        "rejected_items": 1,
+        "kind": None,
+    }
+    assert failed["validation_summary"]["errors"] == 1
+
+
+@pytest.mark.asyncio
+async def test_tc_011_invalid_output_is_classified_and_not_called_again(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    calls = 0
+
+    class Counting(MockProvider):
+        async def generate_itinerary(self, request: GenerationRequest) -> Any:
+            nonlocal calls
+            calls += 1
+            return await super().generate_itinerary(request)
+
+    api_app.dependency_overrides[get_model_provider] = lambda: Counting(
+        "invalid_json", app_env="test"
+    )
+    generation_id = (await start(api_client, auth_user, trip)).json()["id"]
+
+    failed = await poll(api_client, auth_user, generation_id, submitted, sessions)
+
+    assert calls == 1
+    assert (failed["status"], failed["failure_reason"]) == ("failed", "invalid_output")
+    assert await plan_rows(db_session, trip) == ([], 0)
+    row = await db_session.get(AiGeneration, uuid.UUID(generation_id), populate_existing=True)
+    assert row is not None
+    assert row.validation_summary["kind"] == "malformed_json"
 
 
 class SlowProvider(MockProvider):
