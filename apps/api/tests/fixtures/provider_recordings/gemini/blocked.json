@@ -1,0 +1,10 @@
+{
+  "http_status": 400,
+  "headers": {},
+  "body": {
+    "error": {
+      "code": "safety",
+      "message": "Sample vendor text that must never surface."
+    }
+  }
+}

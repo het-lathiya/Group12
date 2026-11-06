@@ -1,0 +1,10 @@
+{
+  "http_status": 429,
+  "headers": {},
+  "body": {
+    "error": {
+      "code": "quota_exceeded",
+      "message": "Sample vendor text that must never surface."
+    }
+  }
+}
