@@ -1,6 +1,7 @@
 """API-01 GET /health, the 404 envelope and CORS (IMP-103; TC-288, TC-044, TC-351).
 
 API-02 GET /health/ready against the migrated test database and a closed port (IMP-201; TC-289).
+Provider status in readiness (IMP-302; FR-044: TC-006, TC-044, TC-167, TC-168).
 """
 
 import uuid
@@ -8,17 +9,27 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from alembic.script import ScriptDirectory
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from fixtures.auth import AuthUser
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.errors import ProviderAuthError
 from app.ai.factory import get_provider
+from app.ai.providers.mock import MockProvider
 from app.core import health
 from app.core.config import Settings
+from app.db.models import AiGeneration, Destination
 from app.main import create_app
-from app.schemas.ai import HealthStatus
+from app.places import seed
+from app.schemas.ai import GenerationRequest, HealthStatus
 
 MIGRATIONS = Path(__file__).resolve().parents[2] / "migrations"
+SAMPLETON = Path(__file__).resolve().parents[4] / "data" / "fixtures" / "sampleton"
 CLOSED_PORT_URL = "postgresql+psycopg://ready-user:ready-db-secret@127.0.0.1:9/nowhere"
 
 ALLOWED_ORIGIN = "http://localhost:3000"
@@ -231,6 +242,193 @@ def test_health_ready_caches_the_provider_check(
     for _ in range(3):
         assert client.get("/health/ready").status_code == 200
     assert len(calls) == 1  # cached for PROVIDER_CACHE_S
+
+
+def test_health_ready_checks_the_provider_again_after_the_cache_expires(
+    clean_settings_env: pytest.MonkeyPatch, migrated_database_url: str
+) -> None:
+    client = ready_client(migrated_database_url)
+    provider = MockProvider("ok", app_env="test")
+    client.app.state.model_provider = provider
+    clock = [1000.0]
+    clean_settings_env.setattr(health.time, "monotonic", lambda: clock[0])
+
+    assert client.get("/health/ready").json()["status"] == "ready"
+    provider.raise_error = ProviderAuthError()
+    clock[0] += health.PROVIDER_CACHE_S - 1
+    assert client.get("/health/ready").json()["status"] == "ready"  # still the cached answer
+    clock[0] += 1
+    assert client.get("/health/ready").json()["status"] == "degraded"
+
+
+# ---------- Provider status (IMP-302; FR-044) ----------
+
+
+class CountingProvider(MockProvider):
+    """Counts health checks and refuses any generation."""
+
+    def __init__(self) -> None:
+        super().__init__("ok", app_env="test")
+        self.health_checks = 0
+
+    async def generate_itinerary(self, request: GenerationRequest) -> Any:
+        raise AssertionError("a health route called the model")
+
+    async def health_check(self) -> HealthStatus:
+        self.health_checks += 1
+        return await super().health_check()
+
+
+# TC-167: FR-044 AC1.
+def test_tc_167_health_ready_names_the_provider_model_and_status(
+    clean_settings_env: pytest.MonkeyPatch, migrated_database_url: str
+) -> None:
+    client = ready_client(migrated_database_url)
+    client.app.state.model_provider = MockProvider("ok", app_env="test")
+
+    check = client.get("/health/ready").json()["checks"]["provider"]
+
+    assert check == {"name": "MOCK", "model_id": "mock-v1", "status": "ok"}
+
+
+# API-01 names the provider and calls nothing; TC-006 covers the readiness side.
+def test_tc_167_health_gives_the_provider_name_with_no_provider_call(client: TestClient) -> None:
+    provider = CountingProvider()
+    client.app.state.model_provider = provider
+
+    assert client.get("/health").json()["provider"] == "MOCK"
+    assert provider.health_checks == 0
+
+
+# TC-168: FR-044 AC2, with MOCK raising the auth error (IMD-27) and with GEMINI without a key.
+def test_tc_168_mock_auth_error_is_200_degraded_with_the_provider_down(
+    clean_settings_env: pytest.MonkeyPatch, migrated_database_url: str
+) -> None:
+    client = ready_client(migrated_database_url)
+    client.app.state.model_provider = MockProvider(
+        "ok", app_env="test", raise_error=ProviderAuthError()
+    )
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "degraded"
+    assert body["checks"]["database"] == "ok"
+    assert body["checks"]["provider"] == {"name": "MOCK", "model_id": "mock-v1", "status": "down"}
+
+
+def test_tc_168_gemini_without_a_key_is_200_degraded(
+    clean_settings_env: pytest.MonkeyPatch, migrated_database_url: str
+) -> None:
+    client = ready_client(migrated_database_url, ai_provider="GEMINI", gemini_model_id="m-test")
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    assert response.json()["checks"]["provider"]["status"] == "down"
+
+
+@pytest.mark.parametrize("status", ["degraded", "down"])
+def test_tc_168_only_the_database_makes_readiness_503(
+    clean_settings_env: pytest.MonkeyPatch, migrated_database_url: str, status: Any
+) -> None:
+    class Unwell(MockProvider):
+        async def health_check(self) -> HealthStatus:
+            return HealthStatus(status=status, detail=None, checked_at=datetime.now(UTC))
+
+    client = ready_client(migrated_database_url)
+    client.app.state.model_provider = Unwell("ok", app_env="test")
+
+    response = client.get("/health/ready")
+
+    assert (response.status_code, response.json()["status"]) == (200, "degraded")
+    assert response.json()["checks"]["provider"]["status"] == status
+
+
+@pytest.mark.asyncio
+async def test_tc_168_with_the_provider_down_non_ai_routes_still_answer(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+) -> None:
+    api_app.state.model_provider = MockProvider(
+        "ok", app_env="test", raise_error=ProviderAuthError()
+    )
+    await seed.load_fixture(db_session, seed.read_fixture(SAMPLETON))
+    destination = await db_session.scalar(
+        select(Destination).where(Destination.slug == "sampleton")
+    )
+    assert destination is not None
+    created = await api_client.post(
+        "/api/v1/trips",
+        json={
+            "title": "Weekend in Sampleton",
+            "destination_id": str(destination.id),
+            "start_date": "2026-12-04",
+            "end_date": "2026-12-06",
+            "adults": 2,
+        },
+        headers=auth_user.headers,
+    )
+    assert created.status_code == 201, created.text
+
+    listed = await api_client.get("/api/v1/trips", headers=auth_user.headers)
+    read = await api_client.get(f"/api/v1/trips/{created.json()['id']}", headers=auth_user.headers)
+
+    assert listed.status_code == 200, listed.text  # API-08
+    assert read.status_code == 200, read.text  # API-10
+
+
+# TC-044: the fields are an allow-list, so a detail holding a secret goes nowhere.
+def test_tc_044_health_ready_returns_no_provider_detail(
+    clean_settings_env: pytest.MonkeyPatch, migrated_database_url: str
+) -> None:
+    leak = "key=health-test-gemini-key-not-real&prompt=A%20private%20note"
+
+    class Leaky(MockProvider):
+        async def health_check(self) -> HealthStatus:
+            return HealthStatus(status="down", detail=leak, checked_at=datetime.now(UTC))
+
+    client = ready_client(migrated_database_url)
+    client.app.state.model_provider = Leaky("ok", app_env="test")
+
+    response = client.get("/health/ready")
+
+    assert set(response.json()["checks"]["provider"]) == {"name", "model_id", "status"}
+    assert leak not in response.text
+    assert "health-test-gemini-key-not-real" not in response.text
+
+
+def test_tc_044_health_ready_shows_no_gemini_key(
+    clean_settings_env: pytest.MonkeyPatch, migrated_database_url: str
+) -> None:
+    key = SECRETS["gemini_api_key"]
+    client = ready_client(
+        migrated_database_url, ai_provider="GEMINI", gemini_api_key=key, gemini_model_id="m-test"
+    )
+
+    response = client.get("/health/ready")
+
+    assert response.json()["checks"]["provider"]["status"] == "ok"
+    assert key not in response.text
+
+
+# TC-006: readiness makes no generation call and writes no generation row.
+@pytest.mark.asyncio
+async def test_tc_006_health_ready_makes_no_generation_call_and_no_row(
+    api_app: FastAPI, api_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    provider = CountingProvider()
+    api_app.state.model_provider = provider
+    count = select(func.count()).select_from(AiGeneration)
+    before = await db_session.scalar(count)
+
+    await api_client.get("/health/ready")
+
+    assert provider.health_checks == 1
+    assert await db_session.scalar(count) == before
 
 
 # TC-342: readiness answers carry the request ID, and a client UUID is echoed.

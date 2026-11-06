@@ -363,3 +363,13 @@ def test_the_mock_imports_no_http_client_vendor_sdk_or_planning_module() -> None
     }
     forbidden = ("httpx", "requests", "google", "app.trips", "app.generation", "app.places")
     assert not [name for name in imported if name.startswith(forbidden)]
+
+
+def test_health_check_is_down_for_a_configuration_error_only() -> None:
+    def status(error: Any) -> str:
+        provider = MockProvider("ok", app_env="test", raise_error=error)
+        return asyncio.run(provider.health_check()).status
+
+    assert status(ProviderAuthError()) == "down"
+    assert status(ProviderBadRequest("no model")) == "down"
+    assert status(ProviderTimeout()) == "ok"
