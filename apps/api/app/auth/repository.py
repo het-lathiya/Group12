@@ -3,7 +3,7 @@
 from uuid import UUID
 
 from psycopg import errors as pg_errors
-from sqlalchemy import text
+from sqlalchemy import func, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,4 +38,10 @@ async def mirror_auth_user(session: AsyncSession, user_id: UUID) -> None:
 
 
 async def get(session: AsyncSession, user_id: UUID) -> ProfileRow | None:
-    return await session.get(ProfileRow, user_id)
+    return await session.get(ProfileRow, user_id, populate_existing=True)
+
+
+async def set_ai_notice_ack(session: AsyncSession, user_id: UUID) -> None:
+    await session.execute(
+        update(ProfileRow).where(ProfileRow.id == user_id).values(ai_notice_ack_at=func.now())
+    )

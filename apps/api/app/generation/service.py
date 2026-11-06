@@ -1,8 +1,8 @@
 """Generation service (MOD-B06): start a generation (API-22) and read its status (API-23).
 
 Create rules of §6.4, in order: trip owned and not archived; trip complete; no current itinerary;
-mode ai only (rule_based waits for IMP-402). The AI-notice check (IMP-305) and the daily caps
-(IMP-511) are added by their cards. ``request_hash`` covers {trip_id, scope, day_number, mode,
+mode ai only (rule_based waits for IMP-402); the AI notice acknowledged (IMD-24). The daily caps
+(IMP-511) are added by their card. ``request_hash`` covers {trip_id, scope, day_number, mode,
 plan_revision}: the same request while one is active returns that generation, a different one is
 refused with GENERATION_IN_PROGRESS.
 """
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.factory import GENERATE_TEMPLATE_ID
 from app.ai.prompts import registry
 from app.ai.providers.base import ModelProvider
+from app.auth import service as auth_service
 from app.core.errors import Conflict, GenerationInProgress, ValidationFailed
 from app.db.models import AiGeneration
 from app.generation import jobs, records, repository
@@ -68,6 +69,10 @@ async def start_generation(
     if body.mode == "rule_based":
         raise ValidationFailed(
             details=[ErrorDetail(field="mode", message="Rule-based planning is not available yet.")]
+        )
+    if not await auth_service.ai_notice_acknowledged(session, user_id):
+        raise ValidationFailed(
+            details=[ErrorDetail(field="ai_notice", message="Acknowledge the AI notice first.")]
         )
 
     request_hash = records.request_hash(

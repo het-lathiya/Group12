@@ -136,6 +136,10 @@ async def owned(
         headers=a.headers,
     )
     assert saved.status_code == 200, saved.text
+    acknowledged = await client.patch(
+        "/api/v1/me", json={"ai_notice_acknowledged": True}, headers=a.headers
+    )
+    assert acknowledged.status_code == 200, acknowledged.text
     started = await client.post(
         f"/api/v1/trips/{trip_id}/generations", json={"mode": "ai"}, headers=a.headers
     )
