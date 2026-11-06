@@ -95,7 +95,115 @@ Summary: 14 merged; 1 with an approval (#2, from a reviewer who owns another par
 
 ## SG-2 end of week 2: walking skeleton (blueprint Gate 1, IMP-299)
 
-Status: not run
+Status: **pass with listed gaps**
+
+- Run: RUN-044 (IMP-299, Kirtan), 6 November 2026. Index: [sprint-2.md](sprint-2.md).
+- Commit verified: `0b361fc` (`main` at preflight), in the working copy on branch `chore/IMP-299-sg2-gate` before any file changed. No `.env` file was read.
+- Scope of this result: the walking skeleton is shown locally and in CI. **Nothing is shown on AWS staging yet**, which is what the card and Amendment A1 §10.4 ask for. The result is the operator's, with the staging criteria carried as an open item due before SG-3.
+- Sprint 2 cards: all 20 are merged and none is blocked ([sprint-2.md](sprint-2.md)).
+
+### Criteria
+
+| # | Criterion (specification §9.1 as amended by A1 §10.4) | Result | Evidence |
+| --- | --- | --- | --- |
+| 1 | A signed-in user creates a trip, generates with MOCK and sees the saved plan | pass (local and CI; on staging see row 4) | `make e2e ARGS='journey'` `  4 passed (26.5s)` in this run; [E2E run 42233148950](https://github.com/het-lathiya/Group12/actions/runs/42233148950) on `0b361fc`: success; [IMP-216 record](parts/IMP-216-whole-task.md) |
+| 2 | A generation record exists | pass | IMP-210 tests in `make test-api`, `231 passed, 1 warning in 57.74s` in this run; the journey reads API-23 with provider `MOCK` and outcome `model`; [IMP-210 record](parts/IMP-210-whole-task.md) |
+| 3 | Destination 1 loaded with its quality report | pass locally; staging load not verifiable until the AWS set-up | [quality_report.md](../../data/places/ahmedabad/quality_report.md): 103 usable against a minimum of 100. In this run: `seed ahmedabad: gate loaded 103, rejected 0, flagged 0` (`--check --strict`). Local load: [IMP-206 record](parts/IMP-206-lead-curation.md) |
+| 4 | AWS staging: both Express services healthy, release task run, migration 0007 applied, `make smoke` against the staging API | not verifiable (open item, owner Kirtan, due before SG-3) | No AWS resource exists yet. [Deploy staging run 42233551590](https://github.com/het-lathiya/Group12/actions/runs/42233551590) on `0b361fc` is green only because it skips: notice `AWS staging not configured (blocked by IMP-217)`. No staging URL exists, so `make smoke` was not run. Migration 0007 is applied locally only (`alembic current`: `0007 (head)`) |
+| 5 | Contract v1 declared, including `sources[]` and the `GenerationOut` retrieval fields | pass | [IMP-214 record](parts/IMP-214-whole-task.md); `make openapi-check` `openapi-check: contracts/ and apps/web/lib/api/schema.d.ts are up to date` and `make test-contract` `35 passed, 1 warning in 0.94s` in this run |
+| 6 | Tag `contract-v1` | open item (operator) | `git tag --list 'contract-v1'` printed nothing and the remote has no such tag. To set it: `git tag contract-v1 1baa1f09b0b46d93f252602bf6f9a2364a6f543f` (the last commit of the IMP-214 merge, PR #227) and push the tag. Card step 4 also asks for the cross-squad contract review first; no record of one was found |
+| 7 | `make check` | pass | Table below, exit 0; [CI run 42233148962](https://github.com/het-lathiya/Group12/actions/runs/42233148962) on `0b361fc`: success |
+| 8 | `make test-authz` | pass | Part of `make check`: `28 passed in 12.72s` |
+| 9 | `make e2e ARGS='journey'` | pass | `  4 passed (26.5s)` on the local stack, set up as in `e2e.yml`; [E2E run 42233148950](https://github.com/het-lathiya/Group12/actions/runs/42233148950) |
+| 10 | Acceptable known defects | within the gate | Unbuilt endpoints answer 501 `NOT_IMPLEMENTED` (IMP-214) |
+
+### Checks of this run (`0b361fc`)
+
+| Command | Exit | Last line |
+| --- | --- | --- |
+| `make db-up` | 0 | ` Container group12-db-1 Healthy ` |
+| `make check TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/travel_test` | 0 | `   Duration  6.30s (environment 61%, tests 16%, setup 14%, import 7%, transform 2%)` |
+| `make db-down` | 0 | ` Network group12_default Removed ` |
+| `make stack-up` | 0 | output discarded, because it holds the stack's keys |
+| `make db-migrate` | 0 | `INFO  [alembic.runtime.migration] Will assume transactional DDL.` (`alembic current`: `0007 (head)`) |
+| `make seed` | 0 | `seed sampleton: places inserted 0, updated 0, unchanged 30, deactivated 0` |
+| `make e2e ARGS='journey'` | 0 | `  4 passed (26.5s)` |
+| `make stack-down` | 0 | output discarded |
+| `git tag --list 'contract-v1'` | 0 | prints nothing |
+
+`make check` parts: ruff `All checks passed!`; ESLint `✖ 1 problem (0 errors, 1 warning)` (`window.location.assign` in `apps/web/lib/api/client.ts`); Prettier `All matched files use Prettier code style!`; mypy `Success: no issues found in 85 source files`; import-linter `Contracts: 4 kept, 0 broken.`; openapi-check up to date; unit `385 passed, 1 warning in 9.66s`; contract `35 passed, 1 warning in 0.94s`; api `231 passed, 1 warning in 57.74s`; authz `28 passed in 12.72s`; web `Tests  80 passed (80)`.
+
+The API for the journey was started by hand as in `e2e.yml` (`APP_ENV=test`, `AI_PROVIDER=MOCK`, `DB_AUTH_STUB=false`, `SUPABASE_JWKS_URL`), with the stack's values held in the process environment only. The local stack keeps its database volume across `make stack-down`, so its migration step may have had nothing to do; migration from an empty database runs on every CI `api` job.
+
+### Working-agreement audit (IMD-68)
+
+Every pull request merged after the SG-1 audit, from `gh pr view <n> --json reviews,statusCheckRollup`: 30 in all, including the Sprint 1 cards and decisions that merged in this period. All were merged by the operator account `het-lathiya`. "Checks green" means all six required checks succeeded on the merged head commit.
+
+| PR | Title | reviewDecision | Approving reviewer | Checks green on merged head | Meets the agreement |
+| --- | --- | --- | --- | --- | --- |
+| #199 | IMP-115 · whole task | none | none (Junaid-Kureshi requested) | yes (6/6) | **no**: no approval |
+| #203 | IMP-199 · whole task | none | none (Junaid-Kureshi requested) | yes (6/6) | **no**: no approval |
+| #204 | IMP-203 · whole task | none | none (kirtan-S111 requested) | yes (6/6) | **no**: no approval |
+| #205 | IMP-205 · import-quality-gate and places-api-search parts | none | none (kirtan-S111 requested) | yes (6/6) | **no**: no approval |
+| #206 | IMP-205 · places-api-search part (service layer) | none | none (kirtan-S111 requested) | yes (6/6) | **no**: no approval |
+| #207 | IMP-204 · whole task | none | none (kirtan-S111 requested) | yes (6/6) | **no**: no approval |
+| #208 | IMP-207 · whole task | none | none (Nidhi9864 requested) | yes (6/6) | **no**: no approval |
+| #209 | IMP-202 · whole task | none | none (Malhar1112-v requested) | yes (6/6) | **no**: no approval |
+| #210 | IMP-208 · whole task | none | none (manyarana requested) | yes (6/6) | **no**: no approval |
+| #211 | IMP-209 · whole task | none | none (kirtan-S111 requested) | yes (6/6) | **no**: no approval |
+| #226 | IMD-99 · Amendment A1: AWS hosting and RAG pipeline | none | none (Nidhi9864 requested) | yes (6/6) | **no**: no approval |
+| #227 | IMP-214 · whole task | none | none (kirtan-S111, Junaid-Kureshi requested) | yes (6/6) | **no**: no approval |
+| #228 | IMP-311 · whole task | none | none (kirtan-S111 requested) | yes (6/6) | **no**: no approval |
+| #229 | IMP-219 · whole task | none | none (manalPatel2557 requested) | yes (6/6) | **no**: no approval |
+| #231 | IMP-201 · whole task | none | none (Junaid-Kureshi requested) | yes (6/6) | **no**: no approval |
+| #232 | IMP-210 · whole task | none | none (manalPatel2557 requested) | yes (6/6) | **no**: no approval |
+| #233 | IMP-215 · whole task | none | none (kirtan-S111 requested) | yes (6/6) | **no**: no approval |
+| #234 | IMD-117 · screen drafts as design references | none | none (kirtan-S111 requested) | yes (6/6) | **no**: no approval |
+| #235 | IMP-212 · whole task | none | none (Assassin-byte requested) | yes (6/6) | **no**: no approval |
+| #236 | IMP-211 · whole task | none | none (manalPatel2557 requested) | yes (6/6) | **no**: no approval |
+| #237 | IMD-118 · UI design guide and theme tokens | none | none (Assassin-byte requested) | yes (6/6) | **no**: no approval |
+| #238 | IMD-119 · in-progress conflict names the active generation | none | none (manalPatel2557 requested) | yes (6/6) | **no**: no approval |
+| #239 | IMP-213 · whole task | none | none (Manasvi1704 requested) | yes (6/6) | **no**: no approval |
+| #240 | IMD-120 · desk-checked seed data and plan for destination 1 | none | none (Junaid-Kureshi requested) | yes (6/6) | **no**: no approval |
+| #241 | IMP-213 · fix flaky timeout test | none | none (Manasvi1704 requested) | yes (6/6) | **no**: no approval |
+| #242 | IMP-206 · lead-curation and hours-prices parts | none | none (kirtan-S111 requested) | yes (6/6) | **no**: no approval |
+| #243 | IMP-217 · whole task | none | none (Junaid-Kureshi requested) | yes (6/6) | **no**: no approval |
+| #244 | IMP-210 · fix job-timeout race | none | none (manalPatel2557 requested) | yes (6/6) | **no**: no approval |
+| #245 | IMP-218 · deploy-workflows and web-image parts | none | none (kirtan-S111 requested) | yes (6/6) | **no**: no approval |
+| #246 | IMP-216 · whole task | none | none (Junaid-Kureshi requested) | yes (6/6) | **no**: no approval |
+
+Summary: 30 merged; **0 with an approval**; 30 with all six checks green on the merged head. **No merged pull request meets the working agreement in full.** Exceptions: all 30 lack an approving review, and #227 also requested its own part owner (kirtan-S111) as a reviewer. The SG-1 carry-over "approvals before merge from now on" was not met. Nothing was changed on these pull requests.
+
+### Gaps and open defects
+
+- Staging criteria not shown (row 4); tag `contract-v1` not set (row 6).
+- Working agreement not met by any merged pull request (audit above).
+- The defects under Open items carry no severity in the part records. None stops the journey, which passes.
+- Evidence the card lists and this run does not have: staging screenshots, the screenshot of the saved plan, the cross-squad contract review and the point-scale recalibration of card step 5.
+
+### Open items
+
+| Item | Owner | Due |
+| --- | --- | --- |
+| AWS set-up, first deploy (TC-437), forced failure (TC-438), staging smoke and CORS, IMP-216 staging walk-through, IMP-206 staging load, NFR-005 first-request time, TC-433 to TC-436 | Kirtan | before SG-3 |
+| Tag `contract-v1` (row 6) | operator | before SG-3 |
+| IMP-113 outcome: accounts, Gemini terms and model IDs, ORS key and email sender | Kirtan, Nidhi, Junaid | before SG-3 |
+| IMD-120: confirm the plan answers and fill the "not stated" fields | Malhar | before SG-3 |
+| IMD-120: review the plan and the 20 percent sample (US-026 AC3), recorded in `docs/progress/parts/IMP-206-review.md`, since `quality_report.md` is written by the seed | Junaid | before SG-3 |
+| IMD-120: check the 60 unverified rows | Jeel, Malhar | before SG-3 |
+| IMP-114 interviews (draft #201), by operator decision of 6 November 2026 | Junaid, Krrish | after Sprint 3, before SG-4 |
+| F-1: `Money.currency` lacks the three-letter pattern (`app/schemas/common.py`) | Kirtan | next change to that file |
+| F-3: `BudgetStatus` shows an excess when not exceeded | Manal | IMP-308 |
+| F-2: `AmountRange` min greater than max | team (proposed decision) | next decision run |
+| `IllegalTransitionError` when a job timeout fires after the plan commit | Het | IMP-305, Het's part |
+| `user_hash` empty in access logs (one line in `app/auth/deps.py`) | Kirtan | next change to that file |
+| No committed ES256 token test | Het | IMP-108 area |
+| Control radius scale and cards at 16.8 px instead of 12 px; a foreign trip shows the empty itinerary state | Manasvi | IMP-309 |
+| No axe tooling for NFR-025 | Krrish | IMP-513, IMP-703 |
+| Local guide lacks `SUPABASE_JWKS_URL` and the env values needed without `.env` files, and should name `make db-bootstrap` for a plain database | Kirtan | next DevOps card |
+| `docs/guides/README.md` lacks `ui-design.md` and `screen-drafts.md` | next docs change | next docs change |
+| Manasvi's commits show no GitHub account until 202301108@dau.ac.in is verified on her account (no repository change) | Manasvi | no date set |
+| PR #230 stays open outside the plan (operator decision); PR #201 stays a draft | operator | none |
 
 ## SG-3 end of week 3: Gemini vertical slice (blueprint Gate 2, IMP-399)
 

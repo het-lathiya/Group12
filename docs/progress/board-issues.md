@@ -2,19 +2,19 @@
 
 Generated in IMP-102 (step 7) from the "Owners and parts" row of every card in [docs/spec/TASK_REGISTER.md](../spec/TASK_REGISTER.md), for the team to import into the GitHub Projects board. Each row is one issue: the title is `IMP-NNN · <part text as written on the card>` (`IMP-NNN · whole task` for a single-owner card), assigned to the part owner and labelled `sprint-N` and `points-X`. Status `merged` marks a part already on `main` (its issue is created closed); every other part is `open`.
 
-**183 parts** across **108 cards**, **427 points**.
+**197 parts** across **119 cards**, **460 points**.
 
 | Sprint | Parts | Points | Merged |
 | --- | --- | --- | --- |
 | 1 | 21 | 47 | 2 |
-| 2 | 19 | 46 | 0 |
-| 3 | 18 | 57 | 0 |
-| 4 | 25 | 61 | 0 |
+| 2 | 24 | 59 | 0 |
+| 3 | 26 | 75 | 0 |
+| 4 | 26 | 63 | 0 |
 | 5 | 25 | 63 | 0 |
 | 6 | 30 | 75 | 0 |
 | 7 | 33 | 62 | 0 |
 | 8 | 12 | 16 | 0 |
-| **Total** | **183** | **427** | **2** |
+| **Total** | **197** | **460** | **2** |
 
 Labels to create before the import: `points-0`, `points-1`, `points-2`, `points-3`, `points-4`, `points-5`, `points-6`, `sprint-1`, `sprint-2`, `sprint-3`, `sprint-4`, `sprint-5`, `sprint-6`, `sprint-7`, `sprint-8`.
 
