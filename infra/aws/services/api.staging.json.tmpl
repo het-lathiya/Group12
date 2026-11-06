@@ -1,0 +1,52 @@
+{
+  "serviceName": "group12-api-staging",
+  "cluster": "default",
+  "executionRoleArn": "${ECS_EXECUTION_ROLE_ARN}",
+  "infrastructureRoleArn": "${ECS_INFRASTRUCTURE_ROLE_ARN}",
+  "healthCheckPath": "/health",
+  "cpu": "256",
+  "memory": "512",
+  "cpuArchitecture": "X86_64",
+  "scalingTarget": {
+    "minTaskCount": 1,
+    "maxTaskCount": 1
+  },
+  "primaryContainer": {
+    "image": "${IMAGE}",
+    "containerPort": 8000,
+    "awsLogsConfiguration": {
+      "logGroup": "/ecs/group12-api-staging",
+      "logStreamPrefix": "ecs"
+    },
+    "environment": [
+      { "name": "APP_ENV", "value": "staging" },
+      { "name": "LOG_LEVEL", "value": "INFO" },
+      { "name": "ALLOWED_ORIGINS", "value": "${STAGING_WEB_ORIGIN}" },
+      { "name": "RATE_LIMIT_PER_MIN", "value": "60" },
+      { "name": "FEATURES_DISABLED", "value": "${STAGING_FEATURES_DISABLED}" },
+      { "name": "SUPABASE_URL", "value": "${STAGING_SUPABASE_URL}" },
+      { "name": "SUPABASE_JWKS_URL", "value": "" },
+      { "name": "DB_AUTH_STUB", "value": "true" },
+      { "name": "AI_PROVIDER", "value": "MOCK" },
+      { "name": "GEMINI_MODEL_ID", "value": "" },
+      { "name": "GEMINI_EMBEDDING_MODEL_ID", "value": "gemini-embedding-2" },
+      { "name": "GEMINI_TIMEOUT_S", "value": "35" },
+      { "name": "GEMINI_MAX_RETRIES", "value": "1" },
+      { "name": "PROMPT_TEMPLATE_VERSION", "value": "v1" },
+      { "name": "AI_MAX_INPUT_TOKENS", "value": "" },
+      { "name": "AI_MAX_OUTPUT_TOKENS", "value": "" },
+      { "name": "AI_DAILY_GENERATIONS_PER_USER", "value": "10" },
+      { "name": "AI_DAILY_GENERATIONS_GLOBAL", "value": "200" },
+      { "name": "AI_DAILY_ASSIST_CALLS_PER_USER", "value": "30" },
+      { "name": "ORS_TIMEOUT_S", "value": "8" },
+      { "name": "SEED_DIRS", "value": "" },
+      { "name": "PORT", "value": "8000" }
+    ],
+    "secrets": [
+      { "name": "DATABASE_URL", "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/group12/staging/DATABASE_URL" },
+      { "name": "GEMINI_API_KEY", "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/group12/staging/GEMINI_API_KEY" },
+      { "name": "ORS_API_KEY", "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/group12/staging/ORS_API_KEY" },
+      { "name": "SUPABASE_JWT_SECRET", "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/group12/staging/SUPABASE_JWT_SECRET" }
+    ]
+  }
+}
