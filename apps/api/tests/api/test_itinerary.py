@@ -9,6 +9,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -168,16 +169,17 @@ async def test_us_153_the_saved_plan_is_returned_in_order(
     for day in body["days"]:
         assert [i["position"] for i in day["items"]] == list(range(1, len(day["items"]) + 1))
         assert day["theme_origin"] == ("ai" if day["theme"] else "none")
+        priced = [item["cost"] for item in day["items"] if item["cost"]]
         assert day["day_cost"] == {
-            "min": "0.00",
-            "max": "0.00",
+            "min": f"{sum(Decimal(cost['min']) for cost in priced):.2f}",
+            "max": f"{sum(Decimal(cost['max']) for cost in priced):.2f}",
             "currency": "GBP",
-            "complete": len(day["items"]) == 0,
+            "complete": len(priced) == len(day["items"]),
         }
     for item in items:
         # A1 §7.1: sources is always present and empty until IMP-316.
         assert item["sources"] == []
-        assert item["cost"] is None
+        assert item["cost"] is None or item["cost"]["currency"] == "GBP"
         leg = item["travel_from_previous"]
         assert leg is None if item["position"] == 1 else leg["source"] == "fallback_estimate"
         assert item["origin"] == "model"
@@ -186,13 +188,19 @@ async def test_us_153_the_saved_plan_is_returned_in_order(
         end = start + timedelta(minutes=item["duration_min"])
         assert item["end_time"] == end.strftime("%H:%M")
         assert set(item["place"]) == {"id", "name", "category", "lat", "lon", "hours_label"}
-    # BF-04: no item has a stored cost yet (IMP-308), so the totals are incomplete.
+    # BF-07 to BF-09 with no traveller inputs and the default 10 percent contingency.
+    priced = [item["cost"] for item in items if item["cost"]]
+    high = sum(Decimal(cost["max"]) for cost in priced)
+    contingency = (high / 10).quantize(Decimal("0.01"), ROUND_HALF_UP)
     assert body["totals"] == {
         "currency": "GBP",
-        "estimate": {"min": "0.00", "max": "0.00"},
-        "planning_total": "0.00",
-        "complete": False,
-        "incomplete_count": len(items),
+        "estimate": {
+            "min": f"{sum(Decimal(cost['min']) for cost in priced):.2f}",
+            "max": f"{high:.2f}",
+        },
+        "planning_total": f"{high + contingency:.2f}",
+        "complete": len(priced) == len(items),
+        "incomplete_count": len(items) - len(priced),
     }
 
 

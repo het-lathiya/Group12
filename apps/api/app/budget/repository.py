@@ -13,6 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import BudgetSettings
 
 
+async def get_settings(session: AsyncSession, trip_id: UUID) -> BudgetSettings | None:
+    return await session.get(BudgetSettings, trip_id)
+
+
 async def upsert_settings(
     session: AsyncSession,
     trip_id: UUID,

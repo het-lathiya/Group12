@@ -72,6 +72,7 @@ source_modules =
     app.rag.chunker
     app.rag.query
     app.rag.mmr
+    app.budget.engine
 forbidden_modules =
     fastapi
     sqlalchemy

@@ -47,9 +47,8 @@ async def replace_plan(
 ) -> list[dict[str, Any]]:
     """Replace the trip's days, items and warnings with the plan; returns the snap-1 days.
 
-    Times, durations and travel are stored as step 9 calculated them; the snapshot leaves travel
-    out, because a restore recalculates it (§5.2). Cost columns stay null until the budget engine
-    fills them (IMP-308).
+    Times, durations, travel and costs are stored as step 9 calculated them; the snapshot leaves
+    travel and costs out, because a restore recalculates them (§5.2).
     """
     await session.execute(delete(ItineraryWarning).where(ItineraryWarning.trip_id == trip_id))
     # Items go with their day (foreign key on delete cascade).
@@ -88,6 +87,10 @@ async def replace_plan(
                     travel_from_prev_m=item.travel_from_prev_m,
                     travel_mode=item.travel_mode,
                     travel_source=item.travel_source,
+                    cost_min=item.cost_min,
+                    cost_max=item.cost_max,
+                    cost_currency=item.cost_currency,
+                    cost_label=item.cost_label,
                     **values,
                 )
             )
