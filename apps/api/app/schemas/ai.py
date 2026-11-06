@@ -15,7 +15,7 @@ from datetime import date, datetime
 from typing import Annotated, Final, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 
 INPUT_SCHEMA_VERSION: Final = "gr-1"
 OUTPUT_SCHEMA_VERSION: Final = "io-1"
@@ -258,6 +258,25 @@ class ItineraryOutput(StrictModel):
     days: list[ItineraryDayOutput] = Field(min_length=1, max_length=MAX_TRIP_DAYS)
     summary: str | None = Field(default=None, max_length=500)
     assumptions: list[str] = Field(max_length=MAX_ASSUMPTIONS)
+
+    @model_validator(mode="after")
+    def _fits_the_request(self, info: ValidationInfo) -> Self:
+        """The limits that depend on the trip (IMP-306), given as validation context.
+
+        Only ``app.validation.output_check`` passes the context, so an adapter's parse and the
+        exported schema stay as they are. A day number past the trip is not refused here:
+        ``check_output`` rejects its items with OUTSIDE_TRIP_DATES.
+        """
+        if not info.context:
+            return self
+        day_numbers = [day.day_number for day in self.days]
+        if len(day_numbers) > info.context["trip_days"]:
+            raise ValueError("more days than the trip has")
+        if len(set(day_numbers)) != len(day_numbers):
+            raise ValueError("a day number appears twice")
+        if any(len(day.items) > info.context["max_items_per_day"] for day in self.days):
+            raise ValueError("more items on a day than the pace allows")
+        return self
 
     def place_ids(self) -> list[str]:
         return [item.place_id for day in self.days for item in day.items]
