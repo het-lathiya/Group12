@@ -1,0 +1,20 @@
+{
+  "dataset_id": "trips",
+  "version": "v1",
+  "case_count": 15,
+  "category_counts": {
+    "standard": 3,
+    "tight_budget": 2,
+    "step_free_group": 2,
+    "must_visit_conflict": 2,
+    "pace_extreme": 2,
+    "long_trip": 1,
+    "day_regeneration": 1,
+    "hostile_notes": 2
+  },
+  "files": {
+    "cases.jsonl": "2792ee14ef694a339409efb34611d0003dff3e79c45e8c1ee42dddbef0cc93af",
+    "../schema.json": "cb27f1e7e0783e2ab1a26a8f838a8ca5bf3ea7783f24f07743ba14acb677c72d"
+  },
+  "set_sha256": "8e0bde49e0bd37e0d42a1f558baa2a287a69a0c53d53b8801288ff8c9439b450"
+}
