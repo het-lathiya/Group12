@@ -1,0 +1,12 @@
+{
+  "http_status": 429,
+  "headers": {
+    "retry-after": "7"
+  },
+  "body": {
+    "error": {
+      "code": "rate_limit_exceeded",
+      "message": "Sample vendor text that must never surface."
+    }
+  }
+}

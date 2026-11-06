@@ -1,0 +1,10 @@
+{
+  "http_status": 503,
+  "headers": {},
+  "body": {
+    "error": {
+      "code": "service_unavailable",
+      "message": "Sample vendor text that must never surface."
+    }
+  }
+}

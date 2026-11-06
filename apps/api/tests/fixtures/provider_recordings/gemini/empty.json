@@ -1,0 +1,26 @@
+{
+  "http_status": 200,
+  "headers": {},
+  "body": {
+    "id": "sample-interaction-id",
+    "status": "completed",
+    "model": "gemini-3.5-flash-lite",
+    "usage": {
+      "total_input_tokens": 812,
+      "total_output_tokens": 146,
+      "total_thought_tokens": 37,
+      "total_tokens": 995
+    },
+    "steps": [
+      {
+        "type": "model_output",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ]
+      }
+    ]
+  }
+}
