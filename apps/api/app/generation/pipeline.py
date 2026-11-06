@@ -3,9 +3,10 @@
 mark_running -> build the request from the ranked shortlist (steps 2 to 5) -> input limit -> record
 the settings -> provider.generate_itinerary (steps 6, 7) -> mark_validating -> steps 8 and 9 -> save
 the plan and complete the record in one transaction (step 11). Each status change is its own short
-transaction, and none stays open across the provider call (§5.8). Steps 8 and 9 are hooks: IMP-306
-adds the validator rules and IMP-308 the recalculation; repair and the fallback are IMP-401 to
-IMP-403. Trip completeness (step 1) is checked by API-22 before the row exists.
+transaction, and none stays open across the provider call (§5.8). Step 8 is
+``app.validation.output_check`` (IMP-306); step 9 is a hook for the recalculation of IMP-308. Output
+that cannot be saved goes through ``end_invalid_output``, where IMP-402 adds the fallback; repair is
+IMP-502. Trip completeness (step 1) is checked by API-22 before the row exists.
 
 Never logged: the request built for the provider, its raw output, notes or prompt text (FR-125).
 """
@@ -17,40 +18,51 @@ from contextlib import AbstractAsyncContextManager
 from typing import Final
 from uuid import UUID
 
-from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import limits
-from app.ai.errors import ProviderError
+from app.ai.errors import InvalidOutputKind, ProviderError, ProviderInvalidOutput
 from app.ai.providers.base import ModelProvider
 from app.core.config import get_settings
 from app.generation import repository, request_builder
+from app.generation.records import TokenUsage
 from app.itinerary import service as itinerary_service
-from app.schemas.ai import GenerationRequest, ItineraryOutput
+from app.places import service as places_service
+from app.schemas.ai import ItineraryOutput
+from app.validation import output_check
 
 logger = logging.getLogger(__name__)
 
 Sessions = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
-# No validator rules run before IMP-306, so the plan is saved with no findings.
+# The rules of step 9 arrive with IMP-308 and IMP-309, so the plan is saved with no findings.
 NO_FINDINGS: Final = {"errors": 0, "warnings": 0, "infos": 0}
 
 
-def output_problem(output: ItineraryOutput, request: GenerationRequest) -> str | None:
-    """Step 8: why an answer cannot be saved (schema, day numbers or place IDs), or None.
+async def end_invalid_output(
+    generation_id: UUID,
+    sessions: Sessions,
+    kind: InvalidOutputKind | None,
+    validation_summary: dict[str, object],
+    *,
+    usage: TokenUsage | None,
+    latency_ms: int,
+) -> None:
+    """The one route for an answer that cannot be saved; it is never retried blindly.
 
-    The hook of IMP-306, which adds the other rules and the counts.
+    shortcut: ends failed with invalid_output (PD-IMP-306-1); IMP-402 replaces this body with the
+    rule-based fallback (fallback_reason invalid_output, failure_reason null, IMD-22).
     """
-    try:
-        ItineraryOutput.model_validate(output.model_dump())
-    except ValidationError:
-        return "schema"
-    day_numbers = [day.day_number for day in output.days]
-    if len(set(day_numbers)) != len(day_numbers) or max(day_numbers) > request.trip.num_days:
-        return "day_numbers"
-    if output.unknown_place_ids(request):
-        return "unknown_place_ids"
-    return None
+    logger.warning("generation %s invalid output: %s", generation_id, kind or "place check")
+    async with sessions() as session:
+        await repository.fail(
+            session,
+            generation_id,
+            "invalid_output",
+            usage=usage,
+            latency_ms=latency_ms,
+            validation_summary=validation_summary,
+        )
 
 
 def recalculate(output: ItineraryOutput) -> ItineraryOutput:
@@ -90,6 +102,16 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
                 session, generation_id, {**sent, "truncated_count": truncated_count}
             )
         result = await provider.generate_itinerary(request)
+    except ProviderInvalidOutput as exc:
+        await end_invalid_output(
+            generation_id,
+            sessions,
+            exc.kind,
+            output_check.summary(kind=exc.kind),
+            usage=None,
+            latency_ms=elapsed_ms(),
+        )
+        return
     except ProviderError as exc:
         logger.warning("generation %s provider error %s", generation_id, exc.failure_reason)
         async with sessions() as session:
@@ -100,21 +122,42 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
 
     async with sessions() as session:
         await repository.mark_validating(session, generation_id)
+        # Read again: a place can go inactive while the provider is answering.
+        active = await places_service.active_place_names(
+            session, request.trip.destination_id, [p.place_id for p in request.shortlist]
+        )
 
-    problem = output_problem(result.output, request)
-    if problem is not None:
-        logger.warning("generation %s invalid output: %s", generation_id, problem)
-        async with sessions() as session:
-            await repository.fail(
-                session,
-                generation_id,
-                "invalid_output",
-                usage=result.usage,
-                latency_ms=elapsed_ms(),
-            )
+    try:
+        answer = output_check.apply_limits(
+            result.output,
+            trip_days=request.trip.num_days,
+            max_items_per_day=request.limits.max_items_per_day,
+        )
+    except ProviderInvalidOutput as exc:
+        await end_invalid_output(
+            generation_id,
+            sessions,
+            exc.kind,
+            output_check.summary(kind=exc.kind),
+            usage=result.usage,
+            latency_ms=elapsed_ms(),
+        )
         return
 
-    plan = recalculate(result.output)
+    checked = output_check.check_output(answer, {str(id_) for id_ in active}, request.trip.num_days)
+    validation_summary = output_check.summary(checked)
+    if not checked.usable:
+        await end_invalid_output(
+            generation_id,
+            sessions,
+            None,
+            validation_summary,
+            usage=result.usage,
+            latency_ms=elapsed_ms(),
+        )
+        return
+
+    plan = recalculate(checked.output)
     metadata = provider.get_model_metadata()
     async with sessions() as session:
         await itinerary_service.save_generated_plan(
@@ -126,7 +169,7 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
             outcome="model",
             usage=result.usage,
             latency_ms=elapsed_ms(),
-            validation_summary=NO_FINDINGS,
+            validation_summary=validation_summary,
             adapter_version=metadata.adapter_version,
             model_version=metadata.model_version,
         )
