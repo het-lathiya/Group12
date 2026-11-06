@@ -1,9 +1,11 @@
 """API-03 GET /api/v1/me and first-call profile creation (§6.6.1, IMD-14; IMP-108: TC-057).
+API-04 PATCH /api/v1/me, minimal form: the AI notice flag (IMD-24; IMP-305).
 
 Runs against the migrated test database (tests/fixtures/db.py); every test is rolled back.
 """
 
 import uuid
+from typing import Any
 
 import httpx
 import pytest
@@ -98,3 +100,94 @@ async def test_a_valid_token_for_a_deleted_account_is_401(
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"
     assert await profile_rows(db_session, ghost) == 0
+
+
+# API-04: the AI notice flag (IMD-24)
+
+
+@pytest.mark.asyncio
+async def test_ai_notice_acknowledged_true_sets_the_timestamp(
+    api_client: httpx.AsyncClient, auth_user: AuthUser
+) -> None:
+    before = await api_client.get("/api/v1/me", headers=auth_user.headers)
+    assert before.json()["ai_notice_ack_at"] is None
+
+    response = await api_client.patch(
+        "/api/v1/me", json={"ai_notice_acknowledged": True}, headers=auth_user.headers
+    )
+
+    assert response.status_code == 200, response.text
+    profile = response.json()
+    assert set(profile) == PROFILE_FIELDS
+    assert profile["id"] == str(auth_user.user_id)
+    assert profile["email"] == auth_user.email
+    assert profile["ai_notice_ack_at"] is not None
+    after = await api_client.get("/api/v1/me", headers=auth_user.headers)
+    assert after.json() == profile
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body", "fields"),
+    [
+        ({}, ["ai_notice_acknowledged"]),
+        ({"ai_notice_acknowledged": False}, ["ai_notice_acknowledged"]),
+        ({"ai_notice_acknowledged": None}, ["ai_notice_acknowledged"]),
+        (
+            {"ai_notice_acknowledged": True, "display_name": "Asha"},
+            ["display_name"],
+        ),
+        ({"preferred_currency": "INR"}, ["preferred_currency", "ai_notice_acknowledged"]),
+    ],
+    ids=["empty", "false", "null", "with_another_field", "only_another_field"],
+)
+async def test_ai_notice_patch_accepts_only_the_true_flag(
+    api_client: httpx.AsyncClient,
+    auth_user: AuthUser,
+    body: dict[str, Any],
+    fields: list[str],
+) -> None:
+    response = await api_client.patch("/api/v1/me", json=body, headers=auth_user.headers)
+
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert [detail["field"] for detail in response.json()["error"]["details"]] == fields
+    profile = await api_client.get("/api/v1/me", headers=auth_user.headers)
+    assert profile.json()["ai_notice_ack_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_ai_notice_patch_refuses_an_unknown_field(
+    api_client: httpx.AsyncClient, auth_user: AuthUser
+) -> None:
+    response = await api_client.patch(
+        "/api/v1/me",
+        json={"ai_notice_acknowledged": True, "user_id": str(uuid.uuid4())},
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.asyncio
+async def test_ai_notice_patch_changes_only_the_callers_profile(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, db_session: AsyncSession
+) -> None:
+    other = uuid.uuid4()
+    await insert_auth_user(db_session, other)
+    other_headers = bearer(make_token(other))
+    await api_client.get("/api/v1/me", headers=other_headers)
+
+    await api_client.patch(
+        "/api/v1/me", json={"ai_notice_acknowledged": True}, headers=auth_user.headers
+    )
+
+    theirs = await api_client.get("/api/v1/me", headers=other_headers)
+    assert theirs.json()["ai_notice_ack_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_ai_notice_patch_without_a_token_is_401(api_client: httpx.AsyncClient) -> None:
+    response = await api_client.patch("/api/v1/me", json={"ai_notice_acknowledged": True})
+
+    assert response.status_code == 401

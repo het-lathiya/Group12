@@ -3,7 +3,8 @@ under a 120-second overall timeout, and the stale-job reaper.
 
 The job runner classifies only the timeout and unexpected errors (``internal``); provider errors
 are classified by the pipeline. A timed-out or reaped row is marked with
-``validation_summary.timed_out`` so API-23 shows "Generation timed out." (IMD-22).
+``validation_summary.timed_out`` so API-23 shows "Generation timed out." (IMD-22). A timeout that
+fires after the plan's commit changes nothing: the row stays completed with its plan.
 """
 
 import asyncio
@@ -17,7 +18,7 @@ from fastapi import Depends
 
 from app.ai.providers.base import ModelProvider
 from app.db.session import transaction
-from app.generation import pipeline, repository
+from app.generation import pipeline, records, repository
 from app.generation.pipeline import Sessions
 
 logger = logging.getLogger(__name__)
@@ -40,8 +41,10 @@ async def run(
             async with asyncio.timeout(PIPELINE_TIMEOUT_S):
                 await pipeline.run(generation_id, provider, sessions)
         except TimeoutError:
-            logger.error("generation %s timed out after %d s", generation_id, PIPELINE_TIMEOUT_S)
-            await _fail_internal(generation_id, sessions, TIMED_OUT)
+            if await _fail_internal(generation_id, sessions, TIMED_OUT):
+                logger.error(
+                    "generation %s timed out after %d s", generation_id, PIPELINE_TIMEOUT_S
+                )
         except Exception:
             logger.exception("generation %s failed with an unexpected error", generation_id)
             await _fail_internal(generation_id, sessions, None)
@@ -49,11 +52,17 @@ async def run(
 
 async def _fail_internal(
     generation_id: UUID, sessions: Sessions, validation_summary: dict[str, bool] | None
-) -> None:
+) -> bool:
+    """Fail the row; False when it had already ended, which leaves it as it is."""
     async with sessions() as session:
-        await repository.fail(
-            session, generation_id, "internal", validation_summary=validation_summary
-        )
+        try:
+            await repository.fail(
+                session, generation_id, "internal", validation_summary=validation_summary
+            )
+        except records.IllegalTransitionError as exc:
+            logger.info("generation %s had already ended %s", generation_id, exc.current)
+            return False
+    return True
 
 
 def submit(generation_id: UUID, provider: ModelProvider) -> None:
