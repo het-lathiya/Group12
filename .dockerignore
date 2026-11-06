@@ -1,0 +1,12 @@
+# Build context at the repository root, used by apps/api/Dockerfile (IMP-218). Env files, virtual
+# environments, dependencies and git history never enter it.
+.git
+**/node_modules
+**/.next
+**/.venv
+**/.env*
+**/__pycache__
+infra/aws/env.sh
+graphify-out
+# SAMPLE data never reaches a deployed image; the release task loads data/places and data/guides.
+data/fixtures

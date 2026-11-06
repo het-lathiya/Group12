@@ -4,6 +4,9 @@
 #   api - the production API image for the local container smoke (IMP-112). It sits behind the
 #         "api" profile and its env file is optional, so make db-up works on a fresh clone with no
 #         apps/api/Dockerfile and no apps/api/.env. Start it by name: docker compose up --build api
+#   web - the production web image for the local container smoke (IMP-218). The NEXT_PUBLIC_*
+#         values are inlined at build time, so they are build arguments; the defaults are public
+#         local values. Start both with: docker compose up --build api web
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -33,3 +36,16 @@ services:
         required: false
     ports:
       - "8000:8000"
+
+  web:
+    build:
+      context: apps/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://127.0.0.1:54321}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-local-placeholder-anon-key}
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+        NEXT_PUBLIC_FEATURES_DISABLED: ${NEXT_PUBLIC_FEATURES_DISABLED:-}
+        BUILD_VERSION: ${BUILD_VERSION:-dev}
+    ports:
+      - "3000:3000"
