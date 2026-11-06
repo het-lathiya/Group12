@@ -178,7 +178,8 @@ async def test_us_153_the_saved_plan_is_returned_in_order(
         # A1 §7.1: sources is always present and empty until IMP-316.
         assert item["sources"] == []
         assert item["cost"] is None
-        assert item["travel_from_previous"] is None
+        leg = item["travel_from_previous"]
+        assert leg is None if item["position"] == 1 else leg["source"] == "fallback_estimate"
         assert item["origin"] == "model"
         assert item["must_visit"] is False
         start = datetime.strptime(item["start_time"], "%H:%M")
