@@ -17,7 +17,7 @@ from fixtures.ai import sample_request
 
 from app.ai import factory
 from app.ai.errors import ProviderBadRequest, ProviderConfigError
-from app.ai.factory import GeminiPendingProvider, get_model_provider, get_provider
+from app.ai.factory import get_model_provider, get_provider
 from app.ai.providers.base import ModelProvider
 from app.ai.providers.mock import MockProvider
 from app.core.config import ConfigError, Settings, check_settings, load_settings
@@ -93,20 +93,38 @@ def test_tc_164_gemini_without_a_key_starts_with_provider_down_in_local_and_test
     with caplog.at_level(logging.INFO, logger="app.ai.factory"), TestClient(app) as client:
         assert client.get("/health").json()["provider"] == "GEMINI"
         provider = app.state.model_provider
-    assert isinstance(provider, GeminiPendingProvider)
+    assert provider.get_model_metadata().adapter_version == "gemini-interactions-1"
     assert asyncio.run(provider.health_check()).status == "down"
     assert "health down" in caplog.text
 
 
-def test_gemini_generations_end_with_a_config_error_until_the_adapter_exists(
+def test_gemini_generations_end_with_a_config_error_without_a_model_id(
     clean_settings_env: pytest.MonkeyPatch,
 ) -> None:
     provider = get_provider(settings(ai_provider="GEMINI", gemini_api_key=FAKE_KEY))
     with pytest.raises(ProviderConfigError) as raised:
         asyncio.run(provider.generate_itinerary(sample_request()))
-    assert str(raised.value) == "Gemini adapter not implemented yet"
+    assert str(raised.value) == "GEMINI_MODEL_ID is not set"
     assert raised.value.failure_reason == "config_error"
     assert provider.get_model_metadata().provider == "GEMINI"
+
+
+def test_gemini_generations_end_with_a_config_error_without_a_key(
+    clean_settings_env: pytest.MonkeyPatch,
+) -> None:
+    provider = get_provider(settings(ai_provider="GEMINI", gemini_model_id="model-x"))
+    with pytest.raises(ProviderConfigError) as raised:
+        asyncio.run(provider.generate_itinerary(sample_request()))
+    assert str(raised.value) == "GEMINI_API_KEY is not set"
+    assert raised.value.failure_reason == "config_error"
+
+
+def test_the_gemini_provider_is_built_once_per_process(
+    clean_settings_env: pytest.MonkeyPatch,
+) -> None:
+    first = get_provider(settings(ai_provider="GEMINI", gemini_model_id="model-x"))
+    assert first is get_provider(settings(ai_provider="GEMINI", gemini_model_id="model-x"))
+    assert first is not get_provider(settings(ai_provider="GEMINI", gemini_model_id="model-y"))
 
 
 # ---------- TC-042, TC-165: unknown value ----------
