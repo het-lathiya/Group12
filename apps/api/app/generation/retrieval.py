@@ -1,13 +1,16 @@
 """Candidate retrieval and hard-constraint filters (§8.9; FR-027, IMP-304).
 
-The filters come from pm-1 (``trips/preference_mapping.py``) and run in the card's order: step-free,
+The filters come from pm-2 (``trips/preference_mapping.py``) and run in the card's order: step-free,
 excluded categories, closed on every trip day (explicit closed rows only), minimum group cost
-above the activity budget. The children rule of pm-1 runs after step-free. A place that fails is
+above the activity budget. The children rule of pm-2 runs after step-free. A place that fails is
 removed unless it is a must-visit place, which stays with ``conflict_note`` set (FR-027 AC2).
 Ranking and the shortlist cut are in ``generation/ranking.py``; ``ranked_shortlist`` runs both.
+``semantic_retrieval`` runs before ranking, outside any transaction, and never raises for a
+retrieval failure; its result carries ``retrieval_ms`` for IMP-316 (Amendment A1 §6.7, §6.11).
 """
 
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -16,10 +19,13 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.providers.base import ModelProvider
 from app.core.errors import NotFound
 from app.db.models import Place, PlaceOpeningHours
 from app.generation import ranking, repository
 from app.places import repository as places_repository
+from app.rag import service as rag_service
+from app.rag.query import build_query_text
 from app.trips import preference_mapping
 from app.trips.schemas import PreferencesOut, TripOut
 
@@ -149,6 +155,33 @@ async def retrieve_candidates(
     return apply_filters(rows, trip, prefs, must_visit, budget)
 
 
+async def semantic_retrieval(
+    trip: TripOut,
+    prefs: PreferencesOut,
+    notes_quoted: str | None,
+    provider: ModelProvider,
+    sessions: Callable[[], AbstractAsyncContextManager[AsyncSession]],
+) -> rag_service.RetrievalResult:
+    """Step 3 of §8.2 as A1 §6.7 extends it: similarities of the candidates and guide passages."""
+    async with sessions() as session:
+        candidates = await retrieve_candidates(session, trip, prefs, prefs.must_visit_place_ids)
+    context = rag_service.RetrievalContext(
+        destination_id=trip.destination_id,
+        query_text=build_query_text(
+            destination=trip.destination.name,
+            interests=[interest.value for interest in prefs.interests],
+            pace=prefs.pace.value,
+            budget_priority=prefs.budget_priority.value,
+            transport=prefs.transport_pref.value,
+            group_needs=[need.value for need in trip.group_needs],
+            step_free=prefs.step_free_required,
+            notes_quoted=notes_quoted,
+        ),
+        place_ids=[candidate.place.id for candidate in candidates],
+    )
+    return await rag_service.retrieve(context, provider=provider, sessions=sessions)
+
+
 async def ranked_shortlist(
     session: AsyncSession,
     trip: TripOut,
@@ -156,8 +189,13 @@ async def ranked_shortlist(
     must_visit: Collection[UUID],
     *,
     meal_slots_per_day: int,
+    retrieved: rag_service.RetrievalResult | None = None,
 ) -> list[Candidate]:
-    """Steps 3 and 4 of §8.2: the candidates that make the shortlist, best first."""
+    """Steps 3 and 4 of §8.2: the candidates that make the shortlist, best first.
+
+    Without a ``vector`` retrieval result the ranking is lexical: no semantic weight.
+    """
+    semantic = retrieved is not None and retrieved.mode == "vector"
     candidates = await retrieve_candidates(session, trip, prefs, must_visit)
     destination = await places_repository.destination_by_id(session, trip.destination_id)
     if destination is None:
@@ -171,6 +209,7 @@ async def ranked_shortlist(
             must_visit_place_ids=list(must_visit),
         ),
         preference_mapping.TripFacts(children=trip.children),
+        semantic=semantic,
     )
     context = ranking.build_context(
         candidates,
@@ -179,5 +218,6 @@ async def ranked_shortlist(
         num_days=trip.num_days,
         meal_slots_per_day=meal_slots_per_day,
         activity_budget=await _trip_activity_budget(session, trip),
+        similarities=retrieved.place_similarity if retrieved and semantic else None,
     )
     return [entry.candidate for entry in ranking.rank_shortlist(candidates, context).entries]

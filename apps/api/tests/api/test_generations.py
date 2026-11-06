@@ -194,7 +194,7 @@ async def queued_row(
         model_id="mock-v1",
         prompt_template_id="itinerary_generate",
         prompt_version="v1",
-        mapping_version="pm-1",
+        mapping_version="pm-2",
         scope="full",
         request_hash=records.request_hash({"trip_id": trip_id, "mode": mode}),
     )
@@ -276,7 +276,7 @@ async def test_tc_012_tc_151_the_record_names_provider_model_template_and_mappin
         "itinerary_generate",
         "v1",
     )
-    assert (row.mapping_version, row.adapter_version) == ("pm-1", "mock-1")
+    assert (row.mapping_version, row.adapter_version) == ("pm-2", "mock-1")
     assert row.generation_settings == {"truncated_count": 0}
     assert len(row.request_hash) == 64
     assert row.retrieval_mode is None

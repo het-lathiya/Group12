@@ -8,7 +8,8 @@ only way notes enter the request.
 
 import re
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Final
@@ -16,10 +17,12 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.providers.base import ModelProvider
 from app.core.logging import redact_text
 from app.db.models import PlaceOpeningHours
 from app.generation import records, repository, retrieval
 from app.places.schemas import PlaceSummary
+from app.rag.service import RetrievalResult
 from app.schemas.ai import (
     Budget,
     GenerationRequest,
@@ -167,6 +170,21 @@ def generation_request_hash(request: GenerationRequest) -> str:
     return records.request_hash(request.model_dump(mode="json", exclude={"request_id"}))
 
 
+async def retrieve(
+    trip_id: UUID,
+    user_id: UUID,
+    provider: ModelProvider,
+    sessions: Callable[[], AbstractAsyncContextManager[AsyncSession]],
+) -> RetrievalResult:
+    """Retrieval for ``build``, with the notes redacted as §8.6 says (A1 §6.7)."""
+    async with sessions() as session:
+        trip = await trips_service.get_trip(session, user_id, trip_id)
+        prefs = await trips_service.get_preferences(session, user_id, trip_id)
+    return await retrieval.semantic_retrieval(
+        trip, prefs, quote_notes(prefs.notes), provider, sessions
+    )
+
+
 async def build(
     session: AsyncSession,
     *,
@@ -174,11 +192,17 @@ async def build(
     user_id: UUID,
     prompt_template_id: str,
     prompt_version: str,
+    retrieved: RetrievalResult | None = None,
 ) -> GenerationRequest:
     trip = await trips_service.get_trip(session, user_id, trip_id)
     prefs = await trips_service.get_preferences(session, user_id, trip_id)
     candidates = await retrieval.ranked_shortlist(
-        session, trip, prefs, prefs.must_visit_place_ids, meal_slots_per_day=len(MEAL_SLOTS)
+        session,
+        trip,
+        prefs,
+        prefs.must_visit_place_ids,
+        meal_slots_per_day=len(MEAL_SLOTS),
+        retrieved=retrieved,
     )
     dates = (trip.start_date + timedelta(days=offset) for offset in range(trip.num_days))
     weekdays = list(dict.fromkeys(day.isoweekday() for day in dates))

@@ -76,7 +76,7 @@ async def queued(session: AsyncSession, owner: Owner, **overrides: Any) -> uuid.
         "model_id": "mock-v1",
         "prompt_template_id": "itinerary_generate",
         "prompt_version": "v1",
-        "mapping_version": "pm-1",
+        "mapping_version": "pm-2",
         "scope": "full",
         "request_hash": records.request_hash(request_data()),
         "generation_settings": {"thinking_level": "low", "max_output_tokens": 4096},
@@ -147,7 +147,7 @@ async def test_tc_151_a_completed_generation_has_all_contract_columns(
         "completed_at",
     ):
         assert getattr(row, column) is not None, column
-    assert (row.provider, row.model_id, row.mapping_version) == ("MOCK", "mock-v1", "pm-1")
+    assert (row.provider, row.model_id, row.mapping_version) == ("MOCK", "mock-v1", "pm-2")
     assert (row.status, row.outcome, row.failure_reason) == ("completed", "model_repaired", None)
     assert (row.input_tokens, row.output_tokens, row.thinking_tokens) == (1200, 800, 64)
     assert (row.repair_attempts, row.deterministic_repairs) == (1, 2)

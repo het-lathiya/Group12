@@ -1,17 +1,22 @@
 """rag_documents and rag_chunks (migration 0007). MOD-B18 is their only writer (A1 §8.1).
 
 Documents and chunks are deactivated, never deleted, so saved citations keep resolving (IMD-110).
+The similarity queries are exact cosine over the destination's active chunks of one embedding model;
+there is no approximate index (IMD-107).
 """
 
 from collections.abc import Collection, Sequence
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import ColumnElement, Row, func, or_, select, update
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.rag import RagChunk, RagDocument
 from app.rag.chunker import Chunk
 from app.rag.documents import CorpusDocument
+from app.rag.mmr import RetrievedChunk
 
 
 def _apply(row: RagChunk, chunk: Chunk) -> None:
@@ -116,3 +121,79 @@ async def store_embeddings(
             .where(RagChunk.id == chunk_id)
             .values(embedding=list(vector), embedding_model_id=model_id, embedded_at=func.now())
         )
+
+
+def _searchable(destination_id: UUID, model_id: str, kind: str) -> tuple[ColumnElement[bool], ...]:
+    return (
+        RagDocument.destination_id == destination_id,
+        RagDocument.kind == kind,
+        RagDocument.is_active.is_(True),
+        RagChunk.is_active.is_(True),
+        RagChunk.embedding_model_id == model_id,
+    )
+
+
+def _chunk(row: Row[Any], vector: Sequence[float] = ()) -> RetrievedChunk:
+    return RetrievedChunk(
+        chunk_id=row.id,
+        document_id=row.document_id,
+        place_id=row.place_id,
+        title=row.title,
+        content=row.content,
+        similarity=float(row.similarity),
+        vector=vector,
+    )
+
+
+async def best_place_chunks(
+    session: AsyncSession,
+    destination_id: UUID,
+    model_id: str,
+    query_vector: Sequence[float],
+    place_ids: Sequence[UUID],
+) -> list[RetrievedChunk]:
+    """The most similar chunk of each of these places that has one (ties by chunk ID)."""
+    distance = RagChunk.embedding.cosine_distance(query_vector)
+    query = (
+        select(
+            RagChunk.id,
+            RagChunk.document_id,
+            RagDocument.place_id,
+            RagDocument.title,
+            RagChunk.content,
+            (1 - distance).label("similarity"),
+        )
+        .join(RagDocument, RagDocument.id == RagChunk.document_id)
+        .where(*_searchable(destination_id, model_id, "place"))
+        .where(RagDocument.place_id.in_(list(place_ids)))
+        .ext(distinct_on(RagDocument.place_id))
+        .order_by(RagDocument.place_id, distance, RagChunk.id)
+    )
+    return [_chunk(row) for row in await session.execute(query)]
+
+
+async def top_guide_chunks(
+    session: AsyncSession,
+    destination_id: UUID,
+    model_id: str,
+    query_vector: Sequence[float],
+    limit: int,
+) -> list[RetrievedChunk]:
+    """The most similar guide chunks with their vectors, best first (ties by chunk ID)."""
+    distance = RagChunk.embedding.cosine_distance(query_vector)
+    query = (
+        select(
+            RagChunk.id,
+            RagChunk.document_id,
+            RagDocument.place_id,
+            RagDocument.title,
+            RagChunk.content,
+            RagChunk.embedding,
+            (1 - distance).label("similarity"),
+        )
+        .join(RagDocument, RagDocument.id == RagChunk.document_id)
+        .where(*_searchable(destination_id, model_id, "guide"))
+        .order_by(distance, RagChunk.id)
+        .limit(limit)
+    )
+    return [_chunk(row, [float(x) for x in row.embedding]) for row in await session.execute(query)]
