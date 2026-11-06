@@ -32,6 +32,7 @@ def staging_gemini(env: pytest.MonkeyPatch) -> None:
     env.setenv("AI_PROVIDER", "GEMINI")
     env.setenv("GEMINI_API_KEY", "test-gemini-key-not-real")
     env.setenv("GEMINI_MODEL_ID", "test-model-id")
+    env.setenv("GEMINI_EMBEDDING_MODEL_ID", "gemini-embedding-2")
 
 
 def test_defaults_follow_env_example(env: pytest.MonkeyPatch) -> None:
@@ -121,6 +122,40 @@ def test_gemini_key_placeholder_is_refused(
         assert value not in str(caught.value)
 
 
+@pytest.mark.parametrize("app_env", ["staging", "production"])
+@pytest.mark.parametrize("value", ["", "<embedding model>", "text-embedding-004"])
+def test_tc_446_embedding_model_is_refused_when_missing_or_unsupported(
+    env: pytest.MonkeyPatch, app_env: str, value: str
+) -> None:
+    staging_gemini(env)
+    env.setenv("APP_ENV", app_env)
+    env.setenv("GEMINI_EMBEDDING_MODEL_ID", value)
+    with pytest.raises(ConfigError) as caught:
+        check()
+    assert "GEMINI_EMBEDDING_MODEL_ID" in str(caught.value)
+    if value:
+        assert value not in str(caught.value)
+
+
+@pytest.mark.parametrize("value", ["gemini-embedding-2", "gemini-embedding-001"])
+def test_tc_446_embedding_model_accepts_the_supported_models(
+    env: pytest.MonkeyPatch, value: str
+) -> None:
+    staging_gemini(env)
+    env.setenv("GEMINI_EMBEDDING_MODEL_ID", value)
+    assert check() == []
+
+
+@pytest.mark.parametrize("app_env", ["local", "test"])
+def test_tc_446_embedding_model_may_be_empty_in_local_and_test(
+    env: pytest.MonkeyPatch, app_env: str
+) -> None:
+    staging_gemini(env)
+    env.setenv("APP_ENV", app_env)
+    env.delenv("GEMINI_EMBEDDING_MODEL_ID")
+    assert check() == []
+
+
 @pytest.mark.parametrize("value", ["", "<model identifier from the provider's current model list>"])
 def test_gemini_model_id_placeholder_is_refused(env: pytest.MonkeyPatch, value: str) -> None:
     staging_gemini(env)
@@ -193,7 +228,8 @@ def test_every_failed_rule_is_listed(env: pytest.MonkeyPatch) -> None:
     env.setenv("AI_PROVIDER", "GEMINI")
     with pytest.raises(ConfigError) as caught:
         check()
-    assert len(caught.value.problems) == 3  # DATABASE_URL, GEMINI_API_KEY, GEMINI_MODEL_ID
+    # DATABASE_URL, GEMINI_API_KEY, GEMINI_MODEL_ID, GEMINI_EMBEDDING_MODEL_ID
+    assert len(caught.value.problems) == 4
 
 
 def test_features_disabled_is_parsed_into_a_set(env: pytest.MonkeyPatch) -> None:
@@ -238,6 +274,7 @@ def test_start_with_placeholder_gemini_key_exits(tmp_path: Path) -> None:
         AI_PROVIDER="GEMINI",
         GEMINI_API_KEY=PLACEHOLDER_KEY,
         GEMINI_MODEL_ID="test-model-id",
+        GEMINI_EMBEDDING_MODEL_ID="gemini-embedding-2",
         DATABASE_URL=LOCAL_DATABASE_URL,
     )
     assert result.returncode != 0

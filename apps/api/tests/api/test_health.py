@@ -130,6 +130,7 @@ def test_health_docs_are_disabled_in_production(clean_settings_env: pytest.Monke
         ai_provider="GEMINI",
         gemini_api_key="health-test-gemini-key-not-real",
         gemini_model_id="test-model-id",
+        gemini_embedding_model_id="gemini-embedding-2",
         database_url=SECRETS["database_url"],
     )
     production = TestClient(create_app(settings))
