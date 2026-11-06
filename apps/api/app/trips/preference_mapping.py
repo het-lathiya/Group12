@@ -1,4 +1,4 @@
-"""Preference mapping pm-1: stored preferences -> hard filters, ranking weights and pace limits.
+"""Preference mapping pm-2: stored preferences -> hard filters, ranking weights and pace limits.
 
 Specification §8.2 step 2, §8.9 (values), §6.5 PreferencesOut.effects; FR-009 AC3, FR-010; IMD-29.
 Pure: no I/O and no framework imports. Candidate retrieval and ranking (IMP-303, IMP-304) read
@@ -7,9 +7,9 @@ their filters, weights and pace factors from here and record MAPPING_VERSION wit
 - Hard filters: step-free required keeps only places whose step_free is true (unknown is
   excluded, never treated as false); children in the party require child_friendly not false
   (unknown kept); category stay is never planned in the MVP; must-visit places are kept always.
-- Weights (§8.9): 0.40 interest, 0.25 price, 0.15 distance, 0.10 duration (pace component),
-  0.10 signal; budget_priority saving moves 0.10 from interest to price; the signal weight is 0 in
-  the MVP and the other weights are renormalised to sum to 1.
+- Weights (Amendment A1 §6.7, IMD-108): 0.30 interest, 0.20 semantic, 0.25 price, 0.15 distance,
+  0.10 duration (pace component), 0 signal; budget_priority saving moves 0.10 from interest to
+  price. In lexical fallback the semantic weight is 0 and the others are renormalised to sum to 1.
 - Long visits: the duration component is 1 - min(duration/180, 1) * factor, with factor 0.5
   (relaxed), 0.2 (balanced) and 0 (busy), so a relaxed pace lowers the score of long visits.
 - Pace limits (§8.9, FR-029): relaxed 3 items / 300 active minutes, balanced 5 / 480, busy 7 / 600.
@@ -22,7 +22,7 @@ from enum import StrEnum
 from fractions import Fraction
 from uuid import UUID
 
-MAPPING_VERSION = "pm-1"
+MAPPING_VERSION = "pm-2"
 
 LONG_VISIT_MINUTES = 180
 
@@ -72,15 +72,15 @@ FIELD_EFFECTS: dict[str, Effect] = {
     "must_visit_place_ids": Effect.FILTER,
 }
 
-# §8.9 starting weights (signal is 0 in the MVP; the rest are renormalised in map_preferences).
+# A1 §6.7 weights; without the semantic part the rest are renormalised in map_preferences.
 BASE_WEIGHTS: dict[str, Fraction] = {
-    "interest": Fraction(40, 100),
+    "interest": Fraction(30, 100),
+    "semantic": Fraction(20, 100),
     "price": Fraction(25, 100),
     "distance": Fraction(15, 100),
     "duration": Fraction(10, 100),
-    "c_signal": Fraction(10, 100),
+    "c_signal": Fraction(0),
 }
-SIGNAL_ENABLED = False
 SAVING_SHIFT = Fraction(10, 100)
 LONG_VISIT_FACTOR: dict[Pace, float] = {Pace.RELAXED: 0.5, Pace.BALANCED: 0.2, Pace.BUSY: 0.0}
 PACE_LIMITS: dict[Pace, tuple[int, int]] = {
@@ -133,6 +133,7 @@ class HardFilters:
 @dataclass(frozen=True)
 class RankingWeights:
     interest: float
+    semantic: float
     price: float
     distance: float
     duration: float
@@ -159,10 +160,10 @@ class MappedPreferences:
     mapping_version: str = MAPPING_VERSION
 
 
-def _weights(prefs: Preferences) -> RankingWeights:
+def _weights(prefs: Preferences, semantic: bool) -> RankingWeights:
     raw = dict(BASE_WEIGHTS)
-    if not SIGNAL_ENABLED:
-        raw["c_signal"] = Fraction(0)
+    if not semantic:
+        raw["semantic"] = Fraction(0)
     if prefs.budget_priority is BudgetPriority.SAVING:
         raw["interest"] -= SAVING_SHIFT
         raw["price"] += SAVING_SHIFT
@@ -170,6 +171,7 @@ def _weights(prefs: Preferences) -> RankingWeights:
     share = {name: float(value / total) for name, value in raw.items()}
     return RankingWeights(
         interest=share["interest"],
+        semantic=share["semantic"],
         price=share["price"],
         distance=share["distance"],
         duration=share["duration"],
@@ -179,10 +181,13 @@ def _weights(prefs: Preferences) -> RankingWeights:
     )
 
 
-def map_preferences(prefs: Preferences, trip: TripFacts) -> MappedPreferences:
-    """pm-1: the filters, weights and pace limits for one trip's preferences.
+def map_preferences(
+    prefs: Preferences, trip: TripFacts, *, semantic: bool = True
+) -> MappedPreferences:
+    """pm-2: the filters, weights and pace limits for one trip's preferences.
 
-    ``prefs.notes`` is deliberately not read: notes never change a filter or a weight.
+    ``semantic`` is false in lexical fallback. ``prefs.notes`` is deliberately not read: notes
+    never change a filter or a weight directly; they reach ranking only through the query text.
     """
     items, minutes = PACE_LIMITS[prefs.pace]
     return MappedPreferences(
@@ -192,7 +197,7 @@ def map_preferences(prefs: Preferences, trip: TripFacts) -> MappedPreferences:
             categories_excluded=EXCLUDED_CATEGORIES,
             must_visit_place_ids=frozenset(prefs.must_visit_place_ids),
         ),
-        weights=_weights(prefs),
+        weights=_weights(prefs, semantic),
         pace_limits=PaceLimits(max_items_per_day=items, max_active_minutes_per_day=minutes),
     )
 

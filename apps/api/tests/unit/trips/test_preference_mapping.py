@@ -1,4 +1,4 @@
-"""Preference mapping pm-1 (app/trips/preference_mapping.py; §8.9; FR-009 AC3, FR-010:
+"""Preference mapping pm-2 (app/trips/preference_mapping.py; §8.9; FR-009 AC3, FR-010:
 TC-077, TC-078, TC-079). Pure: no database, no app.
 """
 
@@ -27,15 +27,15 @@ ADULTS_ONLY = TripFacts(children=0)
 
 def weight_sum(prefs: Preferences) -> float:
     w = map_preferences(prefs, ADULTS_ONLY).weights
-    return w.interest + w.price + w.distance + w.duration + w.c_signal
+    return w.interest + w.semantic + w.price + w.distance + w.duration + w.c_signal
 
 
 # FR-010 AC3, TC-079
 
 
-def test_tc_079_the_mapping_version_is_pm_1_and_travels_with_the_result() -> None:
-    assert pm.MAPPING_VERSION == "pm-1"
-    assert map_preferences(DEFAULT, ADULTS_ONLY).mapping_version == "pm-1"
+def test_tc_079_the_mapping_version_is_pm_2_and_travels_with_the_result() -> None:
+    assert pm.MAPPING_VERSION == "pm-2"
+    assert map_preferences(DEFAULT, ADULTS_ONLY).mapping_version == "pm-2"
 
 
 def test_tc_079_each_preference_changes_a_filter_or_a_weight() -> None:
@@ -124,22 +124,32 @@ def test_pace_limits_follow_the_presets() -> None:
     }
 
 
-def test_weights_follow_section_8_9_with_signal_off_and_renormalised() -> None:
+def test_weights_follow_pm_2_with_signal_off() -> None:
     w = map_preferences(DEFAULT, ADULTS_ONLY).weights
     assert w.c_signal == 0
-    assert w.interest == pytest.approx(0.40 / 0.90)
-    assert w.price == pytest.approx(0.25 / 0.90)
-    assert w.distance == pytest.approx(0.15 / 0.90)
-    assert w.duration == pytest.approx(0.10 / 0.90)
+    assert w.interest == pytest.approx(0.30)
+    assert w.semantic == pytest.approx(0.20)
+    assert w.price == pytest.approx(0.25)
+    assert w.distance == pytest.approx(0.15)
+    assert w.duration == pytest.approx(0.10)
     assert weight_sum(DEFAULT) == pytest.approx(1.0)
+
+
+def test_lexical_fallback_has_no_semantic_weight_and_renormalises_the_rest() -> None:
+    w = map_preferences(DEFAULT, ADULTS_ONLY, semantic=False).weights
+    assert w.semantic == 0
+    assert w.interest == pytest.approx(0.30 / 0.80)
+    assert w.price == pytest.approx(0.25 / 0.80)
+    assert w.distance == pytest.approx(0.15 / 0.80)
+    assert w.duration == pytest.approx(0.10 / 0.80)
 
 
 def test_saving_moves_a_tenth_from_interest_to_price() -> None:
     w = map_preferences(
         replace(DEFAULT, budget_priority=BudgetPriority.SAVING), ADULTS_ONLY
     ).weights
-    assert w.interest == pytest.approx(0.30 / 0.90)
-    assert w.price == pytest.approx(0.35 / 0.90)
+    assert w.interest == pytest.approx(0.20)
+    assert w.price == pytest.approx(0.35)
     assert weight_sum(replace(DEFAULT, budget_priority=BudgetPriority.SAVING)) == pytest.approx(1.0)
     comfort = map_preferences(replace(DEFAULT, budget_priority=BudgetPriority.COMFORT), ADULTS_ONLY)
     assert comfort.weights == map_preferences(DEFAULT, ADULTS_ONLY).weights

@@ -1,17 +1,22 @@
-"""Corpus indexing (Amendment A1 §6.6). ``retrieve`` and ``resolve_sources`` come with IMP-315.
+"""Corpus indexing and retrieval (Amendment A1 §6.6, §6.7). ``resolve_sources`` comes with IMP-316.
 
 ``index`` loads the corpus and runs the gate, writes each destination in one transaction, then
 embeds what is missing, one transaction per batch; none stays open across a provider call.
+``retrieve`` embeds the query once, then runs the two similarity queries in one transaction. It
+never raises for a retrieval failure: it answers ``lexical_fallback`` (§6.11, IMD-112).
 """
 
-from collections.abc import Callable, Sequence
+import logging
+import time
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal
 from uuid import UUID
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.errors import ProviderError
@@ -23,10 +28,13 @@ from app.places import service as places_service
 from app.places.schemas import Destination
 from app.rag import documents as corpus
 from app.rag import guides as guide_gate
-from app.rag import repository
-from app.rag.constants import RAG_EMBED_BATCH
+from app.rag import mmr, repository
+from app.rag.constants import RAG_EMBED_BATCH, RAG_GUIDE_CANDIDATES
 from app.rag.documents import CorpusDocument
 from app.rag.guides import Guide, GuideFinding
+from app.rag.mmr import RetrievedChunk
+
+logger = logging.getLogger(__name__)
 
 Sessions = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
@@ -35,6 +43,26 @@ NOT_A_GUIDE: Final = "quality_report.md"
 EXIT_OK: Final = 0
 EXIT_GATE: Final = 1
 EXIT_PROVIDER: Final = 3
+
+
+RetrievalMode = Literal["vector", "lexical_fallback"]
+
+
+@dataclass(frozen=True)
+class RetrievalContext:
+    destination_id: UUID
+    query_text: str
+    place_ids: Sequence[UUID]  # the candidates that passed the hard filters
+
+
+@dataclass(frozen=True)
+class RetrievalResult:
+    mode: RetrievalMode
+    embedding_model_id: str | None
+    place_similarity: Mapping[UUID, float]
+    place_best_chunk: Mapping[UUID, RetrievedChunk]
+    guide_passages: Sequence[RetrievedChunk]
+    retrieval_ms: int
 
 
 class UnknownDestinationError(Exception):
@@ -249,3 +277,53 @@ async def index(
     async with sessions() as session:
         report.inactive = await repository.count_inactive_documents(session, destination_ids)
     return report
+
+
+async def retrieve(
+    ctx: RetrievalContext,
+    *,
+    provider: ModelProvider | None = None,
+    sessions: Sessions = transaction,
+) -> RetrievalResult:
+    """Place similarities, each place's best chunk and the guide passages of one generation.
+
+    ``app.rag`` must not import the ranking, so the generation module picks the place passages
+    after ranking (A1 §8.2). Runs outside any transaction: the embedding is a provider call.
+    """
+    started = time.perf_counter()
+    active = provider or get_provider()
+
+    def elapsed_ms() -> int:
+        return round((time.perf_counter() - started) * 1000)
+
+    def fallback(kind: str) -> RetrievalResult:
+        logger.warning("retrieval fell back to lexical ranking: %s", kind)
+        return RetrievalResult(
+            "lexical_fallback", active.embedding_model_id or None, {}, {}, [], elapsed_ms()
+        )
+
+    try:
+        embedded = await active.embed_texts([ctx.query_text], "query")
+        query_vector = embedded.vectors[0]
+        async with sessions() as session:
+            places = await repository.best_place_chunks(
+                session, ctx.destination_id, embedded.model_id, query_vector, ctx.place_ids
+            )
+            guides = await repository.top_guide_chunks(
+                session, ctx.destination_id, embedded.model_id, query_vector, RAG_GUIDE_CANDIDATES
+            )
+    except ProviderError as exc:
+        return fallback(exc.failure_reason)
+    except SQLAlchemyError as exc:
+        return fallback(type(exc).__name__)
+    if not places and not guides:
+        return fallback("no_index")
+    best = {chunk.place_id: chunk for chunk in places if chunk.place_id is not None}
+    return RetrievalResult(
+        "vector",
+        embedded.model_id,
+        {place_id: chunk.similarity for place_id, chunk in best.items()},
+        best,
+        mmr.select(guides),
+        elapsed_ms(),
+    )
