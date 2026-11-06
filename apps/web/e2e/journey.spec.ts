@@ -89,7 +89,14 @@ test(
         r.request().method() === "GET" &&
         r.ok(),
     );
-    await page.getByRole("button", { name: "Generate with AI" }).click();
+    // The account's first generation: the notice sends API-04, then starts API-22.
+    await expect(
+      page.getByRole("heading", {
+        level: 2,
+        name: "Before your first AI-written plan",
+      }),
+    ).toBeFocused();
+    await page.getByRole("button", { name: "I understand, continue" }).click();
 
     const generation = await (await completed).json();
     expect(generation.provider).toBe("MOCK");

@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 
 import { ErrorState } from "@/components/states/ErrorState";
 import { Button } from "@/components/ui/button";
-import { ApiError } from "@/lib/api/client";
+import { ApiError, OFFLINE_MESSAGE } from "@/lib/api/client";
 import { queryKeys, useGeneration } from "@/lib/api/queries";
 import type { components } from "@/lib/api/schema";
 
@@ -93,14 +93,7 @@ export function GenerationProgress({
     return (
       <ErrorState
         title="The generation status could not be read"
-        error={
-          error instanceof ApiError
-            ? error
-            : {
-                message:
-                  "The server could not be reached. Check your connection and try again.",
-              }
-        }
+        error={error instanceof ApiError ? error : { message: OFFLINE_MESSAGE }}
         onRetry={() => void generation.refetch()}
       />
     );
