@@ -1,0 +1,27 @@
+{
+  "serviceName": "group12-web-staging",
+  "cluster": "default",
+  "executionRoleArn": "${ECS_EXECUTION_ROLE_ARN}",
+  "infrastructureRoleArn": "${ECS_INFRASTRUCTURE_ROLE_ARN}",
+  "healthCheckPath": "/",
+  "cpu": "256",
+  "memory": "512",
+  "cpuArchitecture": "X86_64",
+  "scalingTarget": {
+    "minTaskCount": 1,
+    "maxTaskCount": 1
+  },
+  "primaryContainer": {
+    "image": "${IMAGE}",
+    "containerPort": 3000,
+    "awsLogsConfiguration": {
+      "logGroup": "/ecs/group12-web-staging",
+      "logStreamPrefix": "ecs"
+    },
+    "environment": [
+      { "name": "PORT", "value": "3000" },
+      { "name": "HOSTNAME", "value": "0.0.0.0" },
+      { "name": "NODE_ENV", "value": "production" }
+    ]
+  }
+}
