@@ -137,3 +137,63 @@ None.
 ## Open issues
 
 - No test covers the real path end to end: the asyncio task started by `jobs.submit` with the real `transaction()`. The API tests capture the job and run it on the rolled-back test session. The planned E2E journey (IMP-213, `make e2e`) covers this.
+
+## Fix run RUN-030b
+
+- Run id: RUN-030b. Owner: Het. Base commit: `f8eee92`.
+- Result: the cause is in the test, so only the test changed. `apps/api/app/generation/jobs.py` is unchanged.
+
+### Failure
+
+`test_the_job_timeout_fails_with_internal_and_says_timed_out` failed under load during RUN-041 with `PendingRollbackError`. Every failure in this run had the same line and the same stack (`jobs.run` -> `_fail_internal` -> `repository.fail` -> `_locked`):
+
+```text
+sqlalchemy.exc.PendingRollbackError: Can't reconnect until invalid savepoint transaction is rolled back.  Please rollback() fully before proceeding
+```
+
+### Cause
+
+- The test set a 0.05 s wall-clock timeout, which could fire during `pipeline.run`'s database work (`mark_running`, `request_builder.build`) instead of during the provider call.
+- SQLAlchemy treats a `CancelledError` during a statement as an exit exception and invalidates that connection. The test's `sessions` fixture runs the job on the one connection that holds the whole test's outer transaction, so the trip and the queued row are lost with it, and `_fail_internal` then finds a dead connection.
+- This is not a session left needing a rollback, and a rollback in `jobs.py` could not recover it. A real job is not exposed to it: each `transaction()` has its own session and connection, so `_fail_internal` starts clean.
+
+Evidence for the real path: a one-off probe (not committed) ran `jobs.run` with the real `transaction()` in a throwaway database, with a random timeout inside the pipeline's duration, 300 times.
+
+| Outcome | Runs |
+| --- | --- |
+| `failed`, `internal`, `timed_out`, no days, no version, `plan_revision` 0 | 242 |
+| `completed`, 3 days, 1 version, `plan_revision` 1 | 58 |
+| Mixed, or left active | 0 |
+
+All 242 failed runs invalidated a connection with `CancelledError`, as in the test, and each still wrote its failed record.
+
+### Fix
+
+In `apps/api/tests/api/test_generations.py`, `SlowProvider` now expires the job's real `asyncio.timeout` from inside the provider call, so the timeout cannot fire during database work under any load. The test no longer patches `PIPELINE_TIMEOUT_S`, and every assertion is unchanged. As a control, making the job stop marking `timed_out` still fails the test.
+
+### Loop results
+
+Each run is one pytest process for this test. Stressed means pinned with `taskset -c 0,1` beside four busy loops on the same CPUs. With unit means alongside `make test-unit`.
+
+| Mode | Before the fix | After the fix |
+| --- | --- | --- |
+| Normal | 27/30 | 30/30 |
+| Stressed | 2/20 | 20/20 |
+| With unit | 10/10 | 10/10 |
+
+### Commands
+
+| Command | Result line |
+| --- | --- |
+| `make test-api ARGS='-k generations'` | `17 passed, 214 deselected, 1 warning in 9.26s` |
+| `make test-authz` | `28 passed in 15.70s` |
+| `make lint` | `All matched files use Prettier code style!` |
+| `make typecheck` | exit 0 |
+| `make imports` | `Contracts: 4 kept, 0 broken.` |
+| `make openapi-check` | `openapi-check: contracts/ and apps/web/lib/api/schema.d.ts are up to date` |
+| `make test` | unit `385 passed, 1 warning in 10.72s`; contract `35 passed, 1 warning in 1.03s`; api `231 passed, 1 warning in 69.09s (0:01:09)`; authz `28 passed in 15.77s`; web `Tests  80 passed (80)` |
+
+### Open issues from this run
+
+- In 6 of the 300 probe runs the timeout fired after the plan's commit had reached the database. The record stays `completed` with its plan, which is correct, but `_fail_internal` then raises `IllegalTransitionError`, so the task ends with an unhandled exception and the log wrongly says the job timed out. No data is wrong. It is not the cause of this failure and is left for a separate fix.
+- No committed test cancels a job during a database statement on the real path. The probe above is one-off evidence; the open issue on end-to-end coverage (IMP-213) still stands.
