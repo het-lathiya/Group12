@@ -38,3 +38,6 @@ supabase/.branches/
 .claude/settings.local.json
 *.log
 .DS_Store
+
+# AWS set-up values, copied from infra/aws/env.sh.example (IMP-217)
+infra/aws/env.sh
