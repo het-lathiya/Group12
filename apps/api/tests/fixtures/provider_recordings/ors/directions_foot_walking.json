@@ -1,0 +1,70 @@
+{
+  "bbox": [
+    2.115,
+    53.868,
+    2.12,
+    53.876
+  ],
+  "routes": [
+    {
+      "summary": {
+        "distance": 1240.6,
+        "duration": 893.4
+      },
+      "segments": [
+        {
+          "distance": 1240.6,
+          "duration": 893.4,
+          "steps": [
+            {
+              "distance": 1240.6,
+              "duration": 893.4,
+              "type": 11,
+              "instruction": "Head north",
+              "name": "-",
+              "way_points": [
+                0,
+                1
+              ]
+            }
+          ]
+        }
+      ],
+      "bbox": [
+        2.115,
+        53.868,
+        2.12,
+        53.876
+      ],
+      "geometry": "sample_encoded_polyline",
+      "way_points": [
+        0,
+        1
+      ]
+    }
+  ],
+  "metadata": {
+    "attribution": "openrouteservice.org | OpenStreetMap contributors",
+    "service": "routing",
+    "timestamp": 1800000000000,
+    "query": {
+      "coordinates": [
+        [
+          2.115,
+          53.868
+        ],
+        [
+          2.12,
+          53.876
+        ]
+      ],
+      "profile": "foot-walking",
+      "format": "json"
+    },
+    "engine": {
+      "version": "format-fixture",
+      "build_date": "format-fixture",
+      "graph_date": "format-fixture"
+    }
+  }
+}

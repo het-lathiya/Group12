@@ -77,3 +77,15 @@ forbidden_modules =
     app.*.router
     app.*.service
     app.*.repository
+
+; §4.4 Routing isolation (IMP-307): httpx calls to OpenRouteService only in app.routing.client.
+[importlinter:contract:routing-isolation]
+name = Routing isolation: httpx only in app.routing.client within app.routing
+type = forbidden
+source_modules =
+    app.routing.service
+    app.routing.cache
+    app.routing.estimate
+forbidden_modules =
+    httpx
+allow_indirect_imports = True
