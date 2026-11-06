@@ -410,9 +410,21 @@ async def test_an_answer_outside_the_shortlist_fails_with_invalid_output(
 
 
 class SlowProvider(MockProvider):
+    """Expires the job's timeout during the provider call, where a real timeout fires.
+
+    A short wall-clock timeout can fire during the job's database work instead. SQLAlchemy then
+    invalidates the cancelled connection, and here that connection holds the whole test's outer
+    transaction. A real job's transaction() has a connection of its own.
+    """
+
+    def __init__(self, job_timeouts: list[asyncio.Timeout]) -> None:
+        super().__init__("ok", app_env="test")
+        self.job_timeouts = job_timeouts
+
     async def generate_itinerary(
         self, request: GenerationRequest
     ) -> ProviderResult[ItineraryOutput]:
+        self.job_timeouts[0].reschedule(asyncio.get_running_loop().time())
         await asyncio.sleep(5)
         return await super().generate_itinerary(request)
 
@@ -427,10 +439,17 @@ async def test_the_job_timeout_fails_with_internal_and_says_timed_out(
     submitted: list[Job],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(jobs, "PIPELINE_TIMEOUT_S", 0.05)
     generation_id = await queued_row(db_session, auth_user, trip)
+    job_timeouts: list[asyncio.Timeout] = []
+    real_timeout = asyncio.timeout
 
-    await jobs.run(generation_id, SlowProvider("ok", app_env="test"), sessions)
+    def recorded_timeout(delay: float | None) -> asyncio.Timeout:
+        job_timeouts.append(real_timeout(delay))
+        return job_timeouts[-1]
+
+    monkeypatch.setattr(asyncio, "timeout", recorded_timeout)
+
+    await jobs.run(generation_id, SlowProvider(job_timeouts), sessions)
     failed = await poll(api_client, auth_user, str(generation_id), submitted, sessions)
 
     assert (failed["status"], failed["failure_reason"]) == ("failed", "internal")
