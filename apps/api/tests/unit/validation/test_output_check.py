@@ -227,5 +227,5 @@ def test_the_counts_reach_the_completed_record_when_a_duplicate_is_dropped(
     journal.run(MockProvider("ok", app_env="test"))
 
     assert journal.saved is not None
-    assert journal.saved.place_ids() == [FORT, THALI]
+    assert [item.place_id for day in journal.saved for item in day.items] == [FORT, THALI]
     assert journal.completed["validation_summary"]["rejected_items"] == 1

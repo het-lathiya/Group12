@@ -15,8 +15,10 @@ from app.ai.providers.base import ModelProvider
 from app.ai.providers.gemini import GeminiProvider
 from app.core.config import Settings
 from app.generation import pipeline
+from app.itinerary.schemas import PlannedDay
 from app.rag.service import RetrievalResult
-from app.schemas.ai import GenerationRequest, ItineraryOutput
+from app.routing.estimate import TravelEstimate, TravelMode
+from app.schemas.ai import GenerationRequest
 
 RECORDINGS = Path(__file__).resolve().parent / "provider_recordings" / "gemini"
 MODEL = "gemini-3.5-flash-lite"
@@ -30,13 +32,20 @@ def recorded_gemini(name: str = "ok") -> GeminiProvider:
     return GeminiProvider(settings, http_client=client)
 
 
+class FixedRouting:
+    """Ten minutes and 800 metres between any two places, from the routing service."""
+
+    async def travel(self, origin: Any, target: Any, mode: TravelMode | str) -> TravelEstimate:
+        return TravelEstimate(10, 800, TravelMode(mode), "routing_api")
+
+
 class Journal:
     """Stands in for the repository, builder and save, and notes what the pipeline did."""
 
     def __init__(self, monkeypatch: pytest.MonkeyPatch, request: GenerationRequest) -> None:
         self.steps: list[str] = []
         self.settings: dict[str, Any] = {}
-        self.saved: ItineraryOutput | None = None
+        self.saved: list[PlannedDay] | None = None
         self.completed: dict[str, Any] = {}
         self.failed: str | None = None
         self.failed_with: dict[str, Any] = {}
@@ -97,6 +106,7 @@ class Journal:
         monkeypatch.setattr(repository, "mark_validating", mark_validating)
         monkeypatch.setattr(repository, "complete", complete)
         monkeypatch.setattr(repository, "fail", fail)
+        monkeypatch.setattr(pipeline, "routing_for", lambda session: FixedRouting())
         monkeypatch.setattr(pipeline.request_builder, "retrieve", retrieve)
         monkeypatch.setattr(pipeline.request_builder, "build", build)
         monkeypatch.setattr(pipeline.itinerary_service, "save_generated_plan", save)

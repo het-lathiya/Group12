@@ -158,6 +158,11 @@ class ShortlistPlace(StrictModel):
     hours_summary: str
     suitability: Suitability
 
+    @property
+    def id(self) -> UUID:
+        """So a shortlist place can be routed like a ``places`` row."""
+        return self.place_id
+
 
 class DayHint(StrictModel):
     day_number: DayNumber

@@ -6,6 +6,7 @@ together or not at all (NFR-008). ``get_itinerary`` (API-24) and ``latest_itiner
 read the saved plan for its owner (IMP-211).
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -25,9 +26,9 @@ from app.itinerary.schemas import (
     ItineraryOut,
     ItinerarySource,
     LatestItineraryOut,
+    PlannedDay,
     Totals,
 )
-from app.schemas.ai import ItineraryOutput
 from app.trips import service as trips_service
 
 SNAPSHOT_SCHEMA = "snap-1"
@@ -43,7 +44,7 @@ async def save_generated_plan(
     session: AsyncSession,
     trip_id: UUID,
     user_id: UUID,
-    output: ItineraryOutput,
+    plan: Sequence[PlannedDay],
     generation_id: UUID,
     *,
     validation_summary: dict[str, Any],
@@ -52,7 +53,7 @@ async def save_generated_plan(
     if trip is None:
         raise NotFound()
     days = await repository.replace_plan(
-        session, trip_id, trip.start_date, output, origin="model", generation_id=generation_id
+        session, trip_id, trip.start_date, plan, origin="model", generation_id=generation_id
     )
     plan_revision = await repository.mark_plan_saved(session, trip_id)
     snapshot = {

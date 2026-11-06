@@ -7,6 +7,7 @@ of eval/datasets/trips/v1 (cases 014 and 015), the middle one the pattern of IMP
 
 import copy
 import json
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -153,11 +154,10 @@ def test_tc_028_a_price_written_in_a_note_reaches_the_save_only_as_note_text(
     journal.run(Obeys(ItineraryOutput.model_validate(answer)))
 
     assert journal.saved is not None
-    saved = journal.saved.model_dump()
-    assert set(saved) == {"days", "summary", "assumptions"}
-    for day in saved["days"]:
+    travel = {"travel_from_prev_min", "travel_from_prev_m", "travel_mode", "travel_source"}
+    for day in map(asdict, journal.saved):
         assert set(day) == {"day_number", "theme", "items"}
-        assert all(set(item) == ITEM_FIELDS for item in day["items"])
+        assert all(set(item) == ITEM_FIELDS | travel for item in day["items"])
 
 
 @pytest.mark.parametrize("note", [ADD_A_PLACE, SET_A_PRICE, IGNORE_RULES, *hostile_notes()])
@@ -170,4 +170,4 @@ def test_tc_028_mock_saves_only_shortlisted_places_under_a_hostile_note(
     journal.run(MockProvider("ok", app_env="test"))
 
     assert journal.saved is not None
-    assert set(journal.saved.place_ids()) <= request.shortlist_ids()
+    assert {item.place_id for day in journal.saved for item in day.items} <= request.shortlist_ids()
