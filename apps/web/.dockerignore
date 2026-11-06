@@ -1,0 +1,11 @@
+# Build context of apps/web/Dockerfile (IMP-218): env files never reach the image.
+node_modules
+.next
+**/.env*
+coverage
+e2e
+test-results
+playwright-report
+blob-report
+tests
+*.tsbuildinfo
