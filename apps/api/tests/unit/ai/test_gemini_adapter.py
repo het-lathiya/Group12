@@ -1,0 +1,329 @@
+"""Gemini adapter by replay (§8.4; FR-041: TC-013 to TC-015, TC-018 to TC-024, TC-030 to TC-032,
+TC-159 to TC-161; IMP-301).
+
+Each fixture in provider_recordings/gemini/ goes through the real SDK over a fake HTTP transport;
+nothing reaches the network. The fixtures are format fixtures until a live recording replaces them.
+"""
+
+import asyncio
+import json
+import logging
+from pathlib import Path
+from typing import Any
+
+import httpx
+import pytest
+from fixtures.ai import sample_request, sample_request_data
+
+from app.ai.errors import (
+    ProviderAuthError,
+    ProviderBadRequest,
+    ProviderError,
+    ProviderInvalidOutput,
+    ProviderQuotaExhausted,
+    ProviderRateLimited,
+    ProviderTimeout,
+    ProviderUnavailable,
+)
+from app.ai.prompts import registry
+from app.ai.providers import gemini as adapter
+from app.ai.providers.gemini import GeminiProvider
+from app.core.config import Settings, load_settings
+from app.generation import records
+from app.schemas.ai import GenerationRequest
+
+RECORDINGS = Path(__file__).resolve().parents[2] / "fixtures" / "provider_recordings" / "gemini"
+IO_1 = Path(__file__).resolve().parents[5] / "contracts" / "ai" / "io-1.schema.json"
+KEY = "unit-test-gemini-key-not-real"
+MODEL = "gemini-3.5-flash-lite"
+VENDOR_TEXT = "Sample vendor text"
+
+
+def recording(name: str) -> httpx.Response:
+    data = json.loads((RECORDINGS / f"{name}.json").read_text(encoding="utf-8"))
+    return httpx.Response(data["http_status"], json=data["body"], headers=data["headers"])
+
+
+class Replay:
+    """A fake transport that answers every request and keeps what it was sent."""
+
+    def __init__(self, answer: httpx.Response | Exception) -> None:
+        self.answer = answer
+        self.requests: list[httpx.Request] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+    @property
+    def body(self) -> dict[str, Any]:
+        body: dict[str, Any] = json.loads(self.requests[-1].content)
+        return body
+
+
+def provider(replay: Replay, **overrides: Any) -> GeminiProvider:
+    values: dict[str, Any] = {"gemini_api_key": KEY, "gemini_model_id": MODEL}
+    client = httpx.AsyncClient(transport=httpx.MockTransport(replay))
+    return GeminiProvider(Settings(**(values | overrides)), http_client=client)
+
+
+def generate(gemini: GeminiProvider, request: GenerationRequest | None = None) -> Any:
+    return asyncio.run(gemini.generate_itinerary(request or sample_request()))
+
+
+def failure(name: str) -> ProviderError:
+    with pytest.raises(ProviderError) as raised:
+        generate(provider(Replay(recording(name))))
+    assert VENDOR_TEXT not in str(raised.value)
+    assert raised.value.__cause__ is None
+    return raised.value
+
+
+def test_gemini_tc_013_the_key_comes_from_the_environment_and_never_surfaces(
+    clean_settings_env: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    clean_settings_env.setenv("DATABASE_URL", "postgresql://u:p@localhost/x")
+    clean_settings_env.setenv("GEMINI_API_KEY", KEY)
+    clean_settings_env.setenv("GEMINI_MODEL_ID", MODEL)
+    replay = Replay(recording("unavailable_503"))
+    client = httpx.AsyncClient(transport=httpx.MockTransport(replay))
+    gemini = GeminiProvider(load_settings(), http_client=client)
+    with caplog.at_level(logging.DEBUG), pytest.raises(ProviderUnavailable) as raised:
+        generate(gemini)
+    assert replay.requests[-1].headers["x-goog-api-key"] == KEY
+    health = asyncio.run(gemini.health_check())
+    seen = [
+        str(raised.value),
+        caplog.text,
+        str(gemini.generation_settings),
+        gemini.get_model_metadata().model_dump_json(),
+        health.model_dump_json(),
+    ]
+    assert not [text for text in seen if KEY in text]
+
+
+def test_gemini_tc_014_the_request_carries_the_structured_output_configuration() -> None:
+    replay = Replay(recording("ok"))
+    generate(provider(replay))
+    body = replay.body
+    assert body["response_format"]["type"] == "text"
+    assert body["response_format"]["mime_type"] == "application/json"
+    assert body["response_format"]["schema"] == adapter.wire_schema()
+    system_text, user_text = registry.render("itinerary_generate", "v1", sample_request())
+    assert (body["system_instruction"], body["input"]) == (system_text, user_text)
+
+
+def test_gemini_the_wire_schema_is_io_1_without_schema_id_and_pattern() -> None:
+    contract = json.loads(IO_1.read_text(encoding="utf-8"))
+    wire = adapter.wire_schema()
+    text = json.dumps(wire)
+    assert '"pattern"' not in text
+    assert '"$schema"' not in text
+    assert '"$id"' not in text
+    assert "HH:MM" in text
+    assert list(wire["properties"]) == ["days", "summary", "assumptions"]
+    assert wire["properties"] == adapter._without_keys(contract)["properties"]
+
+
+def test_gemini_tc_015_a_valid_answer_parses_to_io_1() -> None:
+    result = generate(provider(Replay(recording("ok"))))
+    assert [item.start_time for item in result.output.days[0].items] == ["09:30", "12:00"]
+    assert result.output.unknown_place_ids(sample_request()) == []
+
+
+def test_gemini_tc_018_no_answer_within_the_timeout_is_a_provider_timeout() -> None:
+    async def never(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(5)
+        return recording("ok")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(never))
+    settings = Settings(gemini_api_key=KEY, gemini_model_id=MODEL, gemini_timeout_s=0.01)
+    with pytest.raises(ProviderTimeout):
+        generate(GeminiProvider(settings, http_client=client))
+
+
+def test_gemini_tc_018_a_transport_timeout_is_a_provider_timeout() -> None:
+    with pytest.raises(ProviderTimeout):
+        generate(provider(Replay(httpx.ReadTimeout("slow"))))
+
+
+def test_gemini_the_timeout_reaches_the_http_options_in_milliseconds() -> None:
+    replay = Replay(recording("ok"))
+    gemini = provider(replay, gemini_timeout_s=12)
+    generate(gemini)
+    assert replay.requests[-1].extensions["timeout"]["read"] == 12
+    assert gemini.generation_settings["timeout_s"] == 12
+
+
+@pytest.mark.parametrize("name", ["blocked", "blocked_status"])
+def test_gemini_tc_019_a_safety_block_is_invalid_output_blocked(name: str) -> None:
+    error = failure(name)
+    assert isinstance(error, ProviderInvalidOutput)
+    assert error.kind == "blocked"
+
+
+@pytest.mark.parametrize(
+    ("name", "kind"),
+    [
+        ("empty", "empty"),  # TC-020
+        ("truncated", "truncated"),  # TC-021
+        ("malformed", "malformed_json"),  # TC-022
+        ("schema_violation", "schema_violation"),  # TC-023
+    ],
+)
+def test_gemini_tc_020_to_023_each_invalid_output_kind(name: str, kind: str) -> None:
+    error = failure(name)
+    assert isinstance(error, ProviderInvalidOutput)
+    assert error.kind == kind
+    assert error.failure_reason == "invalid_output"
+
+
+def test_gemini_an_answer_body_that_is_not_an_interaction_is_malformed() -> None:
+    with pytest.raises(ProviderInvalidOutput) as raised:
+        generate(provider(Replay(httpx.Response(200, text="<html>not json</html>"))))
+    assert raised.value.kind == "malformed_json"
+
+
+def test_gemini_a_failed_interaction_without_a_block_is_unavailable() -> None:
+    answer = httpx.Response(200, json={"id": "i", "status": "failed"})
+    with pytest.raises(ProviderUnavailable):
+        generate(provider(Replay(answer)))
+
+
+def test_gemini_tc_024_usage_is_mapped_from_the_response() -> None:
+    usage = generate(provider(Replay(recording("ok")))).usage
+    assert usage.model_dump() == {
+        "input_tokens": 812,
+        "output_tokens": 146,
+        "thinking_tokens": 37,
+        "total_tokens": 995,
+    }
+
+
+def test_gemini_tc_030_nothing_is_stored_at_the_provider() -> None:
+    replay = Replay(recording("ok"))
+    generate(provider(replay))
+    assert replay.body["store"] is False
+
+
+def test_gemini_tc_031_the_model_id_is_recorded_exactly_as_configured() -> None:
+    replay = Replay(recording("ok"))
+    gemini = provider(replay, gemini_model_id="Gemini-Exact_ID-1")
+    generate(gemini)
+    assert replay.body["model"] == "Gemini-Exact_ID-1"
+    assert gemini.get_model_metadata().model_id == "Gemini-Exact_ID-1"
+
+
+def test_gemini_tc_032_no_sampling_parameter_or_thinking_budget_is_sent() -> None:
+    replay = Replay(recording("ok"))
+    generate(provider(replay, ai_temperature=0.9, ai_max_output_tokens=2048))
+    assert replay.body["generation_config"] == {
+        "thinking_level": "minimal",
+        "max_output_tokens": 2048,
+    }
+
+
+def test_gemini_no_output_limit_is_sent_when_none_is_configured() -> None:
+    replay = Replay(recording("ok"))
+    gemini = provider(replay)
+    generate(gemini)
+    assert replay.body["generation_config"] == {"thinking_level": "minimal"}
+    assert "max_output_tokens" not in gemini.generation_settings
+
+
+@pytest.mark.parametrize(
+    ("model", "level"),
+    [
+        ("gemini-3.5-flash-lite", "minimal"),
+        ("gemini-3.6-flash", "minimal"),
+        ("gemini-3.8-flash", "low"),
+        ("some-other-model", "low"),
+    ],
+)
+def test_gemini_the_lowest_thinking_level_of_the_model(model: str, level: str) -> None:
+    assert adapter.thinking_level(model) == level
+
+
+def test_gemini_tc_159_a_valid_call_returns_a_candidate_and_usage() -> None:
+    result = generate(provider(Replay(recording("ok"))))
+    assert result.output.days
+    assert result.usage.total_tokens == 995
+    assert result.finish_reason == "completed"
+    assert result.provider_request_id == "sample-interaction-id"
+    assert result.latency_ms >= 0
+
+
+def test_gemini_tc_160_a_429_is_a_rate_limit_with_retry_after() -> None:
+    error = failure("rate_limited_429")
+    assert isinstance(error, ProviderRateLimited)
+    assert error.retry_after_s == 7
+
+
+def test_gemini_a_429_of_daily_quota_is_quota_exhausted() -> None:
+    assert isinstance(failure("quota_429"), ProviderQuotaExhausted)
+
+
+def test_gemini_tc_161_a_blocked_or_empty_answer_names_its_reason() -> None:
+    assert "blocked" in str(failure("blocked"))
+    assert "empty" in str(failure("empty"))
+
+
+@pytest.mark.parametrize("name", ["unavailable_503", "rate_limited_429", "quota_429"])
+def test_gemini_the_sdk_makes_one_attempt_only(name: str) -> None:
+    replay = Replay(recording(name))
+    with pytest.raises(ProviderError):
+        generate(provider(replay))
+    assert len(replay.requests) == 1
+
+
+def test_gemini_a_400_code_is_read_before_the_status() -> None:
+    bad = httpx.Response(400, json={"error": {"code": "invalid_request", "message": VENDOR_TEXT}})
+    with pytest.raises(ProviderBadRequest):
+        generate(provider(Replay(bad)))
+    with pytest.raises(ProviderInvalidOutput):
+        generate(provider(Replay(recording("blocked"))))
+
+
+def test_gemini_a_prompt_that_cannot_render_is_a_bad_request() -> None:
+    data = {**sample_request_data(), "prompt_version": "v99"}
+    replay = Replay(recording("ok"))
+    with pytest.raises(ProviderBadRequest):
+        generate(provider(replay), GenerationRequest.model_validate(data))
+    assert replay.requests == []
+
+
+def test_gemini_generation_settings_pass_the_record_allow_list() -> None:
+    sent = provider(Replay(recording("ok")), ai_max_output_tokens=2048).generation_settings
+    assert records.clean_generation_settings(sent) == sent
+    assert sent == {
+        "api_style": "interactions",
+        "thinking_level": "minimal",
+        "structured_output": True,
+        "timeout_s": 35,
+        "max_output_tokens": 2048,
+    }
+
+
+def test_gemini_health_needs_no_generation_call() -> None:
+    replay = Replay(recording("ok"))
+    assert asyncio.run(provider(replay).health_check()).status == "ok"
+    assert asyncio.run(provider(replay, gemini_api_key="").health_check()).status == "down"
+    assert asyncio.run(provider(replay, gemini_model_id="").health_check()).status == "down"
+    assert replay.requests == []
+
+
+def test_gemini_health_follows_the_last_call() -> None:
+    replay = Replay(recording("unavailable_503"))
+    gemini = provider(replay)
+    with pytest.raises(ProviderUnavailable):
+        generate(gemini)
+    assert asyncio.run(gemini.health_check()).status == "degraded"
+    replay.answer = recording("ok")
+    generate(gemini)
+    assert asyncio.run(gemini.health_check()).status == "ok"
+    replay.answer = httpx.Response(403, json={"error": {"code": "permission_denied"}})
+    with pytest.raises(ProviderAuthError):
+        generate(gemini)
+    assert asyncio.run(gemini.health_check()).status == "down"
