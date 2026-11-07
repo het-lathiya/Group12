@@ -83,7 +83,8 @@ BLOCKED_CODES: Final = frozenset(
 )
 TRUNCATED_STATUSES: Final = frozenset({"incomplete", "requires_continuation"})
 # Numeric, length, count and format limits make Gemini refuse the schema as too many states for
-# serving (gemini-setup.md, proposed D13); Pydantic, check_output and recalculation enforce them.
+# serving (gemini-setup.md, proposed D13). The wire states them in descriptions, as a hint only;
+# Pydantic, check_output and recalculation enforce them.
 DROPPED_SCHEMA_KEYS: Final = frozenset(
     {
         "$schema",
@@ -102,6 +103,8 @@ DROPPED_SCHEMA_KEYS: Final = frozenset(
     }
 )
 NAME_MAPS: Final = frozenset({"properties", "$defs"})
+# The HHMM pattern of app/schemas/ai.py; any other pattern is quoted as it stands.
+HHMM_PATTERN: Final = r"^([01]\d|2[0-3]):[0-5]\d$"
 EMBEDDING_2: Final = GEMINI_EMBEDDING_MODELS[0]
 EMBED_TASK_TYPES: Final[dict[EmbeddingPurpose, str]] = {
     "document": "RETRIEVAL_DOCUMENT",
@@ -114,21 +117,69 @@ BACKOFF_JITTER: Final = 0.25
 Health = Literal["ok", "degraded", "down"]
 
 
+def _count_sentence(low: int | None, high: int | None, noun: str) -> list[str]:
+    if low is not None and high is not None:
+        return [f"From {low} to {high} {noun}s."]
+    if high is not None:
+        return [f"At most {high} {noun}{'' if high == 1 else 's'}."]
+    if low is not None:
+        return [f"At least {low} {noun}{'' if low == 1 else 's'}."]
+    return []
+
+
+def _limit_sentences(node: dict[str, Any]) -> list[str]:
+    """One plain sentence for each limit the wire schema removes from ``node``, in a fixed order."""
+    sentences: list[str] = []
+    low, high = node.get("minimum"), node.get("maximum")
+    if low is not None and high is not None:
+        kind = "Integer" if node.get("type") == "integer" else "Number"
+        sentences.append(f"{kind} from {low} to {high}.")
+    elif low is not None:
+        sentences.append(f"At least {low}.")
+    elif high is not None:
+        sentences.append(f"At most {high}.")
+    if "exclusiveMinimum" in node:
+        sentences.append(f"Greater than {node['exclusiveMinimum']}.")
+    if "exclusiveMaximum" in node:
+        sentences.append(f"Less than {node['exclusiveMaximum']}.")
+    if "multipleOf" in node:
+        sentences.append(f"Multiple of {node['multipleOf']}.")
+    sentences += _count_sentence(node.get("minLength"), node.get("maxLength"), "character")
+    sentences += _count_sentence(node.get("minItems"), node.get("maxItems"), "item")
+    if "format" in node:
+        sentences.append(f"Format: {node['format']}.")
+    if "pattern" in node:
+        pattern = node["pattern"]
+        hhmm = pattern == HHMM_PATTERN
+        sentences.append("Format: HH:MM (24-hour)." if hhmm else f"Matches the pattern {pattern}.")
+    return sentences
+
+
+def _described(kept: dict[str, Any], sentences: list[str]) -> dict[str, Any]:
+    if not sentences:
+        return kept
+    existing = kept.get("description", "")
+    if existing and existing[-1] not in ".!?":
+        existing += "."
+    return kept | {"description": " ".join([existing, *sentences] if existing else sentences)}
+
+
 def _without_keys(node: Any, names: bool = False) -> Any:
     """``names``: the keys of this mapping are field names, kept even if one reads like a keyword."""
     if isinstance(node, dict):
-        return {
+        kept = {
             k: _without_keys(v, not names and k in NAME_MAPS)
             for k, v in node.items()
             if names or k not in DROPPED_SCHEMA_KEYS
         }
+        return kept if names else _described(kept, _limit_sentences(node))
     if isinstance(node, list):
         return [_without_keys(item) for item in node]
     return node
 
 
 def wire_schema(model: type[ItineraryOutput] = ItineraryOutput) -> dict[str, Any]:
-    """The output schema as sent (§8.7): no DROPPED_SCHEMA_KEYS; HH:MM stays in description."""
+    """The output schema as sent (§8.7): no DROPPED_SCHEMA_KEYS; their limits become descriptions."""
     schema: dict[str, Any] = _without_keys(model.model_json_schema())
     return schema
 
