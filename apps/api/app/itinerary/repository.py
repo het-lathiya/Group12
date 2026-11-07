@@ -208,14 +208,34 @@ async def plan_items(
     return [(item, place, bool(flag)) for item, place, flag in await session.execute(query)]
 
 
-async def latest_version_id(session: AsyncSession, trip_id: UUID) -> UUID | None:
+async def latest_version_id(
+    session: AsyncSession, trip_id: UUID, plan_revision: int
+) -> UUID | None:
+    """§5.9: the newest version of the current revision, else None."""
     query = (
         select(ItineraryVersion.id)
-        .where(ItineraryVersion.trip_id == trip_id)
+        .where(
+            ItineraryVersion.trip_id == trip_id,
+            ItineraryVersion.plan_revision == plan_revision,
+        )
         .order_by(ItineraryVersion.version_no.desc())
         .limit(1)
     )
     return await session.scalar(query)
+
+
+async def current_warnings(
+    session: AsyncSession, trip_id: UUID, plan_revision: int
+) -> list[ItineraryWarning]:
+    query = (
+        select(ItineraryWarning)
+        .where(
+            ItineraryWarning.trip_id == trip_id,
+            ItineraryWarning.plan_revision == plan_revision,
+        )
+        .order_by(ItineraryWarning.day_number.nulls_first(), ItineraryWarning.created_at)
+    )
+    return list(await session.scalars(query))
 
 
 async def latest_completed_generation(session: AsyncSession, trip_id: UUID) -> AiGeneration | None:
