@@ -30,10 +30,16 @@ from app.ai.providers import gemini as adapter
 from app.ai.providers.gemini import GeminiProvider
 from app.core.config import Settings, load_settings
 from app.generation import records
-from app.schemas.ai import GenerationRequest, GroundedGenerationRequest, GroundedItineraryOutput
+from app.schemas.ai import (
+    GenerationRequest,
+    GroundedGenerationRequest,
+    GroundedItineraryOutput,
+    ItineraryOutput,
+)
 
 RECORDINGS = Path(__file__).resolve().parents[2] / "fixtures" / "provider_recordings" / "gemini"
-IO_1 = Path(__file__).resolve().parents[5] / "contracts" / "ai" / "io-1.schema.json"
+CONTRACTS = Path(__file__).resolve().parents[5] / "contracts" / "ai"
+IO_1 = CONTRACTS / "io-1.schema.json"
 KEY = "unit-test-gemini-key-not-real"
 MODEL = "gemini-3.5-flash-lite"
 VENDOR_TEXT = "Sample vendor text"
@@ -359,3 +365,122 @@ def test_template_v1_keeps_the_io_1_wire_schema() -> None:
 
     assert not isinstance(result.output, GroundedItineraryOutput)
     assert "source_ids" not in json.dumps(replay.body)
+
+
+# ---------- Wire schema without serving limits (proposed D13) ----------
+
+OUTPUTS = [("io-1", ItineraryOutput), ("io-2", GroundedItineraryOutput)]
+SERVING_LIMITS = {
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "minItems",
+    "maxItems",
+    "minLength",
+    "maxLength",
+    "format",
+    "multipleOf",
+}
+
+
+def schema_keywords(node: Any, names: bool = False) -> set[str]:
+    """Every keyword at any depth; the keys under properties and $defs are names, not keywords."""
+    if isinstance(node, list):
+        return set().union(*(schema_keywords(item) for item in node))
+    if not isinstance(node, dict):
+        return set()
+    found = set() if names else set(node)
+    for key, value in node.items():
+        found |= schema_keywords(value, not names and key in adapter.NAME_MAPS)
+    return found
+
+
+def schema_objects(schema: dict[str, Any]) -> dict[str, tuple[list[str], list[str]]]:
+    """The property names and required fields of the root and of each definition."""
+    nodes = {"": schema, **schema["$defs"]}
+    return {k: (list(n["properties"]), n["required"]) for k, n in nodes.items()}
+
+
+@pytest.mark.parametrize(("name", "model"), OUTPUTS)
+def test_wire_schema_has_no_serving_limit_at_any_depth(
+    name: str, model: type[ItineraryOutput]
+) -> None:
+    contract = json.loads((CONTRACTS / f"{name}.schema.json").read_text(encoding="utf-8"))
+    assert schema_keywords(contract) & SERVING_LIMITS  # the walk does find them in the contract
+    assert not schema_keywords(adapter.wire_schema(model)) & (
+        SERVING_LIMITS | {"$schema", "$id", "pattern"}
+    )
+
+
+@pytest.mark.parametrize(("name", "model"), OUTPUTS)
+def test_wire_schema_keeps_every_property_required_field_and_enum(
+    name: str, model: type[ItineraryOutput]
+) -> None:
+    contract = json.loads((CONTRACTS / f"{name}.schema.json").read_text(encoding="utf-8"))
+    wire = adapter.wire_schema(model)
+    assert schema_objects(wire) == schema_objects(contract)
+    assert schema_keywords(wire) >= {
+        "type",
+        "properties",
+        "required",
+        "additionalProperties",
+        "enum",
+        "items",
+        "$defs",
+        "$ref",
+        "description",
+    }
+    assert "HH:MM" in json.dumps(wire)
+
+
+def test_wire_schema_keeps_a_field_named_like_a_dropped_keyword() -> None:
+    node = {"properties": {"format": {"type": "string", "maxLength": 3}}, "required": ["format"]}
+    assert adapter._without_keys(node) == {
+        "properties": {"format": {"type": "string"}},
+        "required": ["format"],
+    }
+
+
+def test_wire_schema_is_what_the_request_carries() -> None:
+    replay = Replay(recording("ok"))
+    generate(provider(replay))
+    assert replay.body["response_format"]["schema"] == adapter.wire_schema(ItineraryOutput)
+
+    generate(provider(replay), grounded_request())
+    assert replay.body["response_format"]["schema"] == adapter.wire_schema(GroundedItineraryOutput)
+
+
+def answer_with(change: Any) -> httpx.Response:
+    data = json.loads((RECORDINGS / "ok.json").read_text(encoding="utf-8"))
+    content = data["body"]["steps"][0]["content"][0]
+    answer = json.loads(content["text"])
+    change(answer)
+    content["text"] = json.dumps(answer)
+    return httpx.Response(200, json=data["body"])
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        pytest.param(lambda a: a["days"][0]["items"][0].update(duration_min=600), id="duration"),
+        pytest.param(lambda a: a.update(assumptions=["An assumption."] * 21), id="assumptions"),
+        pytest.param(lambda a: a["days"][0]["items"][0].update(note="n" * 300), id="note"),
+        pytest.param(lambda a: a["days"][0].update(theme="t" * 81), id="theme"),
+        pytest.param(lambda a: a.update(summary="s" * 501), id="summary"),
+        pytest.param(lambda a: a["days"][0]["items"][0].update(start_time="25:00"), id="time"),
+        pytest.param(lambda a: a["days"][0].update(day_number=0), id="day_number"),
+        pytest.param(lambda a: a["days"][0].update(items=[]), id="no_items"),
+        pytest.param(lambda a: a["days"][0].update(items=a["days"][0]["items"] * 7), id="items"),
+        pytest.param(lambda a: a.update(days=a["days"] * 15), id="days"),
+        pytest.param(lambda a: a.update(days=[]), id="no_days"),
+    ],
+)
+@pytest.mark.parametrize("grounded", [False, True], ids=["io-1", "io-2"])
+def test_wire_schema_a_removed_limit_is_still_rejected_after_parsing(
+    change: Any, grounded: bool
+) -> None:
+    gemini = provider(Replay(answer_with(change)))
+    with pytest.raises(ProviderInvalidOutput) as raised:
+        generate(gemini, grounded_request() if grounded else None)
+    assert raised.value.kind == "schema_violation"

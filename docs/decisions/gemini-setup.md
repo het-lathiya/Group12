@@ -59,3 +59,5 @@ These are observations of the installed package, not documented facts:
 ## Live result
 
 Live smoke (TC-029): pending — run by the key holder with make live-smoke; result recorded before SG-3
+
+7 November 2026, key holder's local diagnostic (`gemini-3.5-flash-lite`, Interactions API): a plain call, `thinking_level` minimal and low, and a small `response_format` schema all succeed. The io-1 wire schema is refused with HTTP 400, code `invalid_request`, message "The specified schema produces a constraint that has too many states for serving". `make live-smoke`: 1 passed (embeddings), 1 failed (TC-029, HTTP 400). The wire schema now leaves out numeric, length, count and format limits (proposed D13, `docs/progress/parts/IMP-301-wire-schema.md`). TC-029 to be re-run by the key holder after this change.
