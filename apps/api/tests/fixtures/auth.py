@@ -46,7 +46,8 @@ def make_token(
         "sub": str(user_id),
         "aud": "anon" if wrong_aud else AUDIENCE,
         "exp": now - 60 if expired else now + 600,
-        "iat": now - 120 if expired else now,
+        # A few seconds back: PyJWT has no leeway, so iat = now fails if the wall clock steps back.
+        "iat": now - 120 if expired else now - 5,
         "role": "authenticated",
         **({"email": email} if email is not None else {}),
         **claims,

@@ -1,6 +1,7 @@
 """Token verification (§6.2, IMD-04; IMP-108: TC-057, TC-347). No database and no network."""
 
 import asyncio
+import time
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -44,6 +45,12 @@ def tampered(token: str) -> str:
 def test_tc_057_a_valid_token_yields_the_sub_as_user_id() -> None:
     claims = verify(make_token(USER_ID, email="traveller@example.test"))
     assert claims == TokenClaims(user_id=USER_ID, email="traveller@example.test")
+
+
+def test_a_helper_token_outlasts_a_backward_clock_step() -> None:
+    # WSL time sync steps the wall clock back by up to 0.35 s; iat = now then reads as the future.
+    payload = jwt.decode(make_token(USER_ID), options={"verify_signature": False})
+    assert payload["iat"] <= time.time() - 1
 
 
 @pytest.mark.parametrize(
