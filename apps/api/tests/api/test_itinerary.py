@@ -25,7 +25,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from app.ai.factory import get_model_provider
 from app.ai.providers.base import ModelProvider
 from app.ai.providers.mock import MockProvider
-from app.db.models import Destination, ItineraryDay, ItineraryItem, ItineraryVersion
+from app.db.models import (
+    Destination,
+    ItineraryDay,
+    ItineraryItem,
+    ItineraryVersion,
+    ItineraryWarning,
+    Trip,
+)
 from app.generation import jobs
 from app.places import seed
 
@@ -202,6 +209,104 @@ async def test_us_153_the_saved_plan_is_returned_in_order(
         "complete": len(priced) == len(items),
         "incomplete_count": len(items) - len(priced),
     }
+
+
+@pytest.mark.asyncio
+async def test_tc_195_each_day_lists_its_items_in_time_order(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, destination)
+    await generate(api_client, db_session, jobs_queue, auth_user, trip_id)
+
+    response = await api_client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=auth_user.headers)
+
+    days = response.json()["days"]
+    assert sum(len(day["items"]) for day in days) > 0
+    for day in days:
+        starts = [item["start_time"] for item in day["items"]]
+        assert starts == sorted(starts)
+        for earlier, later in zip(day["items"], day["items"][1:], strict=False):
+            assert earlier["end_time"] <= later["start_time"]
+
+
+@pytest.mark.asyncio
+async def test_findings_are_the_warnings_of_the_current_revision_only(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, destination)
+    generation = await generate(api_client, db_session, jobs_queue, auth_user, trip_id)
+    revision = generation["plan_revision"]
+    trip_uuid = uuid.UUID(trip_id)
+    item_id = await db_session.scalar(
+        select(ItineraryItem.id).where(ItineraryItem.trip_id == trip_uuid).limit(1)
+    )
+    db_session.add_all(
+        [
+            ItineraryWarning(
+                trip_id=trip_uuid,
+                plan_revision=revision,
+                code="HOURS_UNVERIFIED",
+                severity="info",
+                message="Opening hours unavailable.",
+                day_number=1,
+                item_id=item_id,
+                suggested_fix="Check opening times before the visit.",
+            ),
+            ItineraryWarning(
+                trip_id=trip_uuid,
+                plan_revision=revision - 1,
+                code="COST_INCOMPLETE",
+                severity="warning",
+                message="From an older revision.",
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    response = await api_client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=auth_user.headers)
+
+    assert response.status_code == 200, response.text
+    (finding,) = response.json()["findings"]
+    assert uuid.UUID(finding.pop("id"))
+    assert finding == {
+        "code": "HOURS_UNVERIFIED",
+        "severity": "info",
+        "message": "Opening hours unavailable.",
+        "day_number": 1,
+        "item_id": str(item_id),
+        "place_id": None,
+        "suggested_fix": "Check opening times before the visit.",
+    }
+
+
+@pytest.mark.asyncio
+async def test_version_id_is_null_when_no_version_has_the_current_revision(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, destination)
+    await generate(api_client, db_session, jobs_queue, auth_user, trip_id)
+    await db_session.execute(
+        update(Trip)
+        .where(Trip.id == uuid.UUID(trip_id))
+        .values(plan_revision=Trip.plan_revision + 1)
+    )
+
+    response = await api_client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=auth_user.headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["version_id"] is None
 
 
 @pytest.mark.asyncio
