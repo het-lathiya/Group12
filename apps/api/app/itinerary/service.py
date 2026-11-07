@@ -35,6 +35,7 @@ from app.itinerary.schemas import (
 )
 from app.trips import service as trips_service
 from app.trips.schemas import TripOut
+from app.validation.schemas import Finding
 
 SNAPSHOT_SCHEMA = "snap-1"
 
@@ -181,7 +182,7 @@ async def get_itinerary(
     return ItineraryOut(
         trip_id=trip.id,
         plan_revision=trip.plan_revision,
-        version_id=await repository.latest_version_id(session, trip_id),
+        version_id=await repository.latest_version_id(session, trip_id, trip.plan_revision),
         is_current=True,
         plan_stale=trip.plan_stale,
         source=None
@@ -194,7 +195,10 @@ async def get_itinerary(
             }
         ),
         days=out_days,
-        findings=[],  # warnings of the revision arrive with the validator (IMP-405)
+        findings=[
+            Finding.model_validate(warning, from_attributes=True)
+            for warning in await repository.current_warnings(session, trip_id, trip.plan_revision)
+        ],
         totals=Totals(
             currency=currency,
             estimate=AmountRange(
