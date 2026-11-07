@@ -14,7 +14,7 @@ from app.generation.request_builder import DAY_START
 from app.itinerary.schemas import PlannedDay, PlannedItem
 from app.routing.estimate import TravelEstimate, TravelMode, buffer_minutes
 from app.routing.service import RoutablePlace
-from app.schemas.ai import ItineraryDayOutput
+from app.schemas.ai import GroundedItemOutput, ItineraryDayOutput
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,9 @@ async def recalculate(
                     travel_from_prev_m=travel.distance_m if travel else None,
                     travel_mode=travel.mode.value if travel else None,
                     travel_source=travel.travel_source if travel else None,
+                    source_chunk_ids=(
+                        item.source_ids if isinstance(item, GroundedItemOutput) else ()
+                    ),
                 )
             )
             clock += duration
