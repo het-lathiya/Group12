@@ -6,13 +6,14 @@ together or not at all (NFR-008). ``get_itinerary`` (API-24) and ``latest_itiner
 read the saved plan for its owner (IMP-211).
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.budget import engine
@@ -31,8 +32,10 @@ from app.itinerary.schemas import (
     ItinerarySource,
     LatestItineraryOut,
     PlannedDay,
+    SourceRef,
     Totals,
 )
+from app.rag import service as rag_service
 from app.trips import service as trips_service
 from app.trips.schemas import TripOut
 from app.validation.schemas import Finding
@@ -156,6 +159,9 @@ async def get_itinerary(
     if not days:
         raise NotFound(NO_ITINERARY)
     rows = await repository.plan_items(session, trip_id)
+    sources = await rag_service.resolve_sources(
+        session, [chunk_id for item, _, _ in rows for chunk_id in item.source_chunk_ids]
+    )
     generation = await repository.latest_completed_generation(session, trip_id)
     ai_text = generation is not None and generation.outcome in AI_OUTCOMES
     currency = trip_currency(trip)
@@ -173,7 +179,7 @@ async def get_itinerary(
                 date=day.plan_date,
                 theme=day.theme,
                 theme_origin="ai" if ai_text and day.theme else "none",
-                items=[_item(*row) for row in day_rows],
+                items=[_item(*row, sources) for row in day_rows],
                 day_cost=DayCost(**_cost_sum([item for item, _, _ in day_rows]), currency=currency),
             )
         )
@@ -221,7 +227,9 @@ def _cost_sum(items: list[ItineraryItem]) -> dict[str, Any]:
     }
 
 
-def _item(item: ItineraryItem, place: Place, must_visit: bool) -> Item:
+def _item(
+    item: ItineraryItem, place: Place, must_visit: bool, sources: Mapping[UUID, Row[Any]]
+) -> Item:
     start = datetime.combine(datetime.min, item.start_time)
     end = (start + timedelta(minutes=item.duration_min)).time()
     cost = None
@@ -264,7 +272,11 @@ def _item(item: ItineraryItem, place: Place, must_visit: bool) -> Item:
             "note_origin": item.note_origin,
             "cost": cost,
             "travel_from_previous": travel,
-            "sources": [],  # A1 §7.1: filled from source_chunk_ids by IMP-316
+            "sources": [
+                SourceRef.model_validate(sources[chunk_id], from_attributes=True)
+                for chunk_id in item.source_chunk_ids
+                if chunk_id in sources
+            ],
         }
     )
 

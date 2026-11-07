@@ -13,6 +13,7 @@ from sqlalchemy import ColumnElement, Row, func, or_, select, update
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.places import DataSource
 from app.db.models.rag import RagChunk, RagDocument
 from app.rag.chunker import Chunk
 from app.rag.documents import CorpusDocument
@@ -197,3 +198,23 @@ async def top_guide_chunks(
         .limit(limit)
     )
     return [_chunk(row, [float(x) for x in row.embedding]) for row in await session.execute(query)]
+
+
+async def source_rows(session: AsyncSession, chunk_ids: Collection[UUID]) -> list[Row[Any]]:
+    """Chunk, document and data source in one query; an inactive chunk still resolves (IMD-110)."""
+    query = (
+        select(
+            RagChunk.id.label("chunk_id"),
+            RagDocument.kind,
+            RagDocument.title,
+            DataSource.name.label("source_name"),
+            DataSource.licence,
+            DataSource.attribution_text,
+            func.coalesce(RagDocument.url, DataSource.url).label("url"),
+            RagDocument.retrieved_on,
+        )
+        .join(RagDocument, RagDocument.id == RagChunk.document_id)
+        .join(DataSource, DataSource.id == RagDocument.source_id)
+        .where(RagChunk.id.in_(list(chunk_ids)))
+    )
+    return list(await session.execute(query))

@@ -1,9 +1,10 @@
-"""Corpus indexing and retrieval (Amendment A1 §6.6, §6.7). ``resolve_sources`` comes with IMP-316.
+"""Corpus indexing, retrieval and citations (Amendment A1 §6.6, §6.7, §6.10).
 
 ``index`` loads the corpus and runs the gate, writes each destination in one transaction, then
 embeds what is missing, one transaction per batch; none stays open across a provider call.
 ``retrieve`` embeds the query once, then runs the two similarity queries in one transaction. It
 never raises for a retrieval failure: it answers ``lexical_fallback`` (§6.11, IMD-112).
+``resolve_sources`` turns saved citations into their provenance on read.
 """
 
 import logging
@@ -13,9 +14,10 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Final, Literal
+from typing import Any, Final, Literal
 from uuid import UUID
 
+from sqlalchemy import Row
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -327,3 +329,11 @@ async def retrieve(
         mmr.select(guides),
         elapsed_ms(),
     )
+
+
+async def resolve_sources(session: AsyncSession, chunk_ids: Sequence[UUID]) -> dict[UUID, Row[Any]]:
+    """The SourceRef fields of each chunk that still exists, by chunk ID, in one query (A1 §7.1)."""
+    if not chunk_ids:
+        return {}
+    rows = await repository.source_rows(session, set(chunk_ids))
+    return {row.chunk_id: row for row in rows}
