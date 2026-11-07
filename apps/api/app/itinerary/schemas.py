@@ -44,6 +44,7 @@ class PlannedItem:
     cost_max: Decimal | None = None
     cost_currency: str | None = None
     cost_label: str | None = None
+    source_chunk_ids: Sequence[str] = ()  # the validated citations of step 8 (A1 §6.10)
 
 
 @dataclass(frozen=True)

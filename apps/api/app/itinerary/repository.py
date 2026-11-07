@@ -48,7 +48,9 @@ async def replace_plan(
     """Replace the trip's days, items and warnings with the plan; returns the snap-1 days.
 
     Times, durations, travel and costs are stored as step 9 calculated them; the snapshot leaves
-    travel and costs out, because a restore recalculates them (§5.2).
+    travel and costs out, because a restore recalculates them (§5.2). It keeps the citations, as
+    strings (A1 §5.5). Only a model plan keeps its notes: note_origin is ai or none here, and the
+    table ties none to a null note, so a fallback note cannot be stored as AI-written (§7.8).
     """
     await session.execute(delete(ItineraryWarning).where(ItineraryWarning.trip_id == trip_id))
     # Items go with their day (foreign key on delete cascade).
@@ -67,7 +69,7 @@ async def replace_plan(
         await session.flush()
         items: list[dict[str, Any]] = []
         for position, item in enumerate(day.items, start=1):
-            note = item.note or None
+            note = (item.note or None) if origin == "model" else None
             values: dict[str, Any] = {
                 "position": position,
                 "slot_type": item.slot_type,
@@ -91,10 +93,18 @@ async def replace_plan(
                     cost_max=item.cost_max,
                     cost_currency=item.cost_currency,
                     cost_label=item.cost_label,
+                    source_chunk_ids=[UUID(chunk_id) for chunk_id in item.source_chunk_ids],
                     **values,
                 )
             )
-            items.append({"place_id": item.place_id, "start_time": item.start_time, **values})
+            items.append(
+                {
+                    "place_id": item.place_id,
+                    "start_time": item.start_time,
+                    "source_chunk_ids": list(item.source_chunk_ids),
+                    **values,
+                }
+            )
         snapshot_days.append(
             {
                 "day_number": day.day_number,

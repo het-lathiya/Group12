@@ -8,7 +8,7 @@ the test's rolled-back session, as in test_generations.py. No provider host is r
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
@@ -33,10 +33,16 @@ from app.db.models import (
     ItineraryWarning,
     Trip,
 )
+from app.db.models.rag import RagChunk
 from app.generation import jobs
+from app.itinerary import repository
+from app.itinerary.schemas import PlannedDay, PlannedItem
 from app.places import seed
+from app.rag import service as rag_service
+from app.schemas.ai import GenerationRequest
 
-SAMPLETON = Path(__file__).resolve().parents[4] / "data" / "fixtures" / "sampleton"
+REPOSITORY = Path(__file__).resolve().parents[4]
+SAMPLETON = REPOSITORY / "data" / "fixtures" / "sampleton"
 
 Generate = Callable[[AuthUser], Any]
 
@@ -448,3 +454,257 @@ async def test_latest_returns_the_callers_most_recently_changed_itinerary_only(
         "plan_revision": 1,
         "updated_at": "2026-11-03T11:00:00Z",
     }
+
+
+# ---------- Saved citations and sources (A1 §5.5, §6.10, §7.1; FR-138 AC3, FR-139, TC-456) ----
+
+
+class RecordingMock(MockProvider):
+    """MOCK that keeps the requests it was given, to compare citations with what was supplied."""
+
+    def __init__(self) -> None:
+        super().__init__("ok", app_env="test")
+        self.requests: list[GenerationRequest] = []
+
+    async def generate_itinerary(self, request: GenerationRequest) -> Any:
+        self.requests.append(request)
+        return await super().generate_itinerary(request)
+
+
+@pytest_asyncio.fixture
+async def indexed(db_session: AsyncSession, destination: Destination) -> Destination:
+    @asynccontextmanager
+    async def job_transaction() -> AsyncIterator[AsyncSession]:
+        async with db_session.begin_nested():
+            yield db_session
+
+    await rag_service.index(
+        "sampleton",
+        provider=MockProvider("ok", app_env="test"),
+        sessions=job_transaction,
+        root=REPOSITORY / "data",
+        today=date(2026, 11, 7),
+    )
+    return destination
+
+
+@pytest_asyncio.fixture
+async def recording(
+    api_app: FastAPI, jobs_queue: list[tuple[uuid.UUID, ModelProvider]]
+) -> RecordingMock:
+    provider = RecordingMock()
+    api_app.dependency_overrides[get_model_provider] = lambda: provider
+    return provider
+
+
+def cited_items(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    return [item for day in plan["days"] for item in day["items"] if item["sources"]]
+
+
+async def grounded_plan(
+    client: httpx.AsyncClient,
+    session: AsyncSession,
+    queue: list[tuple[uuid.UUID, ModelProvider]],
+    user: AuthUser,
+    destination: Destination,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    trip_id = await create_trip(client, user, destination)
+    generation = await generate(client, session, queue, user, trip_id)
+    answer = await client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=user.headers)
+    assert answer.status_code == 200, answer.text
+    return trip_id, generation, answer.json()
+
+
+@pytest.mark.asyncio
+async def test_tc_456_the_itinerary_returns_sources_with_every_source_ref_field(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    indexed: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    _, generation, plan = await grounded_plan(
+        api_client, db_session, jobs_queue, auth_user, indexed
+    )
+
+    assert generation["retrieval_mode"] == "vector"
+    cited = cited_items(plan)
+    assert cited
+    for item in cited:
+        [source] = item["sources"]
+        assert set(source) == {
+            "chunk_id",
+            "kind",
+            "title",
+            "source_name",
+            "licence",
+            "attribution_text",
+            "url",
+            "retrieved_on",
+        }
+        assert source["kind"] == "place"
+        assert item["place"]["name"] in source["title"]
+        assert source["source_name"]
+        assert source["licence"]
+
+
+@pytest.mark.asyncio
+async def test_tc_456_saved_ids_are_a_subset_of_the_passages_supplied(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    indexed: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+    recording: RecordingMock,
+) -> None:
+    trip_id, _, _ = await grounded_plan(api_client, db_session, jobs_queue, auth_user, indexed)
+
+    [request] = recording.requests
+    rows = await db_session.scalars(
+        select(ItineraryItem).where(ItineraryItem.trip_id == uuid.UUID(trip_id))
+    )
+    saved = {str(chunk_id) for row in rows for chunk_id in row.source_chunk_ids}
+    assert saved
+    assert saved <= request.passage_ids()
+
+
+@pytest.mark.asyncio
+async def test_the_snapshot_items_carry_their_citations(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    indexed: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id, _, plan = await grounded_plan(api_client, db_session, jobs_queue, auth_user, indexed)
+
+    version = await db_session.scalar(
+        select(ItineraryVersion).where(ItineraryVersion.trip_id == uuid.UUID(trip_id))
+    )
+    assert version is not None
+    stored = [item for day in version.snapshot["days"] for item in day["items"]]
+    read = [item for day in plan["days"] for item in day["items"]]
+    assert [item["source_chunk_ids"] for item in stored] == [
+        [source["chunk_id"] for source in item["sources"]] for item in read
+    ]
+
+
+@pytest.mark.asyncio
+async def test_tc_456_a_foreign_trip_still_answers_404_with_sources_saved(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    indexed: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id, _, _ = await grounded_plan(api_client, db_session, jobs_queue, auth_user, indexed)
+    other = await make_user(db_session)
+
+    answer = await api_client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=other.headers)
+
+    assert answer.status_code == 404
+    assert answer.json()["error"]["code"] == "NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_an_inactive_chunk_resolves_and_a_missing_id_is_skipped(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    indexed: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id, _, plan = await grounded_plan(api_client, db_session, jobs_queue, auth_user, indexed)
+    item = cited_items(plan)[0]
+    chunk_id = uuid.UUID(item["sources"][0]["chunk_id"])
+    await db_session.execute(
+        update(RagChunk).where(RagChunk.id == chunk_id).values(is_active=False)
+    )
+    await db_session.execute(
+        update(ItineraryItem)
+        .where(ItineraryItem.id == uuid.UUID(item["id"]))
+        .values(source_chunk_ids=[uuid.uuid4(), chunk_id])
+    )
+    db_session.expire_all()
+
+    answer = await api_client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=auth_user.headers)
+
+    read = next(i for day in answer.json()["days"] for i in day["items"] if i["id"] == item["id"])
+    assert [source["chunk_id"] for source in read["sources"]] == [str(chunk_id)]
+
+
+@pytest.mark.asyncio
+async def test_sources_are_read_in_one_query_however_many_items_cite(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    indexed: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id, _, plan = await grounded_plan(api_client, db_session, jobs_queue, auth_user, indexed)
+    assert len(cited_items(plan)) > 1
+    assert isinstance(db_session.bind, AsyncConnection)
+    statements: list[str] = []
+
+    @event.listens_for(db_session.bind.sync_connection, "before_cursor_execute")
+    def record(*args: Any) -> None:
+        if "rag_chunks" in str(args[2]):
+            statements.append(str(args[2]))
+
+    await api_client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=auth_user.headers)
+
+    assert len(statements) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_plan_without_an_index_saves_no_citation(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id, generation, plan = await grounded_plan(
+        api_client, db_session, jobs_queue, auth_user, destination
+    )
+
+    assert generation["retrieval_mode"] == "lexical_fallback"
+    assert cited_items(plan) == []
+    version = await db_session.scalar(
+        select(ItineraryVersion).where(ItineraryVersion.trip_id == uuid.UUID(trip_id))
+    )
+    assert version is not None
+    assert version.snapshot["days"][0]["items"][0]["source_chunk_ids"] == []
+
+
+@pytest.mark.asyncio
+async def test_a_fallback_plan_is_saved_without_an_ai_note_or_citation(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id, generation, plan = await grounded_plan(
+        api_client, db_session, jobs_queue, auth_user, destination
+    )
+    place_id = plan["days"][0]["items"][0]["place"]["id"]
+    item = PlannedItem(
+        place_id=place_id,
+        slot_type="activity",
+        start_time="09:00",
+        duration_min=60,
+        note="Written from a fixed template.",
+    )
+
+    days = await repository.replace_plan(
+        db_session,
+        uuid.UUID(trip_id),
+        date(2026, 12, 4),
+        [PlannedDay(1, "", [item])],
+        origin="fallback_rule_based",
+        generation_id=uuid.UUID(generation["id"]),
+    )
+
+    [stored] = days[0]["items"]
+    assert (stored["note"], stored["note_origin"], stored["source_chunk_ids"]) == (None, "none", [])
