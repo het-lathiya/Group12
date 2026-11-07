@@ -8,8 +8,7 @@ import {
 
 import { ITEM } from "./fixtures";
 
-// IMP-213 (FR-059 view part, §7 rule): the card shows only start time, place name, duration and slot
-// type from API-24. Cost, end time, travel and the note are in the fixture and must not appear.
+// FR-059, §7.8: the card shows API-24's values as sent, each fact with its label.
 describe("ItineraryItemCard", () => {
   it("shows the start time, place name, duration and slot type as sent", () => {
     render(<ItineraryItemCard item={ITEM} />);
@@ -25,21 +24,96 @@ describe("ItineraryItemCard", () => {
     expect(screen.getByText("Activity")).toBeInTheDocument();
   });
 
-  it("never shows a cost, end time, travel time or note", () => {
-    const { container } = render(<ItineraryItemCard item={ITEM} />);
-    const text = container.textContent ?? "";
+  it("shows the time range as sent, not worked out from the duration", () => {
+    render(
+      <ItineraryItemCard
+        item={{ ...ITEM, start_time: "09:30", end_time: "23:59" }}
+      />,
+    );
+    expect(screen.getByText("09:30–23:59")).toBeInTheDocument();
+  });
 
-    for (const absent of [
-      "0.00",
-      "INR",
-      "11:00",
-      "12",
-      "900",
-      "Arrive early",
-    ]) {
-      expect(text).not.toContain(absent);
-    }
-    expect(text).not.toMatch(/cost|price|total|travel/i);
+  it("shows a cost range with its label, and one amount when both ends match", () => {
+    const cost = { min: "10.00", max: "25.50", currency: "GBP" } as const;
+    const { rerender } = render(
+      <ItineraryItemCard
+        item={{ ...ITEM, cost: { ...cost, label: "curated" } }}
+      />,
+    );
+    expect(screen.getByText("GBP 10.00–25.50")).toBeInTheDocument();
+    expect(screen.getByText("Curated")).toBeInTheDocument();
+
+    rerender(
+      <ItineraryItemCard
+        item={{ ...ITEM, cost: { ...cost, max: "10.00", label: "estimate" } }}
+      />,
+    );
+    expect(screen.getByText("GBP 10.00")).toBeInTheDocument();
+    expect(screen.getByText("Estimate")).toBeInTheDocument();
+  });
+
+  it("says Unavailable and shows no amount when there is no price", () => {
+    const { container, rerender } = render(
+      <ItineraryItemCard item={{ ...ITEM, cost: null }} />,
+    );
+    expect(screen.getByText("Unavailable")).toBeInTheDocument();
+
+    rerender(
+      <ItineraryItemCard
+        item={{
+          ...ITEM,
+          cost: {
+            min: "0.00",
+            max: "0.00",
+            currency: "INR",
+            label: "unavailable",
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText("Unavailable")).toBeInTheDocument();
+    expect(container).not.toHaveTextContent("0.00");
+  });
+
+  it("labels travel by its source and shows none for the first stop", () => {
+    const leg = ITEM.travel_from_previous!;
+    const { container, rerender } = render(<ItineraryItemCard item={ITEM} />);
+    expect(screen.getByText("12 min")).toBeInTheDocument();
+    expect(screen.getByText("Walking")).toBeInTheDocument();
+    expect(
+      screen.getByText("Estimated travel time (distance based)"),
+    ).toBeInTheDocument();
+
+    rerender(
+      <ItineraryItemCard
+        item={{
+          ...ITEM,
+          travel_from_previous: { ...leg, source: "routing_api" },
+        }}
+      />,
+    );
+    expect(
+      screen.getByText("Estimated travel time from a routing service"),
+    ).toBeInTheDocument();
+
+    rerender(
+      <ItineraryItemCard item={{ ...ITEM, travel_from_previous: null }} />,
+    );
+    expect(container).not.toHaveTextContent("Estimated travel time");
+  });
+
+  it("marks only an AI-written note", () => {
+    const { container, rerender } = render(<ItineraryItemCard item={ITEM} />);
+    expect(
+      screen.getByText("Arrive early for the quiet gallery."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("AI-written")).toBeInTheDocument();
+
+    rerender(<ItineraryItemCard item={{ ...ITEM, note_origin: "user" }} />);
+    expect(
+      screen.getByText("Arrive early for the quiet gallery."),
+    ).toBeInTheDocument();
+    expect(container).not.toHaveTextContent("AI-written");
   });
 
   it("writes durations the way the guide does", () => {

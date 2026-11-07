@@ -1,13 +1,14 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { DayColumn, formatDayDate } from "@/components/itinerary/DayColumn";
+import { DayColumn } from "@/components/itinerary/DayColumn";
 import type { components } from "@/lib/api/schema";
+import { formatDayDate } from "@/lib/format";
 
 import { ITEM } from "./fixtures";
 
-// IMP-213 (FR-059 view part, §7 rule): a day shows its number, its date and its items in the order
-// API-24 sent them. The day cost and the theme are in the fixture and must not appear.
+// FR-059 (TC-196): a day shows its number, its date, its theme and its items in the order API-24
+// sent them, each estimated cost with its label.
 type Day = components["schemas"]["Day"];
 
 const DAY: Day = {
@@ -46,14 +47,42 @@ describe("DayColumn", () => {
     expect(items[1]).toHaveTextContent("Meal");
   });
 
-  it("never shows the day cost or the theme", () => {
-    const { container } = render(<DayColumn day={DAY} />);
-    const text = container.textContent ?? "";
+  it("TC-196: keeps the server's time order and labels estimated costs", () => {
+    render(<DayColumn day={DAY} />);
 
-    expect(text).not.toContain("0.00");
-    expect(text).not.toContain("INR");
-    expect(text).not.toContain("Museums and the old town");
-    expect(text).not.toMatch(/cost|price|total/i);
+    const items = within(screen.getByRole("list")).getAllByRole("listitem");
+    expect(
+      items.map(
+        (item) => within(item).getAllByText(/^\d\d:\d\d$/)[0].textContent,
+      ),
+    ).toEqual(["09:30", "11:15"]);
+    for (const item of items) {
+      expect(within(item).getByText("Estimate")).toBeInTheDocument();
+    }
+  });
+
+  it("marks an AI-written theme and leaves a rule-based one unmarked", () => {
+    const { rerender, container } = render(<DayColumn day={DAY} />);
+    const theme = screen.getByText("Museums and the old town");
+    expect(theme.parentElement).toHaveTextContent("AI-written");
+
+    rerender(
+      <DayColumn
+        day={{
+          ...DAY,
+          theme: "Day 1 around the mill",
+          theme_origin: "none",
+          items: [],
+        }}
+      />,
+    );
+    expect(screen.getByText("Day 1 around the mill")).toBeInTheDocument();
+    expect(container).not.toHaveTextContent("AI-written");
+  });
+
+  it("does not show the day cost", () => {
+    const { container } = render(<DayColumn day={{ ...DAY, items: [] }} />);
+    expect(container).not.toHaveTextContent("INR");
   });
 
   it("takes focus from the day index only when it has an id", () => {

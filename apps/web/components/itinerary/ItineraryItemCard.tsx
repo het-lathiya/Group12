@@ -1,11 +1,26 @@
+import { AiBadge } from "@/components/labels/AiBadge";
+import { SourceBadge } from "@/components/labels/SourceBadge";
 import type { components } from "@/lib/api/schema";
 
 type Item = components["schemas"]["Item"];
+type Leg = NonNullable<Item["travel_from_previous"]>;
 
 const SLOT_LABELS: Record<Item["slot_type"], string> = {
   activity: "Activity",
   meal: "Meal",
   rest: "Rest",
+};
+
+const MODE_LABELS: Record<Leg["mode"], string> = {
+  walking: "Walking",
+  local_transport: "Local transport",
+  car: "Car",
+};
+
+// §7.8
+const TRAVEL_LABELS: Record<Leg["source"], string> = {
+  routing_api: "Estimated travel time from a routing service",
+  fallback_estimate: "Estimated travel time (distance based)",
 };
 
 /** A duration in minutes as the guide writes it (§17): "45 min", "1 h", "1 h 30 min". */
@@ -16,14 +31,43 @@ export function formatDuration(minutes: number): string {
   return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
 }
 
+function Cost({ cost }: { cost: Item["cost"] }) {
+  // §7.8: an unavailable price is never shown as a value.
+  if (!cost || cost.label === "unavailable") {
+    return (
+      <div className="ml-auto">
+        <SourceBadge label="unavailable" />
+      </div>
+    );
+  }
+  const amount = cost.min === cost.max ? cost.min : `${cost.min}–${cost.max}`;
+  return (
+    <p className="ml-auto flex flex-wrap items-center justify-end gap-2 text-right text-sm text-card-foreground">
+      <span className="tabular-nums">
+        {cost.currency} {amount}
+      </span>
+      <SourceBadge label={cost.label} />
+    </p>
+  );
+}
+
 /**
- * One stop of a day's timeline (§7.6; guide §14), read-only in Sprint 2: the start time, place name,
- * duration and slot type exactly as API-24 returns them. Money amounts, travel and notes arrive
- * with IMP-308 and IMP-309; nothing here is computed from other values.
+ * One stop of a day's timeline (§7.5.7; guide §14): the leg from the previous stop, then the place
+ * with its times, cost and note exactly as API-24 returns them. No time or amount is computed here.
  */
 export function ItineraryItemCard({ item }: { item: Item }) {
+  const leg = item.travel_from_previous;
   return (
-    <div className="grid grid-cols-[56px_1fr]">
+    <div className="grid grid-cols-[56px_minmax(0,1fr)]">
+      {leg && (
+        <p className="col-start-2 flex flex-wrap items-center gap-x-2 border-l border-border pb-3 pl-4 text-sm text-muted-foreground">
+          <span className="tabular-nums">{formatDuration(leg.minutes)}</span>
+          <span aria-hidden="true">·</span>
+          <span>{MODE_LABELS[leg.mode]}</span>
+          <span aria-hidden="true">·</span>
+          <span>{TRAVEL_LABELS[leg.source]}</span>
+        </p>
+      )}
       <time
         dateTime={item.start_time}
         className="pt-3 text-sm font-medium text-muted-foreground tabular-nums"
@@ -31,11 +75,18 @@ export function ItineraryItemCard({ item }: { item: Item }) {
         {item.start_time}
       </time>
       <div className="border-l border-border pb-3 pl-4">
-        <div className="rounded-lg border bg-card p-3 shadow-xs sm:p-4">
-          <h3 className="text-base font-semibold text-card-foreground">
-            {item.place.name}
-          </h3>
+        <div className="rounded-xl border bg-card p-3 shadow-xs sm:p-4">
+          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+            <h3 className="min-w-0 text-base font-semibold text-card-foreground">
+              {item.place.name}
+            </h3>
+            <Cost cost={item.cost} />
+          </div>
           <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span className="tabular-nums">
+              {item.start_time}–{item.end_time}
+            </span>
+            <span aria-hidden="true">·</span>
             <span className="tabular-nums">
               {formatDuration(item.duration_min)}
             </span>
@@ -44,6 +95,12 @@ export function ItineraryItemCard({ item }: { item: Item }) {
               {SLOT_LABELS[item.slot_type]}
             </span>
           </p>
+          {item.note && (
+            <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-card-foreground">
+              <span className="min-w-0">{item.note}</span>
+              {item.note_origin === "ai" && <AiBadge />}
+            </p>
+          )}
         </div>
       </div>
     </div>

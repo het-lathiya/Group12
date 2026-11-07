@@ -2,7 +2,7 @@ import type { components } from "@/lib/api/schema";
 
 type Item = components["schemas"]["Item"];
 
-/** A SAMPLE API-24 item with every field set, including those the read-only view must not show. */
+/** A SAMPLE API-24 item with every field set. */
 export const ITEM: Item = {
   id: "00000000-0000-4000-8000-0000000000c1",
   position: 1,

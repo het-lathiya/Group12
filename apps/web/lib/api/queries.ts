@@ -164,7 +164,26 @@ export function useGeneration(generationId: string, poll: boolean) {
   });
 }
 
-/** API-24: the trip's current itinerary; a 404 means none has been saved yet. */
+// A 404 is an answer, not a fault worth repeating.
+const retryUnless404 = (failures: number, error: Error) =>
+  !(error instanceof ApiError && error.status === 404) && failures < 1;
+
+/** API-10: one trip; a 404 means it is missing or not the caller's. */
+export function useTrip(tripId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.trip(tripId),
+    queryFn: async () =>
+      unwrap(
+        await api().GET("/api/v1/trips/{trip_id}", {
+          params: { path: { trip_id: tripId } },
+        }),
+      ),
+    enabled,
+    retry: retryUnless404,
+  });
+}
+
+/** API-24: the trip's current itinerary; a 404 means none has been saved or the trip is not found. */
 export function useItinerary(tripId: string) {
   return useQuery({
     queryKey: queryKeys.itinerary(tripId, CURRENT_VERSION),
@@ -174,9 +193,7 @@ export function useItinerary(tripId: string) {
           params: { path: { trip_id: tripId } },
         }),
       ),
-    // A 404 is an answer (no itinerary yet), not a fault worth repeating.
-    retry: (failures, error) =>
-      !(error instanceof ApiError && error.status === 404) && failures < 1,
+    retry: retryUnless404,
   });
 }
 
