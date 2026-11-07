@@ -79,9 +79,11 @@ infra/aws/03_ecr.sh
 infra/aws/04_ssm.sh
 ```
 
-`04_ssm.sh` asks at hidden prompts for the RDS master password, `GEMINI_API_KEY` and `ORS_API_KEY`. It builds `DATABASE_URL` itself, in the form `postgresql+psycopg://<user>:<password>@<rds-endpoint>:5432/travel_staging?sslmode=require`, with the password percent-encoded. Get the Gemini key from Nidhi and the OpenRouteService key from Junaid through the password manager. An empty value stops the script, and all three parameters must exist before step 8: a task cannot start with a missing parameter.
+`04_ssm.sh` asks at hidden prompts for the RDS master password, `GEMINI_API_KEY` and `ORS_API_KEY`. It builds `DATABASE_URL` itself, in the form `postgresql+psycopg://<user>:<password>@<rds-endpoint>:5432/travel_staging?sslmode=require`, with the password percent-encoded. Get the Gemini key from Het and the OpenRouteService key from Junaid through the password manager. An empty value stops the script, and all three parameters must exist before step 8: a task cannot start with a missing parameter.
 
 To replace values later, run `infra/aws/04_ssm.sh --overwrite`, then redeploy, because tasks read parameters when they start.
+
+**SG-3 staging values.** `api.staging.json.tmpl` sets these non-secret values: `AI_PROVIDER=GEMINI`, `GEMINI_MODEL_ID=gemini-3.5-flash-lite`, `GEMINI_EMBEDDING_MODEL_ID=gemini-embedding-2`, `PROMPT_TEMPLATE_VERSION=v2` and `SEED_DIRS=data/places/ahmedabad`, a path relative to the image's working directory `/srv/api`. `/group12/staging/GEMINI_API_KEY` must exist before the first deploy: with `AI_PROVIDER=GEMINI` the API refuses to start in staging without a key. A service created before these values were in the template picks them up at its next deploy, and the release task uses them one deploy later ([deployment.md](deployment.md) section 6), so run a second deploy to seed Ahmedabad and embed it with Gemini.
 
 **Token mode.** The hosted project uses JWT Signing Keys, so the API verifies tokens through `SUPABASE_JWKS_URL` (JWKS mode, IMP-218). **Do not create `/group12/staging/SUPABASE_JWT_SECRET`:** the legacy HS256 secret is being revoked and is not used anywhere. `04_ssm.sh` asks for it only if the template references it, and the template does not.
 
@@ -145,7 +147,7 @@ The script creates the log group with 7-day retention and the service, waits unt
 - If it stops with an assume-role error right after step 6, wait a minute and run it again: IAM changes take a moment to spread.
 - If the wait times out, run it again. The first service also creates the cluster, the load balancer and the certificate.
 - `ALLOWED_ORIGINS` is empty until step 10, and the API then allows only its local default.
-- The template sends some empty environment values (for example `SEED_DIRS`). The API treats them as unset. If AWS refuses an empty value, stop and report it: the fix is a pull request to the template.
+- The template sends some empty environment values (for example `AI_MAX_INPUT_TOKENS`). The API treats them as unset. If AWS refuses an empty value, stop and report it: the fix is a pull request to the template.
 
 Check the API (TC-288). `/health/ready` reports the database as down or behind until the first release task of IMP-218 migrates it; that is expected.
 
