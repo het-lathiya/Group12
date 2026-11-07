@@ -48,6 +48,7 @@ from app.ai.providers.base import check_embed_input, l2_normalised
 from app.core.config import GEMINI_EMBEDDING_MODELS, GEMINI_TIME_ALLOWANCE_S, Settings
 from app.schemas.ai import (
     EMBEDDING_DIMENSIONS,
+    OUTPUT_MODELS,
     EditOperations,
     EmbeddingPurpose,
     EmbeddingResult,
@@ -102,9 +103,9 @@ def _without_keys(node: Any) -> Any:
     return node
 
 
-def wire_schema() -> dict[str, Any]:
-    """The io-1 schema as sent (§8.7): no $schema, $id or pattern; HH:MM stays in description."""
-    schema: dict[str, Any] = _without_keys(ItineraryOutput.model_json_schema())
+def wire_schema(model: type[ItineraryOutput] = ItineraryOutput) -> dict[str, Any]:
+    """The output schema as sent (§8.7): no $schema, $id or pattern; HH:MM stays in description."""
+    schema: dict[str, Any] = _without_keys(model.model_json_schema())
     return schema
 
 
@@ -189,8 +190,10 @@ def _usage(interaction: Interaction) -> UsageMetadata:
     )
 
 
-def parse_output(interaction: Interaction) -> ItineraryOutput:
-    """io-1 from a finished interaction, or the invalid-output kind that explains why not (§8.4)."""
+def parse_output(
+    interaction: Interaction, model: type[ItineraryOutput] = ItineraryOutput
+) -> ItineraryOutput:
+    """The answer of a finished interaction, or the invalid-output kind saying why not (§8.4)."""
     codes = {(error.code or "").lower() for error in interaction.errors or []}
     if codes & BLOCKED_CODES:
         raise ProviderInvalidOutput("blocked")
@@ -206,7 +209,7 @@ def parse_output(interaction: Interaction) -> ItineraryOutput:
     except ValueError:
         raise ProviderInvalidOutput("malformed_json") from None
     try:
-        return ItineraryOutput.model_validate(data)
+        return model.model_validate(data)
     except ValidationError:
         raise ProviderInvalidOutput("schema_violation") from None
 
@@ -298,18 +301,18 @@ class GeminiProvider:
         if not self._model_id:
             raise ProviderBadRequest("GEMINI_MODEL_ID is not set")
         try:
-            system_text, user_text = registry.render(
-                request.prompt_template_id, request.prompt_version, request
-            )
+            template = registry.load(request.prompt_template_id, request.prompt_version)
+            system_text, user_text = template.prompt(request)
         except (registry.PromptTemplateNotFound, registry.PromptRenderError):
             raise ProviderBadRequest("the prompt template cannot be rendered") from None
+        output_model = OUTPUT_MODELS[template.meta.output_schema_version]
 
         started = time.perf_counter()
         try:
             interaction = await self._call_vendor(
-                system_text, user_text, wire_schema(), self._timeout_s
+                system_text, user_text, wire_schema(output_model), self._timeout_s
             )
-            output = parse_output(interaction)
+            output = parse_output(interaction, output_model)
         except ProviderAuthError:
             self._last_state = "down"
             raise

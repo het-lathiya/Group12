@@ -1,0 +1,10 @@
+{
+  "template_id": "itinerary_generate",
+  "version": "v2",
+  "created_on": "2026-11-07",
+  "input_schema_version": "gr-2",
+  "output_schema_version": "io-2",
+  "description": "Orders shortlisted places into a day-by-day itinerary (io-2) for a gr-2 request, with retrieved passages as quoted reference data and citations per item.",
+  "change_note": "Adds context_passages and source_ids (Amendment A1 sections 6.8 and 6.9), the four passage statements and repair.txt; v1 stays unchanged.",
+  "approved_by": "AI/ML Engineer (Prompt Engineering, Validation and Evaluation)"
+}

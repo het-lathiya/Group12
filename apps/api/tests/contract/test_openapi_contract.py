@@ -143,7 +143,7 @@ def test_a1_source_ref_and_retrieval_fields(document: dict[str, Any]) -> None:
 
 
 def test_ai_schemas_are_exported_with_the_contract() -> None:
-    for version in ("gr-1", "io-1"):
+    for version in ("gr-1", "io-1", "gr-2", "io-2"):
         schema = json.loads((CONTRACTS / "ai" / f"{version}.schema.json").read_text())
         assert schema["$id"].endswith(version)
 

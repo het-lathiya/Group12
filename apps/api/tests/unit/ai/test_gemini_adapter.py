@@ -30,7 +30,7 @@ from app.ai.providers import gemini as adapter
 from app.ai.providers.gemini import GeminiProvider
 from app.core.config import Settings, load_settings
 from app.generation import records
-from app.schemas.ai import GenerationRequest
+from app.schemas.ai import GenerationRequest, GroundedGenerationRequest, GroundedItineraryOutput
 
 RECORDINGS = Path(__file__).resolve().parents[2] / "fixtures" / "provider_recordings" / "gemini"
 IO_1 = Path(__file__).resolve().parents[5] / "contracts" / "ai" / "io-1.schema.json"
@@ -327,3 +327,35 @@ def test_gemini_health_follows_the_last_call() -> None:
     with pytest.raises(ProviderAuthError):
         generate(gemini)
     assert asyncio.run(gemini.health_check()).status == "down"
+
+
+# ---------- Template v2: gr-2 in, io-2 out (A1 §6.8) ----------
+
+
+def grounded_request() -> GroundedGenerationRequest:
+    return GroundedGenerationRequest.model_validate(
+        {
+            **sample_request().model_dump(exclude={"input_schema_version"}),
+            "prompt_version": "v2",
+            "context_passages": [],
+            "retrieval": {"mode": "lexical_fallback", "embedding_model_id": None},
+        }
+    )
+
+
+def test_template_v2_sends_the_io_2_wire_schema_and_parses_io_2() -> None:
+    replay = Replay(recording("ok"))
+
+    result = generate(provider(replay), grounded_request())
+
+    assert isinstance(result.output, GroundedItineraryOutput)
+    assert "source_ids" in json.dumps(replay.body)
+
+
+def test_template_v1_keeps_the_io_1_wire_schema() -> None:
+    replay = Replay(recording("ok"))
+
+    result = generate(provider(replay))
+
+    assert not isinstance(result.output, GroundedItineraryOutput)
+    assert "source_ids" not in json.dumps(replay.body)

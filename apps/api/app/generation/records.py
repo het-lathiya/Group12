@@ -66,6 +66,8 @@ SETTINGS_KEYS: Final[frozenset[str]] = frozenset(
         "structured_output",
         "timeout_s",
         "truncated_count",
+        "passages_sent",
+        "passages_dropped",
     }
 )
 SETTINGS_VALUE_MAX: Final = 64

@@ -3,7 +3,7 @@
 Each template version is a directory ``templates/<template_id>/<version>/`` with ``system.txt``,
 ``user.txt`` and ``meta.json`` (and ``repair.txt`` once the repair call needs it, §8.13).
 ``user.txt`` uses ``string.Template`` placeholders in ``${name}`` form; its placeholder
-``${request_json}`` receives the gr-1 request as JSON data. A published version is never edited:
+``${request_json}`` receives the request (gr-1 or gr-2) as JSON data. A published version is never edited:
 a wording change is a new version directory, and tests/fixtures/prompt_hashes.json pins the
 sha256 of every published file (US-039 AC1).
 
@@ -21,10 +21,10 @@ from string import Template
 from types import MappingProxyType
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, ValidationInfo, field_validator
 
 from app.core.config import get_settings
-from app.schemas.ai import GenerationRequest
+from app.schemas.ai import OUTPUT_FOR_INPUT, GenerationRequest
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 SYSTEM_FILE = "system.txt"
@@ -61,11 +61,18 @@ class TemplateMeta(BaseModel):
     template_id: str
     version: str
     created_on: date
-    input_schema_version: Literal["gr-1"]
-    output_schema_version: Literal["io-1"]
+    input_schema_version: Literal["gr-1", "gr-2"]
+    output_schema_version: Literal["io-1", "io-2"]
     description: str
     change_note: str
     approved_by: str
+
+    @field_validator("output_schema_version")
+    @classmethod
+    def _is_the_input_schemas_pair(cls, value: str, info: ValidationInfo) -> str:
+        if OUTPUT_FOR_INPUT.get(info.data.get("input_schema_version", "")) != value:
+            raise ValueError("not the output schema of input_schema_version (A1 §6.8)")
+        return value
 
 
 @dataclass(frozen=True)
@@ -85,7 +92,7 @@ class PromptTemplate:
     sha256: Mapping[str, str]  # file name -> sha256 hex digest of its bytes, every file
 
     def render(self, request: GenerationRequest) -> str:
-        """The user text with the gr-1 request inserted as quoted JSON data."""
+        """The user text with the request inserted as quoted JSON data."""
         if (request.prompt_template_id, request.prompt_version) != (self.template_id, self.version):
             raise PromptRenderError(
                 f"{self.label}: the request names template {request.prompt_template_id!r} "

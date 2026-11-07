@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     # AI provider
     ai_provider: AiProvider = "MOCK"
     mock_provider_scenario: MockScenario = "ok"
-    prompt_template_version: str = "v1"
+    prompt_template_version: str = "v2"
     gemini_api_key: SecretStr = SecretStr("")
     gemini_model_id: str = ""
     gemini_embedding_model_id: str = ""

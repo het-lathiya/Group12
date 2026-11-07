@@ -12,9 +12,9 @@ from fixtures.pipeline import Journal, recorded_gemini
 from app.ai.errors import ProviderInvalidOutput
 from app.ai.providers.mock import MockProvider
 from app.generation import pipeline
-from app.schemas.ai import ItineraryOutput
+from app.schemas.ai import GroundedItineraryOutput, ItineraryOutput
 from app.validation import output_check
-from app.validation.output_check import apply_limits, check_output, summary
+from app.validation.output_check import OutputCheckResult, apply_limits, check_output, summary
 
 CONTRACT = Path(__file__).resolve().parents[5] / "contracts" / "ai" / "io-1.schema.json"
 SHORTLIST = {FORT, MARKET, THALI}
@@ -106,6 +106,7 @@ def test_a_valid_answer_passes_unchanged() -> None:
         "infos": 0,
         "invalid_ids": 0,
         "rejected_items": 0,
+        "unknown_source_ids": 0,
         "kind": None,
     }
 
@@ -229,3 +230,78 @@ def test_the_counts_reach_the_completed_record_when_a_duplicate_is_dropped(
     assert journal.saved is not None
     assert [item.place_id for day in journal.saved for item in day.items] == [FORT, THALI]
     assert journal.completed["validation_summary"]["rejected_items"] == 1
+
+
+# ---------- Citations (A1 §6.10; FR-138 AC2, TC-455) ----------
+
+P1, P2, P3, P4 = (f"00000000-0000-4000-8000-00000000c00{n}" for n in range(1, 5))
+PASSAGES = {P1, P2, P3, P4}
+
+
+def cited(*source_ids: list[str]) -> GroundedItineraryOutput:
+    """One day, one item per citation list, on the three shortlisted places."""
+    places = [FORT, MARKET, THALI]
+    items = [
+        {**item(place), "source_ids": ids} for place, ids in zip(places, source_ids, strict=False)
+    ]
+    return GroundedItineraryOutput.model_validate(
+        {"days": [{"day_number": 1, "theme": "", "items": items}], "assumptions": []}
+    )
+
+
+def citations(result: OutputCheckResult) -> list[list[str]]:
+    assert isinstance(result.output, GroundedItineraryOutput)
+    return [item.source_ids for day in result.output.days for item in day.items]
+
+
+def test_output_check_tc_455_a_citation_outside_the_request_is_dropped_and_counted() -> None:
+    result = check_output(cited([P1, "not-a-passage", INVENTED]), SHORTLIST, 2, PASSAGES)
+
+    assert citations(result) == [[P1]]
+    assert summary(result)["unknown_source_ids"] == 2
+
+
+def test_output_check_tc_455_a_repeated_citation_is_dropped_and_counted() -> None:
+    result = check_output(cited([P1, P1, P2]), SHORTLIST, 2, PASSAGES)
+
+    assert citations(result) == [[P1, P2]]
+    assert result.unknown_source_ids == 1
+
+
+def test_output_check_tc_455_an_item_keeps_at_most_three_citations() -> None:
+    result = check_output(cited([P1, P2, P3, P4]), SHORTLIST, 2, PASSAGES)
+
+    assert citations(result) == [[P1, P2, P3]]
+    assert result.unknown_source_ids == 1
+
+
+def test_output_check_tc_455_an_item_is_never_dropped_for_a_citation() -> None:
+    answer = cited(["bad-1", "bad-2"], [], [P1])
+
+    result = check_output(answer, SHORTLIST, 2, PASSAGES)
+
+    assert result.output.place_ids() == [FORT, MARKET, THALI]
+    assert citations(result) == [[], [], [P1]]
+    assert result.usable
+    assert (result.findings, result.rejected_items) == ([], 0)
+    assert summary(result)["unknown_source_ids"] == 2
+
+
+def test_output_check_tc_455_a_request_without_passages_keeps_no_citation() -> None:
+    result = check_output(cited([P1, P2]), SHORTLIST, 2)
+
+    assert citations(result) == [[]]
+    assert result.unknown_source_ids == 2
+
+
+def test_output_check_limits_keep_the_io_2_answer_and_its_citations() -> None:
+    answer = cited([P1, P2, P3, P4])
+
+    checked = apply_limits(answer, trip_days=2, max_items_per_day=5)
+
+    assert isinstance(checked, GroundedItineraryOutput)
+    assert checked == answer
+
+
+def test_output_check_a_refused_answer_counts_no_citation() -> None:
+    assert summary(kind="malformed_json")["unknown_source_ids"] == 0

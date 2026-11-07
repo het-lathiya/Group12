@@ -264,23 +264,28 @@ async def test_tc_012_tc_151_the_record_names_provider_model_template_and_mappin
     generation_id = (await start(api_client, auth_user, trip)).json()["id"]
     done = await poll(api_client, auth_user, generation_id, submitted, sessions)
 
-    assert (done["provider"], done["model_id"], done["prompt_version"]) == ("MOCK", "mock-v1", "v1")
-    assert done["retrieval_mode"] is None
-    assert done["embedding_model_id"] is None
-    assert done["retrieval_ms"] is None
+    assert (done["provider"], done["model_id"], done["prompt_version"]) == ("MOCK", "mock-v1", "v2")
+    # No index in this test, so retrieval falls back; API-23 says so (A1 §6.12).
+    assert done["retrieval_mode"] == "lexical_fallback"
+    assert done["embedding_model_id"] == "mock-embed-v1"
+    assert done["retrieval_ms"] >= 0
     row = await db_session.get(AiGeneration, uuid.UUID(generation_id), populate_existing=True)
     assert row is not None
     assert (row.provider, row.model_id, row.prompt_template_id, row.prompt_version) == (
         "MOCK",
         "mock-v1",
         "itinerary_generate",
-        "v1",
+        "v2",
     )
     assert (row.mapping_version, row.adapter_version) == ("pm-2", "mock-1")
-    assert row.generation_settings == {"truncated_count": 0}
+    assert row.generation_settings == {
+        "truncated_count": 0,
+        "passages_sent": 0,
+        "passages_dropped": 0,
+    }
     assert len(row.request_hash) == 64
-    assert row.retrieval_mode is None
-    assert row.embedding_model_id is None
+    assert row.retrieval_mode == "lexical_fallback"
+    assert row.embedding_model_id == "mock-embed-v1"
 
 
 # TC-114, IMD-24: the AI notice comes first
@@ -712,6 +717,7 @@ async def test_tc_135_an_id_outside_the_shortlist_is_rejected_before_saving(
         "infos": 0,
         "invalid_ids": 1,
         "rejected_items": 1,
+        "unknown_source_ids": 0,
         "kind": None,
     }
     assert failed["validation_summary"]["errors"] == 1

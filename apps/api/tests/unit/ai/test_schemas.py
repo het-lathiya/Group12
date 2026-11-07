@@ -23,7 +23,15 @@ from app.ai.errors import ProviderBadRequest, ProviderConfigError, ProviderTimeo
 from app.ai.providers.base import ModelProvider
 from app.ai.providers.finetuned import NOT_ENABLED, FineTunedProvider
 from app.schemas import ai_export
-from app.schemas.ai import GenerationRequest, ItineraryOutput
+from app.schemas.ai import (
+    ContextPassage,
+    GenerationRequest,
+    GroundedGenerationRequest,
+    GroundedItemOutput,
+    GroundedItineraryOutput,
+    ItineraryItemOutput,
+    ItineraryOutput,
+)
 
 API_DIR = Path(__file__).resolve().parents[3]
 REPO_ROOT = API_DIR.parents[1]
@@ -244,7 +252,7 @@ def test_day_scope_with_a_day_number_is_valid() -> None:
 # ---------- contracts/ai ----------
 
 
-@pytest.mark.parametrize("version", ["gr-1", "io-1"])
+@pytest.mark.parametrize("version", ["gr-1", "io-1", "gr-2", "io-2"])
 def test_committed_json_schemas_are_in_sync_with_the_models(version: str) -> None:
     committed = (CONTRACTS_AI / f"{version}.schema.json").read_text(encoding="utf-8")
     assert committed == ai_export.render(version, ai_export.AI_SCHEMAS[version])
@@ -318,3 +326,61 @@ def test_the_fine_tuned_adapter_is_not_enabled_in_stage_1() -> None:
         asyncio.run(stub.generate_itinerary(sample_request()))
     with pytest.raises(ProviderBadRequest):
         stub.get_model_metadata()
+
+
+# ---------- gr-2 and io-2 (A1 §6.8) ----------
+
+
+def test_gr_2_is_gr_1_plus_the_passages_and_the_retrieval_fields() -> None:
+    assert list(GroundedGenerationRequest.model_fields) == [
+        *GenerationRequest.model_fields,
+        "context_passages",
+        "retrieval",
+    ]
+
+
+def test_io_2_is_io_1_plus_source_ids_in_the_same_order() -> None:
+    assert list(GroundedItineraryOutput.model_fields) == ["days", "summary", "assumptions"]
+    assert list(GroundedItemOutput.model_fields) == [
+        *ItineraryItemOutput.model_fields,
+        "source_ids",
+    ]
+
+
+def test_a_gr_1_document_does_not_validate_as_gr_2_and_keeps_loading_as_gr_1() -> None:
+    data = sample_request_data()
+    assert GenerationRequest.model_validate(data).passage_ids() == set()
+    with pytest.raises(ValidationError):
+        GroundedGenerationRequest.model_validate(
+            {**data, "context_passages": [], "retrieval": {"mode": "vector"}}
+        )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [{"title": "t" * 121}, {"text": "t" * 1201}, {"kind": "note"}, {"extra": "field"}],
+)
+def test_gr_2_passage_limits(change: dict[str, Any]) -> None:
+    passage = {
+        "passage_id": "00000000-0000-4000-8000-00000000c001",
+        "kind": "guide",
+        "title": "Guide",
+        "text": "Text",
+        "place_id": None,
+    }
+    ContextPassage.model_validate(passage)
+    with pytest.raises(ValidationError):
+        ContextPassage.model_validate(passage | change)
+
+
+def test_io_2_declares_three_citations_but_a_fourth_does_not_fail_the_answer() -> None:
+    item = {**SAMPLE_OUTPUT["days"][0]["items"][0], "source_ids": ["a", "b", "c", "d"]}
+    assert len(GroundedItemOutput.model_validate(item).source_ids) == 4
+    schema = GroundedItemOutput.model_json_schema()
+    assert schema["properties"]["source_ids"]["maxItems"] == 3
+    assert "source_ids" not in schema["required"]
+
+
+def test_an_io_1_answer_is_valid_io_2_with_no_citations() -> None:
+    answer = GroundedItineraryOutput.model_validate(SAMPLE_OUTPUT)
+    assert all(item.source_ids == [] for day in answer.days for item in day.items)
