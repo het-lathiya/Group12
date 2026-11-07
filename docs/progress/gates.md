@@ -215,7 +215,100 @@ From SG-2 onward the pre-merge gate requires reviewDecision APPROVED (operator d
 
 ## SG-3 end of week 3: Gemini vertical slice (blueprint Gate 2, IMP-399)
 
-Status: not run
+Status: **pass with listed gaps**
+
+- Run: RUN-055 (IMP-399, Nidhi), 7 November 2026. Index: [sprint-3.md](sprint-3.md).
+- Commit verified: `5eaf19f` (`main` at preflight), with only the IMP-215 test-helper fix of this run on top, on branch `chore/IMP-399-sg3-gate`. No `.env` file was read and no Gemini call was made in this run; the Gemini evidence is the operator's, from the operator's local stack (WSL, Supabase CLI v2.122, `AI_PROVIDER=GEMINI`).
+- Scope of this result: the Gemini and RAG slice is shown on the local stack. **Nothing is shown on AWS staging**, because staging is not ready. The card and Amendment A1 §10.4 ask for staging, so "pass with listed gaps" is the operator's decision of 7 November 2026; the staging criteria move to SG-4 (Kirtan).
+- Sprint 3 cards: all 16 are merged and none is blocked; IMP-302 and IMP-310 did not slip ([sprint-3.md](sprint-3.md)).
+- Team decisions D1 to D13 of 7 November 2026 are recorded as IMD-124 to IMD-136.
+
+![Itinerary page of the local Gemini run with "Sources (1)" open](gates/sg3-local-gemini-itinerary.png)
+
+### Criteria
+
+| # | Criterion (card IMP-399 as amended by A1 §10.4) | Result | Evidence |
+| --- | --- | --- | --- |
+| 1 | A Gemini-generated plan is visible after validation and recalculation, and its record names provider, model and prompt version (TC-370) | pass on the operator's local stack; not verifiable on staging | `ai_generations` latest row, created 2026-11-07 16:42 UTC: `completed \| model \| GEMINI \| gemini-3.5-flash-lite \| v2 \| vector \| gemini-embedding-2 \| retrieval_ms 927 \| latency_ms 5835`. The page shows AI-written themes and notes, Curated and Unavailable cost labels, "Estimated travel time (distance based)" and recalculated times (09:00 start, 15-minute buffer); screenshot above. One generation only |
+| 2 | `make check` green on `main` at the gate commit | pass | Table below, exit 0, on `5eaf19f` plus the IMP-215 test-helper commit; [CI run 42393259997](https://github.com/het-lathiya/Group12/actions/runs/42393259997) on `5eaf19f`: success |
+| 3 | `make smoke` against staging | not verifiable | No staging URL exists. [Deploy staging run 42393440346](https://github.com/het-lathiya/Group12/actions/runs/42393440346) on `5eaf19f` is green only because `deploy-staging` is skipped |
+| 4 | `retrieval_mode = vector` and at least one cited passage shown on the itinerary page (ACC-19) | pass locally; not verifiable on staging | Row 1 record has `vector`; "Sources (1)" lists show title, kind, source name, licence and retrieval date (screenshot) |
+| 5 | Retrieval time p95 over 10 staging generations (NFR-050, TC-459) | not verifiable | No staging. One local value only: `retrieval_ms 927`. This is not a p95 and no NFR-050 claim is made |
+| 6 | The release task log shows the destination-1 chunks embedded on staging | not verifiable; local strict index recorded | Local `make rag-index ARGS='--destination ahmedabad --strict'` with `gemini-embedding-2`: run 1 embedded 96, then exit 3 (embedding provider unavailable, per-minute limit); run 2 embedded 93 (`documents=118 chunks=189`, `warnings=0 errors=0`). All 189 chunks are embedded after two runs. **Finding:** one release task will not finish the index under the per-minute limit (open item). Seed: `ahmedabad` gate loaded 103, rejected 0; 29 sources |
+| 7 | Live Gemini (TC-029) and live embeddings | pass | `make live-smoke` by the key holder on `fix/IMP-301-wire-schema` at `589ded8`: 2 passed (TC-029 and the live embedding test). Before the fix: 1 passed, 1 failed with HTTP 400 "too many states for serving". Cause: the schema's numeric, length and count limits; fix in [IMP-301 wire-schema](parts/IMP-301-wire-schema.md), rule IMD-136 (D13) |
+| 8 | API-33 totals equal the engine output, not model values | pass by tests | `test_tc_140_stored_totals_equal_the_calculation_when_the_model_writes_its_own` and `tests/api/test_costs.py` ([IMP-308 budget-costs](parts/IMP-308-budget-costs.md), [IMP-308 schedule](parts/IMP-308-schedule.md)), part of `make check` here. Not checked by hand on the Gemini plan |
+| 9 | IMP-302 and IMP-310 merged, not slipped | pass | #250 and #248 ([sprint-3.md](sprint-3.md)) |
+| 10 | The gate decision is recorded; warnings may remain and no quality claim is made | pass | This entry. No quality claim is made |
+
+### Checks of this run (`5eaf19f` plus the IMP-215 helper fix)
+
+| Command | Exit | Last line |
+| --- | --- | --- |
+| `make db-up` | 0 | ` Container group12-db-1 Healthy ` |
+| `make check TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/travel_test` | 0 | `   Duration  7.92s (environment 49%, tests 23%, import 15%, setup 10%, transform 3%)` |
+| `make db-down` | 0 | ` Network group12_default Removed ` |
+| `make stack-up` | 0 | output discarded, because it holds the stack's keys |
+| `make db-migrate` | 0 | `INFO  [alembic.runtime.migration] Will assume transactional DDL.` |
+| `make seed` | 0 | `seed sampleton: opening hours replaced for 0 places, unchanged for 30` |
+| `make e2e ARGS='journey'` | 0 | `  4 passed (8.0s)` |
+| `make stack-down` | 0 | output discarded |
+
+`make check` parts: ruff `All checks passed!`; ESLint `✖ 1 problem (0 errors, 1 warning)`; Prettier `All matched files use Prettier code style!`; mypy `Success: no issues found in 105 source files`; import-linter `Contracts: 6 kept, 0 broken.`; openapi-check up to date; unit `844 passed, 1 warning in 20.18s`; contract `87 passed, 2 deselected, 1 warning in 4.59s`; api `334 passed, 1 warning in 125.36s (0:02:05)`; authz `31 passed in 21.42s`; web `Tests  119 passed (119)`.
+
+The API for the journey was started by hand as in `e2e.yml` (`APP_ENV=test`, `AI_PROVIDER=MOCK`, `DB_AUTH_STUB=false`, `SUPABASE_JWKS_URL`), with the stack's values held in the process environment only. The journey uses MOCK, so it shows the flow and not Gemini.
+
+Latest runs on `main` at `5eaf19f`: [CI 42393259997](https://github.com/het-lathiya/Group12/actions/runs/42393259997) success; [E2E 42393260038](https://github.com/het-lathiya/Group12/actions/runs/42393260038) success; [Deploy staging 42393440346](https://github.com/het-lathiya/Group12/actions/runs/42393440346) success with the deploy job skipped.
+
+### Authorization flake found in RUN-054 (IMP-215 follow-up)
+
+`tests/authz/test_ownership.py[API-07 POST /api/v1/trips]` got a 401 once in 8 runs. Cause found: on WSL `systemd-timesyncd` steps the wall clock back by up to about 0.35 s every 30 s or so, the test helper set `iat` to the current second, and PyJWT rejects `iat` in the future with no leeway. Fixed in the test helper, with no change to product code; `make test-authz` then passed 20 of 20 in a loop on the same machine. Details: [IMP-215 authz-tokens](parts/IMP-215-authz-tokens.md).
+
+### Working-agreement audit (IMD-68)
+
+Pull requests #248 to #257, from `gh pr view <n> --json reviews,statusCheckRollup`. All were merged by the operator account `het-lathiya`. "Checks green" means all six required checks succeeded on the merged head commit.
+
+| PR | Title | reviewDecision | Approving reviewer | Checks green on merged head | Meets the agreement |
+| --- | --- | --- | --- | --- | --- |
+| #248 | IMP-304 · IMP-307 · IMP-310 · Sprint 3 wave 1: retrieval, routing, evaluation set | none | none (manalPatel2557 requested) | yes (6/6) | **no**: no approval |
+| #249 | IMP-303 · IMP-301 · Sprint 3 wave 1: generation request and Gemini adapter | none | none (Nidhi9864, kirtan-S111 requested) | yes (6/6) | **no**: no approval; Nidhi9864 owns a part |
+| #250 | IMP-312 · IMP-305 · IMP-302 · Sprint 3 wave 2: embeddings, generation pipeline, provider health | none | none (Nidhi9864, kirtan-S111, manyarana requested) | yes (6/6) | **no**: no approval; Nidhi9864 and kirtan-S111 own parts |
+| #251 | IMP-306 · IMP-313 · Sprint 3 wave 3: output validation and RAG indexing | none | none (Nidhi9864, kirtan-S111 requested) | yes (6/6) | **no**: no approval |
+| #252 | IMP-315 · IMP-308 · Sprint 3 wave 4: hybrid retrieval, schedule and costs | none | none (kirtan-S111 requested) | yes (6/6) | **no**: no approval |
+| #253 | IMP-309 · IMP-314 · Sprint 3: day-wise itinerary view and Ahmedabad guides | none | none (kirtan-S111 requested) | yes (6/6) | **no**: no approval |
+| #254 | IMP-316 · grounded generation with validated citations | none | none (Nidhi9864, kirtan-S111 requested) | yes (6/6) | **no**: no approval |
+| #255 | IMP-317 · whole task | none | none (Assassin-byte requested) | yes (6/6) | **no**: no approval |
+| #256 | IMP-301 · wire-schema fix | none | none (Nidhi9864, manyarana requested) | yes (6/6; a first run on the same head was cancelled by the second) | **no**: no approval; Nidhi9864 owns the part |
+| #257 | SG-3 prep · staging Gemini settings and account facts | none | none (Junaid-Kureshi requested) | yes (6/6) | **no**: no approval |
+
+Summary: 10 merged; **0 with an approval**; 10 with all six checks green on the merged head. **No merged pull request meets the working agreement in full.** Exceptions: all 10 lack an approving review, although the operator decision of 6 November 2026 made reviewDecision APPROVED a pre-merge requirement from SG-2 onward; #249, #250 and #256 also requested a part owner as a reviewer. Nothing was changed on these pull requests.
+
+### Gaps and open defects
+
+- Every staging criterion (rows 1, 3, 4, 5 and 6) is not shown. Row 5 has one local value and no p95.
+- The Gemini evidence is one generation on one local stack, reported by the operator. No Gemini run happened in this gate run.
+- Working agreement not met by any merged pull request (audit above).
+- Evidence the card lists and this run does not have: a staging screenshot and a CI-side Gemini record, since live calls never run in CI.
+- PD-IMP-307-2, PD-IMP-307-3 and PD-IMP-307-4 are not named in D1 to D13, so they stay undecided.
+- IMD-134 accepts PD-IMP-306-3 (OUTSIDE_TRIP_DATES makes the answer unusable), while IMD-126 drops those items instead. Until the D3 code lands the built behaviour is PD-IMP-306-3; the team should confirm that IMD-126 replaces its OUTSIDE_TRIP_DATES half.
+- Spec lines left as they are, because the decisions name only the lines changed in this run: §7.6 `SourceBadge` and the §9.2 label table still say "Curated, checked <date>" for prices (IMD-130); the §6.7 API-07 example keeps `Asia/Kolkata` for Sampleton, and the other §6.7 examples stay in INR (IMD-128); the IMP-301 card step 3 keeps its old text (IMD-136).
+
+### Open items
+
+| Item | Owner | Due |
+| --- | --- | --- |
+| AWS staging set-up, first deploy (TC-437), forced failure (TC-438), smoke and CORS, SSM `GEMINI_API_KEY`, ACC-19 on staging, NFR-050 p95 over 10 staging generations, staging index line, TC-433 to TC-436, IMP-216 staging walk-through, IMP-206 staging load | Kirtan | required for SG-4 |
+| Staging index needs several deploys or one manual index run under the per-minute limit (row 6) | Kirtan | required for SG-4 |
+| IMP-113 remaining facts: Gemini tier, ORS key and allowance, e-mail sender, AWS plan | Nidhi, Junaid, Kirtan | before SG-4 |
+| IMD-120 data checks: Malhar plan, Junaid 20 percent sample, Jeel and Malhar 60 rows | Malhar, Junaid, Jeel | before SG-4 |
+| Local guide must state JWKS mode for Supabase CLI v2.12x: local sign-in looped back to sign-in until the API used `SUPABASE_JWKS_URL=http://127.0.0.1:54321/auth/v1/.well-known/jwks.json`, because the stack signs with asymmetric keys although `supabase status` still prints a `JWT_SECRET` | Kirtan | next DevOps card |
+| `pytest-cov` in CI for TC-334 | Kirtan | next DevOps card |
+| axe in Playwright specs | Krrish | no date set |
+| D3 fix (IMD-126): `OUTSIDE_TRIP_DATES` instead of whole-answer failure | Manya | with IMP-402 |
+| D4 fix (IMD-127): API-16 answers 404 for an inactive destination | Malhar | no date set |
+| D12 fix (IMD-135): year in retrieval dates | Manasvi | no date set |
+| F-1: `Money.currency` pattern; `user_hash` in access logs | Kirtan | next change to those files |
+| ES256 token test | Het | no date set |
+| IMP-114 interviews (#201) | Junaid, Krrish | before SG-4 |
 
 ## SG-4 end of week 4: core reliability (blueprint Gate 3, IMP-499)
 

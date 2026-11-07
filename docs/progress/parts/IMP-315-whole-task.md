@@ -2,7 +2,7 @@
 
 - Run id: RUN-049 (grouped, IMD-121, with IMP-308)
 - Owner: Jeel (jeelfefar2141)
-- Status: PARTIAL (the commit is on the branch; no pull request in this run, see the SYNC REPORT)
+- Status: merged in PR #252
 - Base commit: e5f5e7a
 - Branch: feat/IMP-315-308-wave4
 - Reviewer: Kirtan (kirtan-S111)
