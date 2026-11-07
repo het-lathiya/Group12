@@ -4,15 +4,17 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useSyncExternalStore } from "react";
 
-import { DayColumn, formatDayDate } from "@/components/itinerary/DayColumn";
+import { FallbackNotice } from "@/components/generation/FallbackNotice";
+import { DayColumn } from "@/components/itinerary/DayColumn";
 import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError } from "@/lib/api/client";
-import { useItinerary } from "@/lib/api/queries";
+import { useItinerary, useTrip } from "@/lib/api/queries";
 import type { components } from "@/lib/api/schema";
+import { formatDayDate } from "@/lib/format";
 
 type Day = components["schemas"]["Day"];
 
@@ -113,32 +115,34 @@ function Days({ days }: { days: Day[] }) {
 }
 
 /**
- * /trips/[tripId]/itinerary (§7.5.7), read-only in Sprint 2: the saved days and items of API-24,
- * shown as the server sent them. Money amounts, travel, themes, notes, warnings and edits arrive with
- * IMP-308, IMP-309, IMP-405 and IMP-408 onwards.
+ * /trips/[tripId]/itinerary (§7.5.7), read-only until IMP-408: the saved days and items of API-24,
+ * shown as the server sent them. API-24 answers 404 for a trip with no plan and for a foreign or
+ * missing trip alike, so API-10 tells the two apart (§7.5: not-found screen for the second).
  */
 export default function ItineraryPage() {
   const { tripId } = useParams<{ tripId: string }>();
   const itinerary = useItinerary(tripId);
-  const { error } = itinerary;
-  const nothingPlanned =
-    (error instanceof ApiError && error.status === 404) ||
-    itinerary.data?.days.length === 0;
+  const noPlan =
+    itinerary.error instanceof ApiError && itinerary.error.status === 404;
+  const trip = useTrip(tripId, noPlan);
+  const failed = noPlan ? trip : itinerary;
+  const { error } = failed;
+  const tripNotFound = error instanceof ApiError && error.status === 404;
 
   return (
     <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6 lg:gap-8">
       <h1 className="font-heading text-2xl font-semibold tracking-[-0.01em] sm:text-3xl">
         Your itinerary
       </h1>
-      {itinerary.isPending ? (
+      {itinerary.isPending || (noPlan && trip.isPending) ? (
         <DaySkeleton />
-      ) : nothingPlanned ? (
+      ) : tripNotFound ? (
         <EmptyState
-          title="Nothing planned yet"
-          description="Generate a day-by-day plan for this trip."
+          title="Trip not found"
+          description="This trip does not exist or is not available to you."
           action={
             <Button asChild>
-              <Link href={`/trips/${tripId}/generate`}>Generate</Link>
+              <Link href="/dashboard">Back to dashboard</Link>
             </Button>
           }
         />
@@ -153,10 +157,27 @@ export default function ItineraryPage() {
                     "The server could not be reached. Check your connection and try again.",
                 }
           }
-          onRetry={() => void itinerary.refetch()}
+          onRetry={() => void failed.refetch()}
+        />
+      ) : noPlan || itinerary.data?.days.every((d) => !d.items.length) ? (
+        <EmptyState
+          title="Nothing planned yet"
+          description="Generate a day-by-day plan for this trip."
+          action={
+            <Button asChild>
+              <Link href={`/trips/${tripId}/generate`}>Generate</Link>
+            </Button>
+          }
         />
       ) : (
-        <Days days={itinerary.data.days} />
+        itinerary.data && (
+          <>
+            {itinerary.data.source && (
+              <FallbackNotice outcome={itinerary.data.source.outcome} />
+            )}
+            <Days days={itinerary.data.days} />
+          </>
+        )
       )}
     </div>
   );

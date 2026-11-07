@@ -1,18 +1,9 @@
 import { ItineraryItemCard } from "@/components/itinerary/ItineraryItemCard";
+import { AiBadge } from "@/components/labels/AiBadge";
 import type { components } from "@/lib/api/schema";
+import { formatDayDate } from "@/lib/format";
 
 type Day = components["schemas"]["Day"];
-
-/** A date-only string "2026-11-14" as "Sat 14 Nov" (guide §17), read in UTC so no zone shifts it. */
-export function formatDayDate(isoDate: string): string {
-  const [year, month, day] = isoDate.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  });
-}
 
 export type DayColumnProps = {
   day: Day;
@@ -21,9 +12,8 @@ export type DayColumnProps = {
 };
 
 /**
- * One day of the itinerary (§7.6; guide §14), read-only in Sprint 2: the day number, its date and
- * its items in the order API-24 returns them. Theme, money amounts and edits arrive with IMP-308,
- * IMP-309 and later.
+ * One day of the itinerary (§7.5.7; guide §14): the day number, its date, its theme and its items
+ * in the order API-24 returns them. Edits arrive with IMP-408 and later.
  */
 export function DayColumn({ day, id }: DayColumnProps) {
   return (
@@ -41,6 +31,12 @@ export function DayColumn({ day, id }: DayColumnProps) {
           {formatDayDate(day.date)}
         </span>
       </h2>
+      {day.theme && (
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span className="min-w-0">{day.theme}</span>
+          {day.theme_origin === "ai" && <AiBadge />}
+        </p>
+      )}
       {day.items.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">
           Nothing planned for this day.
