@@ -8,6 +8,7 @@ nothing reaches the network. The fixtures are format fixtures until a live recor
 import asyncio
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -437,7 +438,7 @@ def test_wire_schema_keeps_every_property_required_field_and_enum(
 def test_wire_schema_keeps_a_field_named_like_a_dropped_keyword() -> None:
     node = {"properties": {"format": {"type": "string", "maxLength": 3}}, "required": ["format"]}
     assert adapter._without_keys(node) == {
-        "properties": {"format": {"type": "string"}},
+        "properties": {"format": {"type": "string", "description": "At most 3 characters."}},
         "required": ["format"],
     }
 
@@ -449,6 +450,108 @@ def test_wire_schema_is_what_the_request_carries() -> None:
 
     generate(provider(replay), grounded_request())
     assert replay.body["response_format"]["schema"] == adapter.wire_schema(GroundedItineraryOutput)
+
+
+def limited_nodes(contract: Any, wire: Any, names: bool = False) -> Any:
+    """Each contract node holding a limit, walked in step with its wire node."""
+    if isinstance(contract, list):
+        for pair in zip(contract, wire, strict=True):
+            yield from limited_nodes(*pair)
+    elif isinstance(contract, dict):
+        if not names and set(contract) & (SERVING_LIMITS | {"pattern"}):
+            yield contract, wire
+        for key, value in contract.items():
+            if key in wire and (names or key not in SERVING_LIMITS):
+                yield from limited_nodes(value, wire[key], not names and key in adapter.NAME_MAPS)
+
+
+@pytest.mark.parametrize(("name", "model"), OUTPUTS)
+def test_wire_schema_every_node_that_lost_a_limit_states_it(
+    name: str, model: type[ItineraryOutput]
+) -> None:
+    contract = json.loads((CONTRACTS / f"{name}.schema.json").read_text(encoding="utf-8"))
+    nodes = list(limited_nodes(contract, adapter.wire_schema(model)))
+    assert len(nodes) == (11 if name == "io-2" else 10)
+    for before, after in nodes:
+        for keyword in set(before) & SERVING_LIMITS:
+            assert re.search(rf"\b{before[keyword]}\b", after["description"]), (keyword, after)
+        if "pattern" in before:
+            assert "HH:MM (24-hour)" in after["description"]
+        if "description" in before:
+            assert after["description"].startswith(before["description"])
+
+
+@pytest.mark.parametrize(("name", "model"), OUTPUTS)
+def test_wire_schema_states_each_limit_in_plain_words(
+    name: str, model: type[ItineraryOutput]
+) -> None:
+    wire = adapter.wire_schema(model)
+    defs = wire["$defs"].values()
+    item = next(d for d in defs if "note" in d["properties"])["properties"]
+    day = next(d for d in defs if "theme" in d["properties"])["properties"]
+    described = {
+        "duration": item["duration_min"],
+        "note": item["note"],
+        "theme": day["theme"],
+        "summary": wire["properties"]["summary"]["anyOf"][0],
+        "assumptions": wire["properties"]["assumptions"],
+        "days": wire["properties"]["days"],
+        "items": day["items"],
+        "day_number": day["day_number"],
+    }
+    assert {key: node["description"] for key, node in described.items()} == {
+        "duration": "Integer from 15 to 480.",
+        "note": "At most 200 characters.",
+        "theme": "At most 80 characters.",
+        "summary": "At most 500 characters.",
+        "assumptions": "At most 20 items.",
+        "days": "From 1 to 14 items.",
+        "items": "From 1 to 12 items.",
+        "day_number": "Integer from 1 to 14.",
+    }
+    assert item["place_id"]["description"] == (
+        "A place_id from the request's shortlist. At least 1 character."
+    )
+    assert item["start_time"]["description"] == (
+        "24-hour time HH:MM in the destination time zone. Format: HH:MM (24-hour)."
+    )
+    if name == "io-2":
+        assert item["source_ids"]["description"] == (
+            "passage_id values of the request this note relies on. At most 3 items."
+        )
+
+
+@pytest.mark.parametrize(
+    ("limits", "description"),
+    [
+        ({"type": "number", "minimum": 0, "maximum": 1.5}, "Number from 0 to 1.5."),
+        ({"minimum": 0}, "At least 0."),
+        ({"maximum": 9}, "At most 9."),
+        ({"exclusiveMinimum": 0, "exclusiveMaximum": 5}, "Greater than 0. Less than 5."),
+        ({"multipleOf": 5}, "Multiple of 5."),
+        ({"minLength": 2, "maxLength": 4}, "From 2 to 4 characters."),
+        ({"minLength": 2}, "At least 2 characters."),
+        ({"maxLength": 1}, "At most 1 character."),
+        ({"minItems": 1}, "At least 1 item."),
+        ({"format": "date"}, "Format: date."),
+        ({"pattern": "^[A-Z]{3}$"}, "Matches the pattern ^[A-Z]{3}$."),
+        ({"pattern": adapter.HHMM_PATTERN}, "Format: HH:MM (24-hour)."),
+        (
+            {"maxLength": 3, "format": "date", "pattern": "^x$", "minimum": 1},
+            "At least 1. At most 3 characters. Format: date. Matches the pattern ^x$.",
+        ),
+        ({"description": "Kept.", "maxItems": 2}, "Kept. At most 2 items."),
+        ({"description": "Kept", "maxItems": 2}, "Kept. At most 2 items."),
+    ],
+)
+def test_wire_schema_sentence_for_each_removed_keyword(
+    limits: dict[str, Any], description: str
+) -> None:
+    assert adapter._without_keys(limits)["description"] == description
+
+
+def test_wire_schema_a_node_without_limits_gets_no_description() -> None:
+    assert adapter._without_keys({"type": "string"}) == {"type": "string"}
 
 
 def answer_with(change: Any) -> httpx.Response:
