@@ -59,4 +59,4 @@ None for this part.
 
 ## Open issues
 
-- **The generate page cannot start a generation until the privacy-progress part lands.** API-22 now refuses mode `ai` without the acknowledgement, and the page does not send it yet, so this part must not merge without that part. `make e2e ARGS='journey'` fails at Generate until then.
+- **The generate page cannot start a generation until the privacy-progress part lands.** API-22 now refuses mode `ai` without the acknowledgement, and the page does not send it yet, so this part must not merge without that part. Resolved by IMP-305-privacy-progress, PR #250.
