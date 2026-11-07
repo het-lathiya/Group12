@@ -1,5 +1,9 @@
 {
   "itinerary_generate/v1/meta.json": "86d7b08de8c08a3cbaadae31cf828b340434b38b7e1a5f4b3e560d69a14b1be8",
   "itinerary_generate/v1/system.txt": "dcf05ff38c0749f175d9b35857d609ee995e914a11498bf66e1c8c2457a939c0",
-  "itinerary_generate/v1/user.txt": "2b25dc27abb8c665efddda52f2d80600e75461fb797cf21922ce151a2db59951"
+  "itinerary_generate/v1/user.txt": "2b25dc27abb8c665efddda52f2d80600e75461fb797cf21922ce151a2db59951",
+  "itinerary_generate/v2/meta.json": "cf5f10eb230dfa8af0bc614d6266e20cbc27b446cef7a47efc7d3ab532084c08",
+  "itinerary_generate/v2/repair.txt": "b40eed616f76fe1022953f2a31b52db332f34eea06060dfddfc1da2935c12254",
+  "itinerary_generate/v2/system.txt": "1fb5143528b65d45fa4200d0b9791e4b0f6e7f670cac767d82161bd513ac76d9",
+  "itinerary_generate/v2/user.txt": "45a99b08a285b25be3affe04f41c3929f6f8fde55e27e72c25b15eadeddc8730"
 }

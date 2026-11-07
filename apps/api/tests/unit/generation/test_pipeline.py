@@ -35,7 +35,15 @@ def test_tc_133_the_recorded_gemini_answer_goes_through_every_step(
 
     journal.run(recorded_gemini())
 
-    assert journal.steps == ["running", "build", "settings", "validating", "save", "complete"]
+    assert journal.steps == [
+        "running",
+        "retrieval",
+        "build",
+        "settings",
+        "validating",
+        "save",
+        "complete",
+    ]
     assert journal.saved
     assert journal.completed["outcome"] == "model"
     assert journal.completed["usage"].input_tokens == 812
@@ -52,7 +60,7 @@ def test_pipeline_records_the_settings_before_the_provider_call_in_a_closed_tran
     journal.run(Spy(journal))
 
     assert journal.steps.index("settings") < journal.steps.index("provider")
-    assert journal.settings == {"truncated_count": 0}
+    assert journal.settings == {"truncated_count": 0, "passages_sent": 0, "passages_dropped": 0}
 
 
 def test_pipeline_records_how_many_places_the_input_limit_removed(
@@ -63,7 +71,9 @@ def test_pipeline_records_how_many_places_the_input_limit_removed(
     trimmed = request.model_copy(update={"shortlist": request.shortlist[:2]})
     seen: list[int | None] = []
 
-    def limit(given: GenerationRequest, max_tokens: int | None) -> tuple[GenerationRequest, int]:
+    def limit(
+        given: GenerationRequest, max_tokens: int | None, similarities: object
+    ) -> tuple[GenerationRequest, int]:
         seen.append(max_tokens)
         return trimmed, 1
 
@@ -86,7 +96,7 @@ def test_pipeline_ends_with_config_error_when_the_prompt_cannot_fit(
 ) -> None:
     journal = Journal(monkeypatch, sample_request())
 
-    def too_big(given: GenerationRequest, max_tokens: int | None) -> Any:
+    def too_big(given: GenerationRequest, max_tokens: int | None, similarities: object) -> Any:
         raise ProviderBadRequest("the prompt does not fit AI_MAX_INPUT_TOKENS")
 
     monkeypatch.setattr(pipeline.limits, "enforce_input_limit", too_big)

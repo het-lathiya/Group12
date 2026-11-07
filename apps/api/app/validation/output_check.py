@@ -1,8 +1,9 @@
-"""Step 8 of the pipeline: an answer against io-1, the shortlist and the trip (§8.11; IMP-306).
+"""Step 8 of the pipeline: an answer against its schema, the shortlist and the trip (§8.11).
 
-``apply_limits`` adds the limits that depend on the trip to the checks of io-1 and classifies a
-failure as ``ProviderInvalidOutput("schema_violation")``. ``check_output`` then rejects, item by
-item, what the model may not choose. ``summary`` gives the counts for
+``apply_limits`` adds the limits that depend on the trip to the checks of the schema and classifies
+a failure as ``ProviderInvalidOutput("schema_violation")``. ``check_output`` then rejects, item by
+item, what the model may not choose, and removes citations of passages the request did not hold
+(A1 §6.10): a citation never costs an item and has no finding code. ``summary`` gives the counts for
 ``ai_generations.validation_summary``. No text from the answer goes into a message or a count.
 """
 
@@ -13,7 +14,7 @@ from typing import Final
 from pydantic import ValidationError
 
 from app.ai.errors import InvalidOutputKind, ProviderInvalidOutput
-from app.schemas.ai import ItineraryOutput, PlanFinding
+from app.schemas.ai import MAX_SOURCE_IDS, GroundedItemOutput, ItineraryOutput, PlanFinding
 
 UNKNOWN_PLACE_MESSAGE: Final = "This place is not in the shortlist of active places."
 OUTSIDE_TRIP_MESSAGE: Final = "This day is outside the trip."
@@ -25,6 +26,7 @@ class OutputCheckResult:
     findings: list[PlanFinding] = field(default_factory=list)
     invalid_ids: int = 0
     rejected_items: int = 0
+    unknown_source_ids: int = 0
 
     @property
     def usable(self) -> bool:
@@ -40,7 +42,7 @@ def apply_limits(
 ) -> ItineraryOutput:
     context = {"trip_days": trip_days, "max_items_per_day": max_items_per_day}
     try:
-        return ItineraryOutput.model_validate(output.model_dump(), context=context)
+        return type(output).model_validate(output.model_dump(), context=context)
     except ValidationError:
         raise ProviderInvalidOutput("schema_violation") from None
 
@@ -58,16 +60,20 @@ def _finding(code: str, message: str, day_number: int, position: int) -> PlanFin
 
 
 def check_output(
-    output: ItineraryOutput, shortlist_ids: Set[str], trip_days: int
+    output: ItineraryOutput,
+    shortlist_ids: Set[str],
+    trip_days: int,
+    passage_ids: Set[str] = frozenset(),
 ) -> OutputCheckResult:
     """Reject items on days outside the trip, unknown or inactive places and repeated places.
 
-    ``shortlist_ids`` holds only places still active. The first occurrence of a place is kept.
+    ``shortlist_ids`` holds only places still active. The first occurrence of a place is kept. A
+    kept item keeps at most three distinct citations from ``passage_ids``; the rest are counted.
     """
     findings: list[PlanFinding] = []
     seen: set[str] = set()
     days = []
-    invalid_ids = rejected_items = 0
+    invalid_ids = rejected_items = unknown_source_ids = 0
     for day in output.days:
         kept = []
         for position, item in enumerate(day.items, start=1):
@@ -82,13 +88,22 @@ def check_output(
                 )
             elif item.place_id not in seen:
                 seen.add(item.place_id)
+                if isinstance(item, GroundedItemOutput):
+                    cited = [i for i in dict.fromkeys(item.source_ids) if i in passage_ids]
+                    cited = cited[:MAX_SOURCE_IDS]
+                    unknown_source_ids += len(item.source_ids) - len(cited)
+                    item = item.model_copy(update={"source_ids": cited})
                 kept.append(item)
                 continue
             rejected_items += 1
         if kept:
             days.append(day.model_copy(update={"items": kept}))
     return OutputCheckResult(
-        output.model_copy(update={"days": days}), findings, invalid_ids, rejected_items
+        output.model_copy(update={"days": days}),
+        findings,
+        invalid_ids,
+        rejected_items,
+        unknown_source_ids,
     )
 
 
@@ -102,5 +117,6 @@ def summary(
         "infos": 0,
         "invalid_ids": result.invalid_ids if result else 0,
         "rejected_items": result.rejected_items if result else 0,
+        "unknown_source_ids": result.unknown_source_ids if result else 0,
         "kind": kind,
     }

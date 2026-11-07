@@ -103,6 +103,8 @@ async def start_generation(
         model_id=metadata.model_id,
         prompt_template_id=template.template_id,
         prompt_version=template.version,
+        input_schema_version=template.meta.input_schema_version,
+        output_schema_version=template.meta.output_schema_version,
         mapping_version=preference_mapping.MAPPING_VERSION,
         scope="full",
         request_hash=request_hash,
@@ -159,5 +161,8 @@ async def _to_out(session: AsyncSession, row: AiGeneration) -> GenerationOut:
             "plan_revision": saved.plan_revision if saved else None,
             "created_at": row.created_at,
             "completed_at": row.completed_at,
+            "retrieval_mode": row.retrieval_mode,
+            "embedding_model_id": row.embedding_model_id,
+            "retrieval_ms": row.retrieval_ms,
         }
     )

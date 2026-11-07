@@ -18,6 +18,7 @@ from fixtures.ai import sample_request, sample_request_data
 from app.ai import limits
 from app.ai.errors import ProviderBadRequest
 from app.ai.prompts import registry
+from app.core.config import get_settings
 from app.schemas.ai import GenerationRequest
 
 HASH_LIST = Path(__file__).resolve().parents[2] / "fixtures" / "prompt_hashes.json"
@@ -86,9 +87,10 @@ def test_prompt_lookup_never_builds_a_path_from_its_arguments(template_id: str) 
 def test_prompt_version_defaults_to_prompt_template_version(
     clean_settings_env: pytest.MonkeyPatch,
 ) -> None:
-    assert registry.load("itinerary_generate").version == "v1"  # the Settings default
+    assert registry.load("itinerary_generate").version == "v2"  # the Settings default
 
     clean_settings_env.setenv("PROMPT_TEMPLATE_VERSION", "v1")
+    get_settings.cache_clear()
     assert registry.load("itinerary_generate").version == "v1"
 
 

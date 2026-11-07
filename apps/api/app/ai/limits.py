@@ -1,16 +1,18 @@
 """Prompt size control (§8.6; FR-039, IMP-303).
 
 Tokens are estimated at 4 characters each, the conservative default of §8.6, until the live key
-lets the provider's token counter replace it. ``enforce_input_limit`` cuts the shortlist by rank;
-the pipeline records the count as ``truncated_count`` in generation_settings (IMP-305).
+lets the provider's token counter replace it. ``enforce_input_limit`` drops passages first, then
+cuts the shortlist by rank (A1 §6.8); the pipeline records the counts in generation_settings.
 """
 
 import math
+from collections.abc import Mapping
 from typing import Final
+from uuid import UUID
 
 from app.ai.errors import ProviderBadRequest
 from app.ai.prompts import registry
-from app.schemas.ai import GenerationRequest, ShortlistPlace
+from app.schemas.ai import GenerationRequest, GroundedGenerationRequest, ShortlistPlace
 
 CHARS_PER_TOKEN: Final = 4
 FOOD_CATEGORY: Final = "food"
@@ -44,15 +46,38 @@ def _droppable(request: GenerationRequest) -> list[ShortlistPlace]:
     return droppable[::-1]
 
 
+def _drop_passages(
+    request: GenerationRequest, similarities: Mapping[UUID, float], max_tokens: int
+) -> GenerationRequest:
+    """The request with its passages dropped, lowest similarity first, until it fits (A1 §6.8)."""
+    if not isinstance(request, GroundedGenerationRequest):
+        return request
+    for passage in sorted(
+        request.context_passages, key=lambda p: similarities.get(p.passage_id, 0.0)
+    ):
+        kept = [p for p in request.context_passages if p is not passage]
+        request = request.model_copy(update={"context_passages": kept})
+        if estimate_tokens(request) <= max_tokens:
+            break
+    return request
+
+
 def enforce_input_limit(
-    request: GenerationRequest, max_tokens: int | None
+    request: GenerationRequest,
+    max_tokens: int | None,
+    similarities: Mapping[UUID, float] | None = None,
 ) -> tuple[GenerationRequest, int]:
     """The request cut to the limit, and the number of places removed (§8.6, FR-039 AC1).
 
-    Must-visit places, locked places and enough food places for the meal slots always stay. If the
-    prompt cannot fit even so, AI_MAX_INPUT_TOKENS is too low for this trip: ProviderBadRequest.
+    Passages go first, by ``similarities`` (passage ID to similarity), and the shortlist is cut
+    only when none is left. Must-visit places, locked places and enough food places for the meal
+    slots always stay. If the prompt cannot fit even so, AI_MAX_INPUT_TOKENS is too low for this
+    trip: ProviderBadRequest.
     """
     if max_tokens is None or estimate_tokens(request) <= max_tokens:
+        return request, 0
+    request = _drop_passages(request, similarities or {}, max_tokens)
+    if estimate_tokens(request) <= max_tokens:
         return request, 0
     removed: set[object] = set()
     trimmed = request

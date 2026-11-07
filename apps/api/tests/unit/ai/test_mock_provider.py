@@ -29,7 +29,13 @@ from app.ai.errors import (
 from app.ai.providers import mock
 from app.ai.providers.mock import MockProvider
 from app.core.config import ConfigError, MockScenario, load_settings
-from app.schemas.ai import GenerationRequest, ItineraryOutput, ModificationRequest
+from app.schemas.ai import (
+    GenerationRequest,
+    GroundedGenerationRequest,
+    GroundedItineraryOutput,
+    ItineraryOutput,
+    ModificationRequest,
+)
 
 IO_1_SCHEMA = json.loads(
     (Path(__file__).resolve().parents[5] / "contracts" / "ai" / "io-1.schema.json").read_text(
@@ -373,3 +379,49 @@ def test_health_check_is_down_for_a_configuration_error_only() -> None:
     assert status(ProviderAuthError()) == "down"
     assert status(ProviderBadRequest("no model")) == "down"
     assert status(ProviderTimeout()) == "ok"
+
+
+# ---------- Citations for gr-2 (A1 §6.8; IMP-316 step 7) ----------
+
+
+def grounded_request() -> GroundedGenerationRequest:
+    first = sample_request().shortlist[0].place_id
+    return GroundedGenerationRequest.model_validate(
+        {
+            **sample_request().model_dump(exclude={"input_schema_version"}),
+            "prompt_version": "v2",
+            "context_passages": [
+                {
+                    "passage_id": "00000000-0000-4000-8000-00000000c001",
+                    "kind": "guide",
+                    "title": "Guide",
+                    "text": "A guide passage.",
+                    "place_id": first,
+                },
+                {
+                    "passage_id": "00000000-0000-4000-8000-00000000c002",
+                    "kind": "place",
+                    "title": "Place",
+                    "text": "A place passage.",
+                    "place_id": first,
+                },
+            ],
+            "retrieval": {"mode": "vector", "embedding_model_id": "mock-embed-v1"},
+        }
+    )
+
+
+def test_mock_cites_the_place_passage_of_an_items_place_and_nothing_else() -> None:
+    request = grounded_request()
+
+    output = generate(ok(), request)
+
+    assert isinstance(output, GroundedItineraryOutput)
+    items = [item for day in output.days for item in day.items]
+    assert items[0].source_ids == ["00000000-0000-4000-8000-00000000c002"]
+    assert all(item.source_ids == [] for item in items[1:])
+    assert generate(ok(), request) == output
+
+
+def test_mock_answers_a_gr_1_request_with_io_1() -> None:
+    assert not isinstance(generate(ok()), GroundedItineraryOutput)
