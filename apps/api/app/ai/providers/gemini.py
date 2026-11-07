@@ -1,7 +1,7 @@
 """Gemini adapter (specification §8.4, FR-041; IMP-301). The only importer of google-genai.
 
 Uses the Interactions API (OD-14; docs/decisions/gemini-setup.md): ``_call_vendor`` holds the only
-vendor call, with store=false, the io-1 wire schema, the lowest thinking level the model accepts
+vendor call, with store=false, the output's wire schema, the lowest thinking level the model accepts
 and no sampling parameter. One attempt per call: retries and the breaker are IMP-401, so the SDK's
 own retries are switched off. Vendor error text is never read: it can echo the prompt (NFR-024).
 
@@ -82,7 +82,26 @@ BLOCKED_CODES: Final = frozenset(
     }
 )
 TRUNCATED_STATUSES: Final = frozenset({"incomplete", "requires_continuation"})
-DROPPED_SCHEMA_KEYS: Final = frozenset({"$schema", "$id", "pattern"})
+# Numeric, length, count and format limits make Gemini refuse the schema as too many states for
+# serving (gemini-setup.md, proposed D13); Pydantic, check_output and recalculation enforce them.
+DROPPED_SCHEMA_KEYS: Final = frozenset(
+    {
+        "$schema",
+        "$id",
+        "pattern",
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "minItems",
+        "maxItems",
+        "minLength",
+        "maxLength",
+        "format",
+        "multipleOf",
+    }
+)
+NAME_MAPS: Final = frozenset({"properties", "$defs"})
 EMBEDDING_2: Final = GEMINI_EMBEDDING_MODELS[0]
 EMBED_TASK_TYPES: Final[dict[EmbeddingPurpose, str]] = {
     "document": "RETRIEVAL_DOCUMENT",
@@ -95,16 +114,21 @@ BACKOFF_JITTER: Final = 0.25
 Health = Literal["ok", "degraded", "down"]
 
 
-def _without_keys(node: Any) -> Any:
+def _without_keys(node: Any, names: bool = False) -> Any:
+    """``names``: the keys of this mapping are field names, kept even if one reads like a keyword."""
     if isinstance(node, dict):
-        return {k: _without_keys(v) for k, v in node.items() if k not in DROPPED_SCHEMA_KEYS}
+        return {
+            k: _without_keys(v, not names and k in NAME_MAPS)
+            for k, v in node.items()
+            if names or k not in DROPPED_SCHEMA_KEYS
+        }
     if isinstance(node, list):
         return [_without_keys(item) for item in node]
     return node
 
 
 def wire_schema(model: type[ItineraryOutput] = ItineraryOutput) -> dict[str, Any]:
-    """The output schema as sent (§8.7): no $schema, $id or pattern; HH:MM stays in description."""
+    """The output schema as sent (§8.7): no DROPPED_SCHEMA_KEYS; HH:MM stays in description."""
     schema: dict[str, Any] = _without_keys(model.model_json_schema())
     return schema
 
