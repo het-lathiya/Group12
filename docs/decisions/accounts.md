@@ -89,13 +89,15 @@ Card step 3 (OD-04, OD-14). Fill this in from the official Gemini pricing, terms
 
 | Item | Result |
 | --- | --- |
-| Tier: free or paid | TO BE FILLED BY NIDHI |
+| Key obtained (yes/no) | Yes, held by the operator (Het). The staging copy goes into SSM `/group12/staging/GEMINI_API_KEY` when Kirtan builds staging; not yet confirmed |
+| Tier: free or paid | Not yet stated |
 | Data-use terms accepted: the name of the terms and what they say about the use of prompts and responses on this tier | TO BE FILLED BY NIDHI |
 | Rate limits shown for the chosen model (requests per minute, tokens per minute, requests per day), copied as shown | TO BE FILLED BY NIDHI |
-| Chosen `GEMINI_MODEL_ID` | TO BE FILLED BY NIDHI |
+| Chosen `GEMINI_MODEL_ID` | `gemini-3.5-flash-lite` (Interactions API) |
+| Chosen `GEMINI_EMBEDDING_MODEL_ID` | `gemini-embedding-2` (team choice) |
 | Spending control for the billed key (NFR-037; §4.5 requires it in production): set yes/no, and where | TO BE FILLED BY NIDHI |
 | Key stored in the password manager and the Render settings (yes/no) | TO BE FILLED BY NIDHI |
-| Date the pages were read and the key created (YYYY-MM-DD) | TO BE FILLED BY NIDHI |
+| Date the pages were read and the key created (YYYY-MM-DD) | Pages read: TO BE FILLED BY NIDHI. Key created: not yet stated |
 
 The rules for `GEMINI_MODEL_ID` are in specification §8: one specific stable identifier, never a `-latest` alias or a preview identifier, stored exactly as configured.
 
