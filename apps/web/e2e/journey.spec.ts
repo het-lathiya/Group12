@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { Page } from "@playwright/test";
 
 import type { components } from "../lib/api/schema";
@@ -6,6 +8,12 @@ import { expect, test } from "./fixtures/users";
 // TC-369 (US-153 AC1): the walking skeleton from the browser. Sign in, create a trip with the
 // wizard, generate with MOCK and see the saved itinerary that API-24 returns. Needs the local
 // stack, `make seed` (Sampleton) and the API with AI_PROVIDER=MOCK.
+
+// UPDATE_SCREENSHOTS=1 refreshes the evidence screenshots of the IMP-309 day-view part record.
+const SCREENSHOT_DIR = path.resolve(
+  __dirname,
+  "../../../docs/progress/parts/IMP-309-day-view-screens",
+);
 
 type Day = components["schemas"]["Day"];
 
@@ -111,6 +119,27 @@ test(
     // The plan is saved, not held by the page.
     await page.reload();
     await expectSavedDays(page, days);
+
+    // IMP-309: no horizontal scroll at the card's widths, and the evidence screenshots.
+    for (const width of [375, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(
+        page.getByRole("heading", { level: 3 }).first(),
+      ).toBeVisible();
+      expect(
+        await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth <=
+            document.documentElement.clientWidth,
+        ),
+      ).toBe(true);
+      if (process.env.UPDATE_SCREENSHOTS === "1") {
+        await page.screenshot({
+          path: path.join(SCREENSHOT_DIR, `itinerary-${width}.png`),
+          fullPage: true,
+        });
+      }
+    }
 
     expect(
       [...hosts].filter((host) => host.includes("generativelanguage")),
