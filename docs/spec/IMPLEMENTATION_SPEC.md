@@ -144,7 +144,7 @@ Unresolved decisions do not block implementation: each has a Provisional default
 | OD-06 | Token verification mode | Support JWKS and HS256 (IMD-04) | Before Sprint 2 |
 | OD-07 | One- or two-week sprints | Eight one-week sprints; pairs map to two-week sprints if required | End of week 1 |
 | OD-10 | Retention of generation records | 90 days (`retention_until`), purge job daily | Before Sprint 3 |
-| OD-14 | Gemini API style (Interactions or generateContent) | Decided by the week 2 spike inside IMP-301; hidden behind one adapter function | Before Sprint 3 |
+| OD-14 | Gemini API style (Interactions or generateContent) | **Resolved by IMD-133 (7 November 2026):** Interactions API; hidden behind one adapter function | Before Sprint 3 |
 | OD-15 | Separate Supabase projects for staging and production | Two projects, production created in week 7 for IMP-801 (whether the free plan allows two active projects is Unverified; if not, the staging project becomes production after SG-7) | End of week 1 |
 | AS-01 | About 12 focused hours per member per week | The team plan v2 gives everyone 42 or 43 points (about 128 hours, roughly 16 a week) with peaks of 9 to 11 points in every sprint from 1 to 7 (§14.3); extensions are cut first and the checkpoint at IMP-499 rebalances the load | Measured weeks 1 and 2 |
 
@@ -1198,6 +1198,7 @@ Variable names are fixed in `.env.example` below; each environment differs only 
 | `SUPABASE_URL`, `SUPABASE_JWKS_URL`, `SUPABASE_JWT_SECRET` | Token verification (IMD-04) | Local stack URL and JWT secret | Secret; JWKS or secret per OD-06 |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_BASE_URL` | Web app (public by design) | Local stack, `http://localhost:8000/api/v1` | Only these and the switch list may reach the browser |
 | `ORS_API_KEY`, `ORS_TIMEOUT_S` | Routing client | Empty (distance estimate), `8` | Secret key |
+| `ORS_DAILY_ALLOWANCE` | Routing client daily call counter (WARNING at 80 percent, IMD-132) | `2000` | Not secret; the key's daily allowance |
 | `AI_PROVIDER`, `PROMPT_TEMPLATE_VERSION`, `MOCK_PROVIDER_SCENARIO` | Provider factory, prompt registry, mock (IMD-27) | `MOCK`, `v1`, `ok` | `GEMINI` in production (MOCK refused); scenarios ignored in production |
 | `GEMINI_API_KEY`, `GEMINI_MODEL_ID`, `GEMINI_TIMEOUT_S`, `GEMINI_MAX_RETRIES` | Gemini adapter | Empty, empty, `35`, `1` | Secret key; start-up refuses empty or `<` values and timeout × (retries + 1) > 70 |
 | `AI_TEMPERATURE`, `AI_MAX_INPUT_TOKENS`, `AI_MAX_OUTPUT_TOKENS`, `AI_DAILY_GENERATIONS_PER_USER`, `AI_DAILY_GENERATIONS_GLOBAL` | Limits and caps | `0.4`, empty, empty, `10`, `200` | Caps and token limits required (NFR-037) |
@@ -1415,7 +1416,7 @@ Indexes in Appendix A serve these queries: the dashboard (`ix_trips_user`), the 
 
 | File (per destination directory) | Columns or keys | Rules |
 | --- | --- | --- |
-| `destination.json` | `slug`, `name`, `region`, `country_code`, `timezone` (IANA), `currency`, `center` {`lat`, `lon`}, `bbox` {`min_lat`, `max_lat`, `min_lon`, `max_lon`}, `is_sample` | Upsert by `slug`. The time zone is checked with `zoneinfo`. |
+| `destination.json` | `slug`, `name`, `region`, `country_code`, `timezone` (IANA), `currency`, `center` {`lat`, `lon`}, `bbox` {`min_lat`, `max_lat`, `min_lon`, `max_lon`}, `is_sample`, optional `min_usable_places` (absent means no minimum, IMD-129) | Upsert by `slug`. The time zone is checked with `zoneinfo`. |
 | `sources.csv` | `name`, `source_type`, `licence`, `attribution_text`, `url`, `retrieved_on` (YYYY-MM-DD), `notes` | Upsert by `name`. Every place must cite one of these names. |
 | `places.csv` | `external_ref` (required), `source_name`, `name`, `category`, `tags` (`;`-separated), `description`, `address`, `lat`, `lon`, `typical_duration_min`, `price_min`, `price_max`, `price_currency`, `price_label`, `hours_label`, `hours_checked_on`, `verification_status`, `step_free`, `child_friendly`, `indoor` (`true`, `false` or empty for unknown), `website_url`, `booking_url` | Upsert by (`source_id`, `external_ref`). Places of the same source that are missing from the file are set `is_active = false`, never deleted. |
 | `opening_hours.csv` | `external_ref`, `weekday` (1 = Monday), `is_closed`, `open_time` (HH:MM), `close_time`, `closes_next_day` | Replaced as a set per place. A place without rows gets `hours_label = unavailable`. |
@@ -1655,7 +1656,10 @@ Field tables list response fields; input models (`…In`) are the writable subse
 | step_free_required | bool | | `step_free_required` |
 | notes | str or null | ≤ 1,000 chars; control characters removed; sent to the model only as quoted data (FR-026 AC2) | `notes` |
 | must_visit_place_ids | uuid[] | ≤ 10 (Provisional); active places of the trip's destination, else 422 | `trip_places` |
+| must_visit_places (out only) | object[] | `{id, name}`, ordered by name; a place that later becomes inactive keeps its ID in `must_visit_place_ids` and has no entry here (IMD-129) | `trip_places`, `places` |
 | effects (out only) | object[] | `{field, effect: filter \| rank \| note}` per field (FR-009 AC3) | mapping table in `trips/preference_mapping.py` (version `pm-1`, IMD-29) |
+
+Duplicates in `interests` or `must_visit_place_ids` answer 422; they are not removed silently (IMD-129).
 
 **PlaceSummary / PlaceOut** (`places`, `place_opening_hours`, `data_sources`)
 
@@ -1674,6 +1678,8 @@ Field tables list response fields; input models (`…In`) are the writable subse
 | hours_checked_on (detail) | date or null | | same |
 | source (detail) | object | `{name, source_type, licence, attribution_text, url, retrieved_on}` | `data_sources` |
 | saved, must_visit (when `trip_id` given) | bool | relation on that trip | `trip_places` |
+
+The API-16 `category` filter accepts only the offered categories and answers 422 for `stay`; `PlaceSummary.category` uses the full vocabulary (IMD-129).
 
 **GenerationOut** (`ai_generations`)
 
@@ -2219,14 +2225,14 @@ Create a trip (API-07):
 POST /api/v1/trips
 { "title": "Weekend in Sampleton", "destination_id": "9d1b0c5e-2f47-4a8e-9b1a-0c3d5e7f9a21",
   "start_date": "2026-12-04", "end_date": "2026-12-06", "adults": 2, "children": 1,
-  "group_needs": ["children"], "budget": { "amount": "15000.00", "currency": "INR" } }
+  "group_needs": ["children"], "budget": { "amount": "15000.00", "currency": "GBP" } }
 
 201 Created
 { "id": "3b1f6c2e-0a47-4d52-9a61-5e7d0c8f2a10", "title": "Weekend in Sampleton", "status": "draft",
   "destination": { "id": "9d1b0c5e-2f47-4a8e-9b1a-0c3d5e7f9a21", "name": "Sampleton (SAMPLE)",
-                   "timezone": "Asia/Kolkata", "currency": "INR" },
+                   "timezone": "Asia/Kolkata", "currency": "GBP" },
   "start_date": "2026-12-04", "end_date": "2026-12-06", "num_days": 3, "adults": 2, "children": 1,
-  "group_needs": ["children"], "budget": { "amount": "15000.00", "currency": "INR" },
+  "group_needs": ["children"], "budget": { "amount": "15000.00", "currency": "GBP" },
   "plan_revision": 0, "plan_stale": false, "has_itinerary": false,
   "created_at": "2026-10-25T09:12:03Z", "updated_at": "2026-10-25T09:12:03Z" }
 
@@ -2671,7 +2677,8 @@ Every endpoint the web app calls is an MVP endpoint of §6 or an EXT endpoint (A
 
 | Data on screen | Source field | Shown as |
 | --- | --- | --- |
-| Price or hours with label `curated` | `price_label`, `hours_label`, `hours_checked_on` | "Curated, checked on <date>" |
+| Price with label `curated` | `price_label` | "Curated", without a date (IMD-130) |
+| Hours with label `curated` | `hours_label`, `hours_checked_on` | "Curated, checked on <date>" |
 | Price or hours with label `estimate` | same | "Estimate" |
 | Price or hours with label `unavailable` | same | "Unavailable" (never a guessed value) |
 | Travel time from the routing service | `travel_source = routing_api` | "Estimated travel time from a routing service" |
@@ -2896,7 +2903,7 @@ After the checks the app calls `health_check()` once and logs `get_model_metadat
 | `summary` | optional str ≤ 500 |
 | `assumptions[]` | required, 0 to 20 strings |
 
-`duration_min` is 15 to 480 to match the `itinerary_items` CHECK (the blueprint's 5 to 720 is narrowed; IMD proposal). The **wire schema** sent to Gemini is generated from the same model with `$schema`, `$id` and `pattern` removed and the HH:MM rule moved into `description`; `maxLength` is not enforced by Gemini and is enforced by Pydantic (Verified (2026-10-25), blueprint Appendix C.2). The key order is fixed (days, summary, assumptions) because the model follows it.
+`duration_min` is 15 to 480 to match the `itinerary_items` CHECK (the blueprint's 5 to 720 is narrowed; IMD proposal). The **wire schema** sent to Gemini is generated from the same model with `$schema`, `$id`, `pattern`, `format` and every numeric, length and count keyword removed, because Gemini refuses the full schema with HTTP 400 ("too many states for serving"); each removed limit, including the HH:MM rule, is stated in `description` and enforced by Pydantic (IMD-136). The key order is fixed (days, summary, assumptions) because the model follows it.
 
 ```json
 {
@@ -6992,8 +6999,8 @@ The register lists the blueprint decisions that remain binding (PD, AD), the imp
 | OD-08 | Product owner and Scrum master | Integration lead (Kirtan) acts as product owner until decided | Blueprint OD-08 | Team, end of week 1 |
 | OD-09 | Arrival and departure travel days | Not modelled in the MVP | Blueprint OD-09 | Manya, before Sprint 3 |
 | OD-10 | Retention of generation records and logs | 90 days (retention_until), purge daily (IMD-31) | Blueprint OD-10 | Kirtan, Nidhi, before Sprint 3 |
-| OD-11 | Privacy notice wording and any institutional review | Draft wording in PrivacyNotice; reviewed before week 4 user testing | Blueprint OD-11 | Supervisor, Junaid |
-| OD-14 | Gemini API style | Decided by the spike in IMP-301; hidden behind one adapter function | Blueprint OD-14 | Nidhi, Manya, before Sprint 3 |
+| OD-11 | Privacy notice wording and any institutional review | **Resolved by IMD-125 (7 November 2026):** the wording in PrivacyNotice stands | Blueprint OD-11 | Supervisor, Junaid |
+| OD-14 | Gemini API style | **Resolved by IMD-133 (7 November 2026):** Interactions API; hidden behind one adapter function | Blueprint OD-14 | Nidhi, Manya, before Sprint 3 |
 | OD-15 | Separate Supabase projects for staging and production | Two projects (production created for IMP-801); whether the free plan allows two active projects is Unverified | Blueprint OD-15 | Kirtan, end of week 1 |
 | OD-16 | Gemini terms for a student demo and an age gate | Privacy notice before the first generation; decision recorded before the public demo | Blueprint OD-16 | Nidhi with supervisor, before Sprint 7 |
 | OD-13 | Stage 2 go or no-go | Not decided in weeks 1 to 8; readiness package only (IMP-706) | Blueprint OD-13 | Team with supervisor, after the MVP |
