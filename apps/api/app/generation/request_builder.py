@@ -1,9 +1,10 @@
-"""Build the gr-1 GenerationRequest of a trip (§8.6; FR-026, IMP-303).
+"""Build the GenerationRequest of a trip (§8.6, A1 §6.8; FR-026, IMP-303, IMP-316).
 
 ``build_generation_request`` holds the allow-list: only the fields named here reach the provider.
-Never sent: e-mail, name, user ID, trip title or place descriptions (§8.6). ``build`` reads the
-rows and takes its shortlist from ``retrieval.ranked_shortlist`` (IMP-305). ``quote_notes`` is the
-only way notes enter the request.
+Never sent: e-mail, name, user ID or trip title. A place description reaches the model only inside
+a place passage (A1 §6.8). ``build`` reads the rows, takes its shortlist from
+``retrieval.ranked_shortlist`` (IMP-305), and ``ground`` adds the passages when the template's
+meta.json names gr-2. ``quote_notes`` is the only way notes enter the request.
 """
 
 import re
@@ -12,23 +13,32 @@ from collections.abc import Callable, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Final
+from typing import Final, Literal
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.prompts import registry
 from app.ai.providers.base import ModelProvider
 from app.core.logging import redact_text
 from app.db.models import PlaceOpeningHours
 from app.generation import records, repository, retrieval
 from app.places.schemas import PlaceSummary
+from app.rag.constants import RAG_MAX_PASSAGES, RAG_TOP_K_PLACE
+from app.rag.mmr import RetrievedChunk
 from app.rag.service import RetrievalResult
 from app.schemas.ai import (
+    GROUNDED_INPUT_SCHEMA_VERSION,
+    MAX_PASSAGE_TEXT_CHARS,
+    MAX_PASSAGE_TITLE_CHARS,
     Budget,
+    ContextPassage,
     GenerationRequest,
+    GroundedGenerationRequest,
     Limits,
     LockedItem,
     Preferences,
+    RetrievalInfo,
     Scope,
     ShortlistPlace,
     Suitability,
@@ -117,7 +127,7 @@ def build_generation_request(
     shortlist: Sequence[ShortlistPlace],
     settings: RequestSettings,
 ) -> GenerationRequest:
-    """The gr-1 request; ``shortlist`` is in rank order, best first. Nothing here reads a row."""
+    """The gr-1 fields; ``shortlist`` is in rank order, best first. Nothing here reads a row."""
     max_items, max_minutes = preference_mapping.PACE_LIMITS[
         preference_mapping.Pace(preferences.pace)
     ]
@@ -164,6 +174,48 @@ def build_generation_request(
     )
 
 
+def _passage(chunk: RetrievedChunk, kind: Literal["place", "guide"]) -> ContextPassage:
+    return ContextPassage(
+        passage_id=chunk.chunk_id,
+        kind=kind,
+        title=chunk.title[:MAX_PASSAGE_TITLE_CHARS],
+        text=chunk.content[:MAX_PASSAGE_TEXT_CHARS],
+        place_id=chunk.place_id,
+    )
+
+
+def ground(
+    request: GenerationRequest, retrieved: RetrievalResult | None
+) -> GroundedGenerationRequest:
+    """gr-2: guide passages in MMR order, then the best chunks of the top places (A1 §6.7, §6.8)."""
+    guides: Sequence[RetrievedChunk] = retrieved.guide_passages if retrieved else ()
+    best = retrieved.place_best_chunk if retrieved else {}
+    top = [place.place_id for place in request.shortlist[:RAG_TOP_K_PLACE]]
+    places = sorted(
+        (best[place_id] for place_id in top if place_id in best),
+        key=lambda chunk: (-chunk.similarity, chunk.chunk_id),
+    )
+    return GroundedGenerationRequest.model_validate(
+        {
+            **request.model_dump(exclude={"input_schema_version"}),
+            "context_passages": [
+                *(_passage(chunk, "guide") for chunk in guides),
+                *(_passage(chunk, "place") for chunk in places),
+            ][:RAG_MAX_PASSAGES],
+            "retrieval": RetrievalInfo(
+                mode=retrieved.mode if retrieved else "lexical_fallback",
+                embedding_model_id=retrieved.embedding_model_id if retrieved else None,
+            ),
+        }
+    )
+
+
+def passage_similarities(retrieved: RetrievalResult) -> dict[UUID, float]:
+    """Passage ID to similarity, the order in which the size limit drops passages (A1 §6.8)."""
+    chunks = (*retrieved.guide_passages, *retrieved.place_best_chunk.values())
+    return {chunk.chunk_id: chunk.similarity for chunk in chunks}
+
+
 def generation_request_hash(request: GenerationRequest) -> str:
     """SHA-256 of the canonical request. ``request_id`` is fresh per call and is left out, so the
     same trip state always gives the same hash."""
@@ -206,7 +258,7 @@ async def build(
     )
     dates = (trip.start_date + timedelta(days=offset) for offset in range(trip.num_days))
     weekdays = list(dict.fromkeys(day.isoweekday() for day in dates))
-    return build_generation_request(
+    request = build_generation_request(
         trip,
         prefs,
         prefs.must_visit_place_ids,
@@ -223,3 +275,6 @@ async def build(
             contingency_pct=await repository.contingency_pct(session, trip_id),
         ),
     )
+    meta = registry.load(prompt_template_id, prompt_version).meta
+    grounded = meta.input_schema_version == GROUNDED_INPUT_SCHEMA_VERSION
+    return ground(request, retrieved) if grounded else request

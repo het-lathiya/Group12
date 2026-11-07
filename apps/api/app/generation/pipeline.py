@@ -7,7 +7,8 @@ the plan and complete the record in one transaction (step 11). Each status chang
 transaction, and none stays open across the provider call (§5.8). Step 8 is
 ``app.validation.output_check`` (IMP-306); step 9 is ``recalculate`` (IMP-308). Output
 that cannot be saved goes through ``end_invalid_output``, where IMP-402 adds the fallback; repair is
-IMP-502. Trip completeness (step 1) is checked by API-22 before the row exists.
+IMP-502, which sends the same request and so the same passages. Trip completeness (step 1) is
+checked by API-22 before the row exists.
 
 Never logged: the request built for the provider, its raw output, notes or prompt text (FR-125).
 """
@@ -135,11 +136,18 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
         trip_id, user_id = row.trip_id, row.user_id
         prompt_template_id, prompt_version = row.prompt_template_id, row.prompt_version
 
-    # shortcut: kept in this function only; IMP-316 writes mode, model and ms to the record.
     retrieved = await request_builder.retrieve(trip_id, user_id, provider, sessions)
     logger.info(
         "generation %s retrieval %s in %d ms", generation_id, retrieved.mode, retrieved.retrieval_ms
     )
+    async with sessions() as session:
+        await repository.record_retrieval(
+            session,
+            generation_id,
+            mode=retrieved.mode,
+            embedding_model_id=retrieved.embedding_model_id,
+            retrieval_ms=retrieved.retrieval_ms,
+        )
 
     async with sessions() as session:
         request = await request_builder.build(
@@ -152,14 +160,25 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
         )
 
     try:
+        passages_built = len(request.passage_ids())
         request, truncated_count = limits.enforce_input_limit(
-            request, get_settings().ai_max_input_tokens
+            request,
+            get_settings().ai_max_input_tokens,
+            request_builder.passage_similarities(retrieved),
         )
+        passages_sent = len(request.passage_ids())
         # PD-IMP-301-2: not on the protocol until ProviderResult has the field; MOCK sends none.
         sent = getattr(provider, "generation_settings", {})
         async with sessions() as session:
             await repository.record_settings(
-                session, generation_id, {**sent, "truncated_count": truncated_count}
+                session,
+                generation_id,
+                {
+                    **sent,
+                    "truncated_count": truncated_count,
+                    "passages_sent": passages_sent,
+                    "passages_dropped": passages_built - passages_sent,
+                },
             )
         result = await provider.generate_itinerary(request)
     except ProviderInvalidOutput as exc:
@@ -204,7 +223,9 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
         )
         return
 
-    checked = output_check.check_output(answer, {str(id_) for id_ in active}, request.trip.num_days)
+    checked = output_check.check_output(
+        answer, {str(id_) for id_ in active}, request.trip.num_days, request.passage_ids()
+    )
     validation_summary = output_check.summary(checked)
     if not checked.usable:
         await end_invalid_output(

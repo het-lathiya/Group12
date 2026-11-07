@@ -361,6 +361,21 @@ async def test_tc_452_tc_459_the_generation_completes_and_retrieval_is_timed(
     assert f"retrieval {expected} in " in caplog.text
     assert NOTE not in caplog.text
 
+    # TC-459, FR-138 AC3: the record and API-23 name the mode, the model and the time.
+    assert (row.input_schema_version, row.output_schema_version) == ("gr-2", "io-2")
+    assert row.retrieval_mode == expected
+    assert row.embedding_model_id == "mock-embed-v1"
+    assert row.retrieval_ms is not None
+    assert row.retrieval_ms >= 0
+    sent = row.generation_settings["passages_sent"]
+    assert sent == 0 if embed_error else 0 < sent <= 12
+    assert row.generation_settings["passages_dropped"] == 0
+    assert row.validation_summary["unknown_source_ids"] == 0
+    read = await api_client.get(f"/api/v1/generations/{row.id}", headers=auth_user.headers)
+    body = read.json()
+    assert (body["retrieval_mode"], body["embedding_model_id"]) == (expected, "mock-embed-v1")
+    assert body["retrieval_ms"] == row.retrieval_ms
+
 
 @pytest.mark.asyncio
 async def test_tc_459_retrieval_ms_is_set(

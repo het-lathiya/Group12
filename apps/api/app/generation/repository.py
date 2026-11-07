@@ -27,7 +27,7 @@ from app.generation.records import (
     GenerationStatus,
     TokenUsage,
 )
-from app.schemas.ai import ProviderName
+from app.schemas.ai import INPUT_SCHEMA_VERSION, OUTPUT_SCHEMA_VERSION, ProviderName
 
 
 async def create_queued(
@@ -44,6 +44,8 @@ async def create_queued(
     request_hash: str,
     generation_settings: Mapping[str, Any] | None = None,
     scope_day_number: int | None = None,
+    input_schema_version: str = INPUT_SCHEMA_VERSION,
+    output_schema_version: str = OUTPUT_SCHEMA_VERSION,
 ) -> UUID:
     """Step 0 (§8.16): insert a queued generation and return its id.
 
@@ -59,6 +61,8 @@ async def create_queued(
         model_id=model_id,
         prompt_template_id=prompt_template_id,
         prompt_version=prompt_version,
+        input_schema_version=input_schema_version,
+        output_schema_version=output_schema_version,
         mapping_version=mapping_version,
         generation_settings=records.clean_generation_settings(generation_settings),
         scope=scope,
@@ -118,6 +122,22 @@ async def record_settings(
     """The settings actually sent (§8.4), known only once the request is built."""
     row = await _locked(session, generation_id)
     row.generation_settings = records.clean_generation_settings(settings)
+    await session.flush()
+
+
+async def record_retrieval(
+    session: AsyncSession,
+    generation_id: UUID,
+    *,
+    mode: str,
+    embedding_model_id: str | None,
+    retrieval_ms: int,
+) -> None:
+    """How step 3 went (A1 §6.12); written at once, so a generation that later fails has it too."""
+    row = await _locked(session, generation_id)
+    row.retrieval_mode = mode
+    row.embedding_model_id = embedding_model_id
+    row.retrieval_ms = retrieval_ms
     await session.flush()
 
 

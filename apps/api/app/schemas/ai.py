@@ -1,10 +1,12 @@
 """Shared AI contracts (specification §8.3, §8.6, §8.7; IMD-06).
 
 ``GenerationRequest`` (gr-1) is what the backend sends a provider and ``ItineraryOutput`` (io-1) is
-the only answer it accepts. Both are exported to ``contracts/ai/*.schema.json`` by ``make openapi``
-(``app.schemas.ai_export``). The model only chooses shortlisted place IDs, their order and times
-and short notes (§8.1): io-1 has no field for prices, opening hours, travel times or totals, and
-every model rejects fields it does not declare.
+the only answer it accepts. ``GroundedGenerationRequest`` (gr-2) and ``GroundedItineraryOutput``
+(io-2) add retrieved passages and citations beside them (Amendment A1 §6.8); the active template's
+meta.json selects the pair. All four are exported to ``contracts/ai/*.schema.json`` by
+``make openapi`` (``app.schemas.ai_export``). The model only chooses shortlisted place IDs, their
+order and times and short notes (§8.1): no output has a field for prices, opening hours, travel
+times or totals, and every model rejects fields it does not declare.
 
 ``ProviderResult``, ``UsageMetadata``, ``HealthStatus`` and ``ModelMetadata`` are the provider
 result types of §8.3; ``ModificationRequest`` and ``EditOperations`` are R2 placeholders that only
@@ -19,6 +21,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validat
 
 INPUT_SCHEMA_VERSION: Final = "gr-1"
 OUTPUT_SCHEMA_VERSION: Final = "io-1"
+GROUNDED_INPUT_SCHEMA_VERSION: Final = "gr-2"
+GROUNDED_OUTPUT_SCHEMA_VERSION: Final = "io-2"
 
 # Limits of §8.6 and §8.7; the item limits match the itinerary_items CHECKs of migration 0004.
 MAX_TRIP_DAYS = 14
@@ -31,6 +35,11 @@ MAX_ASSUMPTIONS = 20
 EMBEDDING_DIMENSIONS = 768
 MAX_EMBED_TEXTS = 32
 MAX_EMBED_TEXT_CHARS = 2000
+# Amendment A1 §6.8.
+MAX_CONTEXT_PASSAGES = 12
+MAX_PASSAGE_TITLE_CHARS = 120
+MAX_PASSAGE_TEXT_CHARS = 1200
+MAX_SOURCE_IDS = 3
 
 HHMM = Annotated[
     str,
@@ -238,6 +247,40 @@ class GenerationRequest(StrictModel):
         """The closed list of place IDs an answer may use."""
         return {str(place.place_id) for place in self.shortlist}
 
+    def passage_ids(self) -> set[str]:
+        """The closed list of IDs an answer may cite; gr-1 sends no passages."""
+        return set()
+
+
+# ---------- gr-2: GroundedGenerationRequest (A1 §6.8) ----------
+
+
+class ContextPassage(StrictModel):
+    """A whole retrieved chunk, sent as quoted reference data, never as an instruction."""
+
+    passage_id: UUID
+    kind: Literal["place", "guide"]
+    title: str = Field(max_length=MAX_PASSAGE_TITLE_CHARS)
+    text: str = Field(max_length=MAX_PASSAGE_TEXT_CHARS)
+    place_id: UUID | None
+
+
+class RetrievalInfo(StrictModel):
+    mode: Literal["vector", "lexical_fallback"]
+    embedding_model_id: str | None
+
+
+class GroundedGenerationRequest(GenerationRequest):
+    """gr-2: gr-1 plus the retrieved passages, guide passages first (A1 §6.8)."""
+
+    # Each schema version pins its own literal, so a gr-1 file can never validate as gr-2.
+    input_schema_version: Literal["gr-2"] = GROUNDED_INPUT_SCHEMA_VERSION  # type: ignore[assignment]
+    context_passages: list[ContextPassage] = Field(max_length=MAX_CONTEXT_PASSAGES)
+    retrieval: RetrievalInfo
+
+    def passage_ids(self) -> set[str]:
+        return {str(passage.passage_id) for passage in self.context_passages}
+
 
 # ---------- io-1: ItineraryOutput (§8.7) ----------
 # Field order is part of the contract: the model follows it (days, summary, assumptions).
@@ -294,6 +337,42 @@ class ItineraryOutput(StrictModel):
         """
         allowed = request.shortlist_ids()
         return [place_id for place_id in self.place_ids() if place_id not in allowed]
+
+
+# ---------- io-2: GroundedItineraryOutput (A1 §6.8) ----------
+
+
+class GroundedItemOutput(ItineraryItemOutput):
+    # maxItems tells the model the limit but is not validated: an extra citation must never fail
+    # the answer, so ``output_check`` cuts the list instead (A1 §6.10).
+    source_ids: list[str] = Field(
+        default_factory=list,
+        description="passage_id values of the request this note relies on",
+        json_schema_extra={"maxItems": MAX_SOURCE_IDS},
+    )
+
+
+class GroundedDayOutput(ItineraryDayOutput):
+    # Narrows the field to the io-2 item; every other rule of io-1 stays.
+    items: list[GroundedItemOutput] = Field(min_length=1, max_length=MAX_ITEMS_PER_DAY)  # type: ignore[assignment]
+
+
+class GroundedItineraryOutput(ItineraryOutput):
+    """io-2: io-1 plus the citations of each item. Field order stays as in io-1."""
+
+    # Narrows the field to the io-2 day; every other rule of io-1 stays.
+    days: list[GroundedDayOutput] = Field(min_length=1, max_length=MAX_TRIP_DAYS)  # type: ignore[assignment]
+
+
+# The pairs meta.json may name (A1 §6.8): v1 uses gr-1 and io-1, v2 uses gr-2 and io-2.
+OUTPUT_FOR_INPUT: Final[dict[str, str]] = {
+    INPUT_SCHEMA_VERSION: OUTPUT_SCHEMA_VERSION,
+    GROUNDED_INPUT_SCHEMA_VERSION: GROUNDED_OUTPUT_SCHEMA_VERSION,
+}
+OUTPUT_MODELS: Final[dict[str, type[ItineraryOutput]]] = {
+    OUTPUT_SCHEMA_VERSION: ItineraryOutput,
+    GROUNDED_OUTPUT_SCHEMA_VERSION: GroundedItineraryOutput,
+}
 
 
 # ---------- Provider result types (§8.3) ----------

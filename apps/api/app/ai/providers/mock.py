@@ -8,7 +8,8 @@ client or vendor SDK. ``generate_itinerary`` builds io-1 only from the gr-1 requ
   per day, filling the first days first;
 - the first item of a day starts at 09:00 and each next one at the previous start +
   ``typical_duration_min`` + 30 minutes; ``duration_min`` is the candidate's typical duration;
-- themes and notes are written into io-1's model-text fields and start with ``SAMPLE``.
+- themes and notes are written into io-1's model-text fields and start with ``SAMPLE``;
+- for a gr-2 request the answer is io-2 and an item cites the place passage of its place, if any.
 
 The same request gives an identical output. Scenarios (IMD-27) come from the constructor in tests
 or from ``MOCK_PROVIDER_SCENARIO`` (validated by ``app.core.config``); they are honoured when
@@ -44,6 +45,8 @@ from app.schemas.ai import (
     EmbeddingPurpose,
     EmbeddingResult,
     GenerationRequest,
+    GroundedGenerationRequest,
+    GroundedItineraryOutput,
     HealthStatus,
     ItineraryDayOutput,
     ItineraryItemOutput,
@@ -155,6 +158,21 @@ def _unknown_place(request: GenerationRequest) -> ItineraryOutput:
     return output
 
 
+def _cited(request: GroundedGenerationRequest, output: ItineraryOutput) -> ItineraryOutput:
+    """io-2: each item cites the place passage of its own place, which is deterministic."""
+    passages = {
+        str(passage.place_id): str(passage.passage_id)
+        for passage in request.context_passages
+        if passage.kind == "place"
+    }
+    answer = output.model_dump()
+    for day in answer["days"]:
+        for item in day["items"]:
+            passage_id = passages.get(item["place_id"])
+            item["source_ids"] = [passage_id] if passage_id else []
+    return GroundedItineraryOutput.model_validate(answer)
+
+
 def hashed_embedding(text: str) -> list[float]:
     """A1 §6.5: signed token hashes, summed and normalised; nothing to hash gives e0."""
     vector = [0.0] * EMBEDDING_DIMENSIONS
@@ -224,6 +242,8 @@ class MockProvider:
                 output = _unknown_place(request)
             case _:
                 output = _output(_build_days(request, list(request.shortlist)))
+        if isinstance(request, GroundedGenerationRequest):
+            output = _cited(request, output)
         return ProviderResult[ItineraryOutput](
             output=output,
             usage=UsageMetadata(),  # the mock reports no tokens: every count stays null

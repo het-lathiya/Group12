@@ -14,9 +14,13 @@ from typing import Any
 from pydantic import BaseModel
 
 from app.schemas.ai import (
+    GROUNDED_INPUT_SCHEMA_VERSION,
+    GROUNDED_OUTPUT_SCHEMA_VERSION,
     INPUT_SCHEMA_VERSION,
     OUTPUT_SCHEMA_VERSION,
     GenerationRequest,
+    GroundedGenerationRequest,
+    GroundedItineraryOutput,
     ItineraryOutput,
 )
 
@@ -25,6 +29,8 @@ JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 AI_SCHEMAS: dict[str, type[BaseModel]] = {
     INPUT_SCHEMA_VERSION: GenerationRequest,
     OUTPUT_SCHEMA_VERSION: ItineraryOutput,
+    GROUNDED_INPUT_SCHEMA_VERSION: GroundedGenerationRequest,
+    GROUNDED_OUTPUT_SCHEMA_VERSION: GroundedItineraryOutput,
 }
 
 

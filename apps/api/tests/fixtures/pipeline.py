@@ -45,6 +45,7 @@ class Journal:
     def __init__(self, monkeypatch: pytest.MonkeyPatch, request: GenerationRequest) -> None:
         self.steps: list[str] = []
         self.settings: dict[str, Any] = {}
+        self.retrieval: dict[str, Any] = {}
         self.saved: list[PlannedDay] | None = None
         self.completed: dict[str, Any] = {}
         self.failed: str | None = None
@@ -79,6 +80,10 @@ class Journal:
             self.steps.append("settings")
             self.settings = settings
 
+        async def record_retrieval(session: object, generation_id: UUID, **kwargs: Any) -> None:
+            self.steps.append("retrieval")
+            self.retrieval = kwargs
+
         async def mark_validating(session: object, generation_id: UUID) -> None:
             self.steps.append("validating")
 
@@ -103,6 +108,7 @@ class Journal:
         repository = pipeline.repository
         monkeypatch.setattr(repository, "mark_running", mark_running)
         monkeypatch.setattr(repository, "record_settings", record_settings)
+        monkeypatch.setattr(repository, "record_retrieval", record_retrieval)
         monkeypatch.setattr(repository, "mark_validating", mark_validating)
         monkeypatch.setattr(repository, "complete", complete)
         monkeypatch.setattr(repository, "fail", fail)
