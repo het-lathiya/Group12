@@ -1,9 +1,9 @@
 # Gemini setup facts (IMP-301 step 1, OD-14)
 
-- Date of every reading: 6 November 2026
-- Status words: **Verified** means read on the official page in this run. **Unverified** means it could not be read or tested.
+- Date of every reading: 6 November 2026, except the dated entries under "Live result"
+- Status words: **Verified** means read on the official page in this run or, under "Live result", run live by the key holder on the date shown. **Unverified** means it could not be read or tested.
 - Pages: every `ai.google.dev/gemini-api/docs/...` address now answers with a 301 to `aistudio.google.com/docs/...`, so the sources below are the redirect targets, which are Google's own pages.
-- No key was used. No value in this file comes from a live call.
+- No key was used for the readings. Only the entries under "Live result" come from live calls.
 
 ## Decisions taken from these facts
 
@@ -11,6 +11,7 @@
 | --- | --- | --- |
 | API style (OD-14) | Interactions API through `client.aio.interactions.create`, as a proposal for the team to confirm | It is the default of §8.4, it is Generally Available, and `store=false` is documented. The latency condition of §8.4 is still Unverified |
 | Model | `GEMINI_MODEL_ID=gemini-3.5-flash-lite`, as a value for each environment | §8.4 asks for one specific stable ID. This candidate has the Stable badge; `gemini-3.8-flash` has the badge New |
+| Embedding model | `GEMINI_EMBEDDING_MODEL_ID=gemini-embedding-2`, as a value for each environment | Team choice, one of the two models allowed by Amendment A1 §6.5 |
 | Thinking | `minimal` for `gemini-3.5-flash-lite` and `gemini-3.6-flash`, otherwise `low` | The lowest level each model accepts |
 | Sampling | No `temperature`, `top_p` or `top_k` is sent | No page shows that the chosen model honours them |
 
@@ -58,6 +59,6 @@ These are observations of the installed package, not documented facts:
 
 ## Live result
 
-Live smoke (TC-029): pending — run by the key holder with make live-smoke; result recorded before SG-3
+Live smoke (TC-029): **Verified**, 7 November 2026. The key holder ran `make live-smoke` on branch `fix/IMP-301-wire-schema` at `589ded8`: `2 passed` (TC-029 generation and the live embedding test). That commit has the same tree as `4b10e3f` on `main`, so the result applies to the merged code.
 
 7 November 2026, key holder's local diagnostic (`gemini-3.5-flash-lite`, Interactions API): a plain call, `thinking_level` minimal and low, and a small `response_format` schema all succeed. The io-1 wire schema is refused with HTTP 400, code `invalid_request`, message "The specified schema produces a constraint that has too many states for serving". `make live-smoke`: 1 passed (embeddings), 1 failed (TC-029, HTTP 400). The wire schema now leaves out numeric, length, count and format limits (proposed D13, `docs/progress/parts/IMP-301-wire-schema.md`). TC-029 to be re-run by the key holder after this change.
