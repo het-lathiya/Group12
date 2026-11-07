@@ -1,3 +1,4 @@
+import { ItemSources } from "@/components/itinerary/ItemSources";
 import { AiBadge } from "@/components/labels/AiBadge";
 import { SourceBadge } from "@/components/labels/SourceBadge";
 import type { components } from "@/lib/api/schema";
@@ -101,6 +102,7 @@ export function ItineraryItemCard({ item }: { item: Item }) {
               {item.note_origin === "ai" && <AiBadge />}
             </p>
           )}
+          {item.note_origin === "ai" && <ItemSources sources={item.sources} />}
         </div>
       </div>
     </div>
