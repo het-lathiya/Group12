@@ -38,6 +38,7 @@ export const queryKeys = {
       ? (["itinerary", tripId] as const)
       : (["itinerary", tripId, versionId] as const),
   costs: (tripId: string) => ["costs", tripId] as const,
+  latestItinerary: () => ["latestItinerary"] as const,
   generation: (generationId: string) => ["generation", generationId] as const,
 } as const;
 
@@ -180,6 +181,25 @@ export function useTrip(tripId: string, enabled: boolean) {
       ),
     enabled,
     retry: retryUnless404,
+  });
+}
+
+/** API-08: one page of the caller's trips, newest first. */
+export function useTrips(limit = 20) {
+  return useQuery({
+    queryKey: queryKeys.trips({ limit }),
+    queryFn: async () =>
+      unwrap(
+        await api().GET("/api/v1/trips", { params: { query: { limit } } }),
+      ),
+  });
+}
+
+/** API-09: the trip whose itinerary changed last; `trip_id` is null when there is none. */
+export function useLatestItinerary() {
+  return useQuery({
+    queryKey: queryKeys.latestItinerary(),
+    queryFn: async () => unwrap(await api().GET("/api/v1/itineraries/latest")),
   });
 }
 

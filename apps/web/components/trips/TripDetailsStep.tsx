@@ -54,10 +54,13 @@ const DEFAULTS: TripDetailsValues = {
 export function TripDetailsStep({
   formId,
   locked,
+  initial,
   onSave,
 }: {
   formId: string;
   locked: boolean;
+  /** A saved draft's values, so a resumed draft shows what was entered (FR-013 AC2). */
+  initial?: TripDetailsValues;
   onSave: (values: TripDetailsValues) => Promise<ErrorDetail[]>;
 }) {
   const destinations = useDestinations();
@@ -70,7 +73,7 @@ export function TripDetailsStep({
     formState: { errors },
   } = useForm<TripDetailsValues>({
     resolver: zodResolver(tripDetailsSchema),
-    defaultValues: DEFAULTS,
+    defaultValues: initial ?? DEFAULTS,
   });
 
   // §9.3.2: the budget is in the destination's currency, which API-06 reports.

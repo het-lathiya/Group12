@@ -20,6 +20,7 @@ import {
   useCreateTrip,
   usePreferences,
   useSavePreferences,
+  useTrip,
 } from "@/lib/api/queries";
 import type { components } from "@/lib/api/schema";
 import {
@@ -72,15 +73,70 @@ function preferencesIn(
   };
 }
 
+type SaveStatus = "idle" | "saving" | "saved" | "failed";
+
+/** A saved trip's Details values, so the resumed form shows them (FR-013 AC2). */
+function detailsOf(trip: Schemas["TripOut"]): TripDetailsValues {
+  return {
+    destination_id: trip.destination_id,
+    title: trip.title,
+    start_date: trip.start_date,
+    end_date: trip.end_date,
+    adults: trip.adults,
+    children: trip.children,
+    group_needs: trip.group_needs,
+    budget: trip.budget ?? { amount: "", currency: trip.destination.currency },
+  };
+}
+
 /**
- * /trips/new (§7.5.4; FR-007 to FR-009): details, preferences, must-visit places and review. Each
- * step is saved before the next one opens: Details creates the draft trip (API-07); Preferences
- * and Must-visit places save with API-14, and the field effects are read back from API-15.
+ * /trips/new (§7.5.4; FR-007 to FR-009, FR-013): details, preferences, must-visit places and
+ * review. Each step is saved before the next one opens: Details creates the draft trip (API-07);
+ * Preferences and Must-visit places save with API-14, and the field effects are read back from
+ * API-15. With `draftId` (/trips/new?draft=<id>) a saved draft reopens at its first incomplete step.
  */
-export function TripWizard() {
-  const [step, setStep] = useState(0);
-  const [trip, setTrip] = useState<Schemas["TripOut"]>();
+export function TripWizard({ draftId }: { draftId?: string }) {
+  const draft = useTrip(draftId ?? "", draftId !== undefined);
+  if (draftId === undefined) return <Wizard />;
+  if (draft.isPending) {
+    return (
+      <div className="mx-auto w-full max-w-3xl">
+        <LoadingSkeleton shape="cards" count={1} label="Loading your draft" />
+      </div>
+    );
+  }
+  if (draft.isError) {
+    return (
+      <div className="mx-auto w-full max-w-3xl">
+        <ErrorState
+          title="Your draft could not be opened"
+          error={draft.error as ApiError}
+          onRetry={() => void draft.refetch()}
+        />
+      </div>
+    );
+  }
+  // A draft has no saved preferences yet (IMD-25), so Preferences is its first incomplete step.
+  return (
+    <Wizard
+      initialTrip={draft.data}
+      initialStep={draft.data.status === "draft" ? 1 : REVIEW}
+    />
+  );
+}
+
+function Wizard({
+  initialTrip,
+  initialStep = 0,
+}: {
+  initialTrip?: Schemas["TripOut"];
+  initialStep?: number;
+}) {
+  const [step, setStep] = useState(initialStep);
+  const [trip, setTrip] = useState(initialTrip);
   const [saveError, setSaveError] = useState<ErrorStateError | null>(null);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const lastSave = useRef<(() => Promise<void>) | null>(null);
   const createTrip = useCreateTrip();
   const savePreferences = useSavePreferences(trip?.id ?? "");
   const preferences = usePreferences(trip?.id);
@@ -105,21 +161,30 @@ export function TripWizard() {
   /** Runs one save; returns the 422 field details for the form, or none. */
   async function save(action: () => Promise<void>): Promise<ErrorDetail[]> {
     setSaveError(null);
+    setSaveStatus("saving");
+    lastSave.current = action;
     try {
       await action();
+      setSaveStatus("saved");
       return [];
     } catch (error) {
-      if (!(error instanceof ApiError)) {
-        setSaveError(OFFLINE);
-        return [];
-      }
-      if (error.code === "VALIDATION_ERROR" && error.details.length > 0) {
+      if (
+        error instanceof ApiError &&
+        error.code === "VALIDATION_ERROR" &&
+        error.details.length > 0
+      ) {
+        setSaveStatus("idle"); // the form shows the field errors
         return error.details;
       }
-      setSaveError(error);
+      setSaveStatus("failed");
+      setSaveError(error instanceof ApiError ? error : OFFLINE);
       return [];
     }
   }
+
+  const retrySave = () => {
+    if (lastSave.current) void save(lastSave.current);
+  };
 
   const saveDetails = (values: TripDetailsValues) =>
     save(async () => {
@@ -165,7 +230,9 @@ export function TripWizard() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-      <h1 className="font-heading text-2xl font-semibold">Plan a new trip</h1>
+      <h1 className="font-heading text-2xl font-semibold">
+        {initialTrip ? "Continue your trip" : "Plan a new trip"}
+      </h1>
       <div className="rounded-xl border bg-card p-4 text-card-foreground md:p-8">
         <TripStepper steps={STEPS.map((item) => item.name)} current={step} />
 
@@ -180,6 +247,26 @@ export function TripWizard() {
           <p className="mt-2 text-sm text-muted-foreground">
             {current.description}
           </p>
+          <p
+            role="status"
+            aria-live="polite"
+            className="mt-2 flex min-h-6 items-center gap-2 text-xs text-muted-foreground"
+          >
+            {saveStatus === "saving" && "Saving…"}
+            {saveStatus === "saved" && "Draft saved"}
+            {saveStatus === "failed" && (
+              <>
+                <span className="font-medium text-destructive">Not saved</span>
+                <button
+                  type="button"
+                  onClick={retrySave}
+                  className="rounded-sm font-medium text-primary underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                >
+                  Retry
+                </button>
+              </>
+            )}
+          </p>
         </div>
 
         <div className="mt-8">
@@ -187,6 +274,7 @@ export function TripWizard() {
             <TripDetailsStep
               formId={FORM_IDS[0]}
               locked={trip !== undefined}
+              initial={initialTrip && detailsOf(initialTrip)}
               onSave={saveDetails}
             />
           </div>

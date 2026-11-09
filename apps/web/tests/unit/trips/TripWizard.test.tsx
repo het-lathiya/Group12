@@ -44,6 +44,32 @@ const EFFECTS: Schemas["PreferenceEffect"][] = [
 
 type Call = { method: string; path: string; body: unknown };
 
+const DRAFT_TRIP: Schemas["TripOut"] = {
+  id: TRIP_ID,
+  title: "Weekend in Sampleton",
+  destination_id: DESTINATION_ID,
+  start_date: "2026-12-04",
+  end_date: "2026-12-06",
+  num_days: 3,
+  adults: 2,
+  children: 0,
+  group_needs: [],
+  budget: { amount: "1500.00", currency: "GBP" },
+  status: "draft",
+  plan_revision: 0,
+  plan_stale: false,
+  has_itinerary: false,
+  destination: {
+    id: DESTINATION_ID,
+    name: "Sampleton",
+    timezone: "Europe/London",
+    currency: "GBP",
+    is_sample: true,
+  },
+  created_at: "2026-11-03T10:00:00Z",
+  updated_at: "2026-11-03T10:00:00Z",
+};
+
 /** The SAMPLE API: answers API-06, 07, 14, 15 and 16; `fail` overrides one route's answer. */
 function fakeApi() {
   const calls: Call[] = [];
@@ -120,6 +146,7 @@ function fakeApi() {
         201,
       );
     }
+    if (key === `GET /api/v1/trips/${TRIP_ID}`) return json(DRAFT_TRIP);
     if (url.pathname === `/api/v1/trips/${TRIP_ID}/preferences`) {
       if (request.method === "PUT") {
         const saved = body as Schemas["PreferencesIn"];
@@ -170,13 +197,13 @@ beforeEach(() => {
   vi.stubGlobal("fetch", (request: Request) => server.handle(request));
 });
 
-function renderWizard() {
+function renderWizard(draftId?: string) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   render(
     <QueryClientProvider client={client}>
-      <TripWizard />
+      <TripWizard draftId={draftId} />
     </QueryClientProvider>,
   );
   return userEvent.setup();
@@ -427,6 +454,73 @@ describe("TripWizard (FR-007 to FR-009)", () => {
     expect(posts()[0]).toMatchObject({
       body: { group_needs: ["reduced_mobility"], budget: null },
     });
+  });
+});
+
+describe("TripWizard drafts (FR-013, IMP-410)", () => {
+  it("TC-085: autosave reports Saving… then Draft saved in a polite status line", async () => {
+    const user = renderWizard();
+    await fillDetails(user);
+    await user.click(screen.getByRole("button", { name: /next/i }));
+
+    await screen.findByRole("heading", { name: "Your preferences" });
+    const status = screen
+      .getAllByRole("status")
+      .find((node) => node.textContent === "Draft saved");
+    expect(status).toHaveAttribute("aria-live", "polite");
+    expect(server.calls.some((call) => call.method === "POST")).toBe(true);
+  });
+
+  it("a failed save shows Not saved with a Retry that saves again", async () => {
+    server.fail["POST /api/v1/trips"] = () =>
+      server.json(
+        { error: { code: "INTERNAL", message: "Boom.", request_id: "req-1" } },
+        500,
+      );
+    const user = renderWizard();
+    await fillDetails(user);
+    await user.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(await screen.findByText("Not saved")).toBeInTheDocument();
+    delete server.fail["POST /api/v1/trips"];
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("Draft saved")).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Your preferences" });
+  });
+
+  it("TC-086: a draft reopens at its first incomplete step with the form restored", async () => {
+    const user = renderWizard(TRIP_ID);
+
+    expect(
+      await screen.findByRole("heading", { name: "Your preferences" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Continue your trip" }),
+    ).toBeInTheDocument();
+    expect(server.calls.map((call) => `${call.method} ${call.path}`)).toEqual(
+      expect.arrayContaining([
+        `GET /api/v1/trips/${TRIP_ID}`,
+        `GET /api/v1/trips/${TRIP_ID}/preferences`,
+      ]),
+    );
+
+    await user.click(screen.getByRole("button", { name: /back/i }));
+    expect(screen.getByLabelText("Trip title")).toHaveValue(
+      "Weekend in Sampleton",
+    );
+    expect(screen.getByLabelText("Start date")).toHaveValue("2026-12-04");
+    expect(screen.getByLabelText("Adults")).toHaveValue(2);
+  });
+
+  it("a draft that cannot be found shows ErrorState, not the empty wizard", async () => {
+    renderWizard("00000000-0000-4000-8000-0000000000ff");
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Your draft could not be opened",
+      }),
+    ).toBeInTheDocument();
   });
 });
 
