@@ -1,4 +1,5 @@
-"""API-33 and the saved item costs (§6.6.6, §9.3.1; IMP-308: TC-140, FR-033, FR-071, IMD-05).
+"""API-33, API-34 and the saved item costs (§6.6.6, §9.3.1; IMP-308, IMP-411: TC-140, TC-223,
+TC-224, FR-033, FR-071, FR-072, IMD-05).
 
 TC-140 has no §13.3 row, so it follows the card's wording: stored totals equal the backend
 calculation even when the model output carries its own total. io-1 has no total or price field and
@@ -21,7 +22,7 @@ from fixtures.ai import SAMPLE_OUTPUT
 from fixtures.auth import AuthUser
 from fixtures.db import insert_auth_user
 from pydantic import ValidationError
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.factory import get_model_provider
@@ -29,7 +30,7 @@ from app.ai.providers.base import ModelProvider
 from app.ai.providers.mock import MockProvider
 from app.budget import repository as budget_repository
 from app.core.config import get_settings
-from app.db.models import Destination, ItineraryItem, Place
+from app.db.models import Destination, ItineraryItem, ItineraryWarning, Place, Trip
 from app.generation import jobs
 from app.places import seed
 from app.schemas.ai import GenerationRequest, ItineraryOutput
@@ -368,3 +369,144 @@ async def test_another_users_trip_and_a_missing_trip_are_not_found(
 
     assert foreign.status_code == missing.status_code == 404
     assert foreign.json()["error"]["code"] == missing.json()["error"]["code"] == "NOT_FOUND"
+
+
+# API-34 (FR-072; IMP-411)
+
+
+async def patch_budget_settings(
+    client: httpx.AsyncClient, user: AuthUser, trip_id: str, body: dict[str, Any]
+) -> httpx.Response:
+    return await client.patch(
+        f"/api/v1/trips/{trip_id}/budget-settings", json=body, headers=user.headers
+    )
+
+
+@pytest.mark.asyncio
+async def test_tc_223_budget_settings_appear_as_traveller_input(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, sampleton)  # 3 days, 2 nights
+
+    response = await patch_budget_settings(
+        api_client,
+        auth_user,
+        trip_id,
+        {"transport_allowance_per_day": "10.00", "stay_budget_per_night": "35.00"},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    lines = {line["category"]: line for line in body["by_category"]}
+    assert lines["transport"] == {
+        "category": "transport",
+        "min": "30.00",
+        "max": "30.00",
+        "label": "traveller_input",
+    }
+    assert lines["accommodation"]["max"] == "70.00"
+    assert lines["accommodation"]["label"] == "traveller_input"
+    assert body["settings"]["transport_allowance_per_day"] == "10.00"
+    assert body == await costs(api_client, auth_user, trip_id)
+
+
+@pytest.mark.asyncio
+async def test_tc_224_budget_settings_cleared_show_unavailable(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, sampleton)
+    await patch_budget_settings(
+        api_client, auth_user, trip_id, {"transport_allowance_per_day": "10.00"}
+    )
+
+    response = await patch_budget_settings(
+        api_client, auth_user, trip_id, {"transport_allowance_per_day": None}
+    )
+
+    assert response.status_code == 200, response.text
+    lines = {line["category"]: line for line in response.json()["by_category"]}
+    assert lines["transport"]["label"] == "unavailable"
+    assert lines["accommodation"]["label"] == "unavailable"
+    assert response.json()["settings"]["transport_allowance_per_day"] is None
+
+
+@pytest.mark.asyncio
+async def test_budget_settings_write_no_warnings_and_keep_the_plan_revision(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    queue: list[Job],
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, sampleton, budget="10.00")
+    await generate(api_client, db_session, queue, auth_user, trip_id)
+    trip = uuid.UUID(trip_id)
+    count = select(func.count()).where(ItineraryWarning.trip_id == trip)
+    warnings_before = await db_session.scalar(count)
+    revision_before = await db_session.scalar(select(Trip.plan_revision).where(Trip.id == trip))
+
+    response = await patch_budget_settings(
+        api_client, auth_user, trip_id, {"stay_budget_per_night": "500.00"}
+    )
+
+    assert response.status_code == 200, response.text
+    assert [alert["code"] for alert in response.json()["alerts"]] == ["BUDGET_EXCEEDED"]
+    assert await db_session.scalar(count) == warnings_before
+    assert (
+        await db_session.scalar(select(Trip.plan_revision).where(Trip.id == trip))
+        == revision_before
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [{"transport_allowance_per_day": "-1.00"}, {"contingency_pct": 51}, {"unknown": "1.00"}],
+)
+async def test_budget_settings_refuse_invalid_values(
+    api_client: httpx.AsyncClient,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    body: dict[str, Any],
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, sampleton)
+
+    response = await patch_budget_settings(api_client, auth_user, trip_id, body)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_budget_settings_refuse_contingency_when_switched_off(
+    api_client: httpx.AsyncClient,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    switches_off: None,
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, sampleton)
+
+    response = await patch_budget_settings(api_client, auth_user, trip_id, {"contingency_pct": 5})
+
+    assert response.status_code == 422
+    assert response.json()["error"]["details"][0]["field"] == "contingency_pct"
+
+
+@pytest.mark.asyncio
+async def test_budget_settings_of_another_users_trip_are_not_found(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, sampleton)
+    other = AuthUser(user_id=await insert_auth_user(db_session), email="other@example.test")
+
+    response = await patch_budget_settings(
+        api_client, other, trip_id, {"transport_allowance_per_day": "1.00"}
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"
+    mine = await costs(api_client, auth_user, trip_id)
+    assert mine["settings"]["transport_allowance_per_day"] is None
