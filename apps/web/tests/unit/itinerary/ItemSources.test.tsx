@@ -49,7 +49,7 @@ describe("ItemSources", () => {
     const [guide, place] = screen.getAllByRole("listitem");
     expect(guide).toHaveTextContent("Sampleton old town (sample)");
     expect(guide).toHaveTextContent(
-      "Guide · Sampleton Guide Team (sample) · Sample attribution line · Retrieved Sat 14 Nov",
+      "Guide · Sampleton Guide Team (sample) · Sample attribution line · Retrieved 14 Nov 2026",
     );
     expect(place).toHaveTextContent(
       "Place record · Sample Records (sample) · CC0",
