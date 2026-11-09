@@ -408,11 +408,11 @@ async def test_reading_a_stored_version_is_not_built_yet(
     assert response.json()["error"]["code"] == "NOT_IMPLEMENTED"
 
 
-# API-09
+# API-09 (FR-014: TC-087, TC-088; IMD-122 keeps the §6 shape, 200 with nulls when none)
 
 
 @pytest.mark.asyncio
-async def test_latest_is_null_when_the_caller_has_no_itinerary(
+async def test_tc_088_latest_is_null_when_the_caller_has_no_itinerary(
     api_client: httpx.AsyncClient, auth_user: AuthUser, destination: Destination
 ) -> None:
     await create_trip(api_client, auth_user, destination)  # a trip, but no plan
@@ -424,7 +424,7 @@ async def test_latest_is_null_when_the_caller_has_no_itinerary(
 
 
 @pytest.mark.asyncio
-async def test_latest_returns_the_callers_most_recently_changed_itinerary_only(
+async def test_tc_087_latest_returns_the_callers_most_recently_changed_itinerary_only(
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
     auth_user: AuthUser,

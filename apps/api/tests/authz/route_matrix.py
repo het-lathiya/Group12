@@ -100,6 +100,9 @@ MATRIX: tuple[RouteCase, ...] = (
     RouteCase("API-08", "GET", "/api/v1/trips", "scoped", params={"include_archived": "true"}),
     RouteCase("API-10", "GET", "/api/v1/trips/{trip_id}", "foreign"),
     RouteCase(
+        "API-11", "PATCH", "/api/v1/trips/{trip_id}", "foreign", body=lambda _: {"title": "B's"}
+    ),
+    RouteCase(
         "API-14", "PUT", "/api/v1/trips/{trip_id}/preferences", "foreign", body=preferences_body
     ),
     RouteCase("API-15", "GET", "/api/v1/trips/{trip_id}/preferences", "foreign"),

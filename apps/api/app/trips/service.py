@@ -1,5 +1,9 @@
-"""Trip service (MOD-B03): create, list and read the caller's trips (API-07, API-08, API-10) and
-save and read their preferences and must-visit places (API-14, API-15).
+"""Trip service (MOD-B03): create, list, read and update the caller's trips (API-07, API-08,
+API-10, API-11) and save and read their preferences and must-visit places (API-14, API-15).
+
+Drafts (FR-013, IMP-410): API-07 stores a draft as soon as the wizard's Details step is left;
+API-11 and API-14 save each later step. A draft becomes ready when its preferences are saved
+(IMD-25), so preferences are required only for the move to ready.
 
 The session is the request's single transaction (app.auth.deps.DbSession): API-07 inserts the trip
 and its default budget_settings row in it, so both are saved or neither is.
@@ -23,6 +27,13 @@ from app.trips.schemas import (
     TripDestination,
     TripIn,
     TripOut,
+    TripPatch,
+    TripStatus,
+)
+
+# API-11: changing any of these while an itinerary exists marks the plan stale (FR-011).
+PLAN_FIELDS = frozenset(
+    {"destination_id", "start_date", "end_date", "adults", "children", "group_needs", "budget"}
 )
 
 
@@ -74,8 +85,8 @@ def _to_out(row: TripRow) -> TripOut:
     )
 
 
-async def create_trip(session: AsyncSession, user_id: UUID, body: TripIn) -> TripOut:
-    draft = _to_draft(body)
+async def _validate(session: AsyncSession, draft: domain.TripDraft) -> None:
+    """The API-07 field rules, shared by API-11 (§6.6.2: the same validation as API-07)."""
     supported = [
         domain.SupportedDestination(id=d.id, name=d.name, currency=d.currency)
         for d in await repository.active_destinations(session)
@@ -91,6 +102,10 @@ async def create_trip(session: AsyncSession, user_id: UUID, body: TripIn) -> Tri
             details=[ErrorDetail(field=e.field, message=e.message) for e in errors]
         )
 
+
+async def create_trip(session: AsyncSession, user_id: UUID, body: TripIn) -> TripOut:
+    draft = _to_draft(body)
+    await _validate(session, draft)
     trip_id = await repository.insert_trip(
         session,
         user_id,
@@ -115,6 +130,64 @@ async def get_trip(session: AsyncSession, user_id: UUID, trip_id: UUID) -> TripO
         # Missing, soft-deleted or another user's: the same 404 (FR-005 AC1).
         raise NotFound()
     return _to_out(row)
+
+
+async def update_trip(
+    session: AsyncSession, user_id: UUID, trip_id: UUID, body: TripPatch
+) -> TripOut:
+    """API-11: change the fields sent (a wizard step of a draft, FR-013), archive or restore."""
+    row = await _owned(session, user_id, trip_id)
+    trip = row.trip
+    sent = body.model_fields_set
+    changes = sent - {"status"}
+    if trip.status == "archived" and changes:
+        raise Conflict("This trip is archived. Restore it before changing it.")
+
+    values: dict[str, object] = {}
+    if changes:
+        # A budget sent as null clears it; a budget left out keeps the stored one.
+        if "budget" in sent:
+            amount = body.budget.amount if body.budget else None
+            currency = body.budget.currency if body.budget else None
+        else:
+            amount, currency = trip.budget_amount, trip.budget_currency
+        draft = domain.TripDraft(
+            title=body.title if body.title is not None else trip.title,
+            destination_id=body.destination_id or trip.destination_id,
+            start_date=body.start_date or trip.start_date,
+            end_date=body.end_date or trip.end_date,
+            adults=body.adults if body.adults is not None else trip.adults,
+            children=body.children if body.children is not None else trip.children,
+            group_needs=(
+                [need.value for need in body.group_needs]
+                if body.group_needs is not None
+                else list(trip.group_needs)
+            ),
+            budget_amount=amount,
+            budget_currency=currency,
+        )
+        await _validate(session, draft)
+        values = {
+            "title": draft.title.strip(),
+            "destination_id": draft.destination_id,
+            "start_date": draft.start_date,
+            "end_date": draft.end_date,
+            "adults": draft.adults,
+            "children": draft.children,
+            "group_needs": list(draft.group_needs),
+            "budget_amount": draft.budget_amount,
+            "budget_currency": draft.budget_currency,
+        }
+        if row.has_itinerary and changes & PLAN_FIELDS:
+            values["plan_stale"] = True
+    if body.status == TripStatus.ARCHIVED:
+        values["status"] = "archived"
+    elif body.status == TripStatus.READY and trip.status == "archived":
+        # §5.4: a restored trip is ready if it has days, otherwise a draft again.
+        values["status"] = "ready" if row.has_itinerary else "draft"
+    if values:
+        await repository.update_trip(session, trip_id, values)
+    return await get_trip(session, user_id, trip_id)
 
 
 async def list_trips(
