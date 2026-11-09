@@ -98,8 +98,9 @@ export function ItineraryItemCard({ item }: { item: Item }) {
           </p>
           {item.note && (
             <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-card-foreground">
-              <span className="min-w-0">{item.note}</span>
+              {/* FR-035: the label comes first, so the reader knows before reading the text. */}
               {item.note_origin === "ai" && <AiBadge />}
+              <span className="min-w-0">{item.note}</span>
             </p>
           )}
           {item.note_origin === "ai" && <ItemSources sources={item.sources} />}
