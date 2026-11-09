@@ -164,6 +164,7 @@ function Form({
       {update.isError &&
         !(update.error instanceof ApiError && update.error.details.length) && (
           <ErrorState
+            inline
             title="Your budget inputs could not be saved"
             error={
               update.error instanceof ApiError

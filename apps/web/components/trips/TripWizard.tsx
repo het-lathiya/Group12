@@ -332,6 +332,7 @@ function Wizard({
         {(saveError ?? preferences.error) && (
           <div className="mt-6">
             <ErrorState
+              inline
               title="Your changes could not be saved"
               error={saveError ?? (preferences.error as ApiError)}
             />

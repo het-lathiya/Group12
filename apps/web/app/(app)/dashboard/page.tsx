@@ -48,6 +48,7 @@ export default function DashboardPage() {
 
       {latest.isError && (
         <ErrorState
+          inline
           title="Your latest itinerary could not be found"
           error={latest.error as ApiError}
           onRetry={() => void latest.refetch()}
