@@ -5,7 +5,7 @@ import { useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { components } from "@/lib/api/schema";
-import { formatDayDate } from "@/lib/format";
+import { formatFullDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type SourceRef = components["schemas"]["SourceRef"];
@@ -23,7 +23,7 @@ function SourceEntry({ source }: { source: SourceRef }) {
     KIND_LABELS[source.kind],
     source.source_name,
     source.attribution_text || source.licence,
-    retrievedOn && `Retrieved ${formatDayDate(retrievedOn)}`,
+    retrievedOn && `Retrieved ${formatFullDate(retrievedOn)}`,
   ];
   return (
     <li className="min-w-0 text-sm wrap-anywhere">
