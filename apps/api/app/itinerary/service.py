@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import Row
@@ -57,12 +57,14 @@ async def save_generated_plan(
     generation_id: UUID,
     *,
     validation_summary: dict[str, Any],
+    origin: Literal["model", "fallback_rule_based"] = "model",
 ) -> SavedPlan:
+    """``origin`` fallback_rule_based saves no note (IMD-131) and a version of reason fallback."""
     trip = await repository.lock_trip(session, trip_id, user_id)
     if trip is None:
         raise NotFound()
     days = await repository.replace_plan(
-        session, trip_id, trip.start_date, plan, origin="model", generation_id=generation_id
+        session, trip_id, trip.start_date, plan, origin=origin, generation_id=generation_id
     )
     plan_revision = await repository.mark_plan_saved(session, trip_id)
     snapshot = {
@@ -74,7 +76,7 @@ async def save_generated_plan(
     version_id = await repository.insert_version(
         session,
         trip_id,
-        reason="generation",
+        reason="generation" if origin == "model" else "fallback",
         plan_revision=plan_revision,
         snapshot=snapshot,
         validation_summary=validation_summary,
