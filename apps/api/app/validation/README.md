@@ -28,3 +28,32 @@ Boundary cases:
 - A 10-minute gap and a 30-minute transfer from routing is 25 minutes short; from the distance estimate it is 35 minutes short and the message says "(estimate)" (TC-178, TC-179).
 - gap < 0 is an `OVERLAP` only, never also a short transfer.
 - The first item of a day, and an item without stored travel (null minutes or source), are not checked.
+
+## MUST_VISIT_MISSING (error, §9.3.7, FR-034, FR-055)
+
+Every place of `ctx.must_visit_ids` with no item on any day gives one `MUST_VISIT_MISSING`. The finding has `place_id` set and `item_ref` and `day_number` null, because the place has no item (IMD-42); the message names the place (from `ctx.places`, else its ID) and says it is not in the plan. Findings come in place-ID order.
+
+Boundary cases:
+
+- A must-visit place present on any day, once or more, gives no finding.
+- A must-visit place that has an item counts as present even when it is no longer active; that item gets `UNKNOWN_PLACE` instead. A missing must-visit place that is no longer active is named by its ID.
+
+## UNKNOWN_PLACE (error, §9.3.6, FR-055)
+
+An item whose `place_id` is not an active place of the destination (`ctx.places`), or, when `ctx.shortlist_ids` is set (generation), not in the shortlist, gives `UNKNOWN_PLACE` on that item.
+
+Boundary cases:
+
+- With `shortlist_ids` None (edits, where no shortlist exists), any active place is valid.
+- An active place outside the shortlist is unknown only in generation.
+- This is the validator's finding only; dropping such items from a model answer is step 8 (`output_check.py`).
+
+## OUTSIDE_TRIP_DATES (error, §9.3.6, FR-055)
+
+num_days = end date − start date + 1. Every item on a day outside 1..num_days gives `OUTSIDE_TRIP_DATES`, one finding per item.
+
+Boundary cases:
+
+- Day 1 (the start date) and day num_days (the end date) are inside (TC-305); a one-day trip has day 1 only.
+- A day number that a finding cannot hold (below 1 or above 14) gives `day_number` null; the day stays in `item_ref` and the message.
+- Dropping such items from a model answer (IMD-126) is step 8, not the validator.
