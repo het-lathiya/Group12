@@ -51,6 +51,7 @@ class Journal:
         self.failed: str | None = None
         self.failed_with: dict[str, Any] = {}
         self.inactive: set[UUID] = set()
+        self.model_id = "mock-v1"  # rule_based_planner_v1 runs the job as mode rule_based
         self.transactions = 0
         self.open = 0
 
@@ -64,6 +65,7 @@ class Journal:
                     "user_id": uuid4(),
                     "prompt_template_id": "itinerary_generate",
                     "prompt_version": "v1",
+                    "model_id": self.model_id,
                 },
             )
 
@@ -129,6 +131,19 @@ class Journal:
         self.open += 1
         yield object()
         self.open -= 1
+
+    def fell_back(self, cause: str | None) -> bool:
+        """The rule-based plan was saved instead of the answer, with ``cause`` recorded."""
+        summary = self.completed.get("validation_summary", {})
+        return (
+            self.completed.get("outcome") == "fallback_rule_based"
+            and summary.get("provider_failure") == cause
+            and self.saved is not None
+            and all(item.note == "" for day in self.saved for item in day.items)
+        )
+
+    def saved_ids(self) -> set[str]:
+        return {item.place_id for day in self.saved or [] for item in day.items}
 
     def run(self, provider: ModelProvider) -> None:
         asyncio.run(pipeline.run(uuid4(), provider, self.sessions))

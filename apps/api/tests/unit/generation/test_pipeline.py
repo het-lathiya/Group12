@@ -115,8 +115,8 @@ def test_pipeline_rejects_an_id_outside_the_shortlist_before_saving(
 
     journal.run(MockProvider("unknown_place", app_env="test"))
 
-    assert journal.failed == "invalid_output"
-    assert "save" not in journal.steps
+    assert journal.fell_back("invalid_output")  # IMP-402: the rule-based plan is saved instead
+    assert journal.saved_ids() <= sample_request().shortlist_ids()
 
 
 def test_pipeline_saves_only_what_the_recalculation_hook_returns(

@@ -6,9 +6,15 @@ the settings -> provider.generate_itinerary (steps 6, 7) -> mark_validating -> s
 the plan and complete the record in one transaction (step 11). Each status change is its own short
 transaction, and none stays open across the provider call (§5.8). Step 8 is
 ``app.validation.output_check`` (IMP-306); step 9 is ``recalculate`` (IMP-308). Output
-that cannot be saved goes through ``end_invalid_output``, where IMP-402 adds the fallback; repair is
-IMP-502, which sends the same request and so the same passages. Trip completeness (step 1) is
-checked by API-22 before the row exists.
+that cannot be saved goes through ``end_invalid_output``; repair is IMP-502, which sends the same
+request and so the same passages. Trip completeness (step 1) is checked by API-22 before the row
+exists.
+
+The rule-based plan (``fallback_planner``, IMP-402) runs for mode rule_based (no retrieval and no
+provider call) and after a transient provider error or an answer that cannot be saved; it goes
+through steps 8 to 11 like a model answer and completes ``fallback_rule_based`` with the cause in
+``validation_summary.provider_failure`` and failure_reason null (§8.3, IMD-22). Quota and
+configuration errors end ``failed`` with no fallback (IMD-44).
 
 Never logged: the request built for the provider, its raw output, notes or prompt text (FR-125).
 """
@@ -17,19 +23,19 @@ import logging
 import time
 from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
-from dataclasses import replace
-from typing import Final
+from dataclasses import dataclass, replace
+from typing import Any, Final, Literal
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import limits
-from app.ai.errors import InvalidOutputKind, ProviderError, ProviderInvalidOutput
+from app.ai.errors import ProviderError, ProviderInvalidOutput
 from app.ai.providers.base import ModelProvider
 from app.budget import engine
 from app.core.config import get_settings
-from app.generation import repository, request_builder, schedule
-from app.generation.records import TokenUsage
+from app.generation import fallback_planner, repository, request_builder, schedule
+from app.generation.records import FailureReason, TokenUsage
 from app.itinerary import service as itinerary_service
 from app.itinerary.schemas import PlannedDay, PlannedItem
 from app.places import repository as places_repository
@@ -37,7 +43,7 @@ from app.places import service as places_service
 from app.routing.cache import RouteCacheRepository
 from app.routing.client import get_client
 from app.routing.service import RoutingService
-from app.schemas.ai import GenerationRequest, ItineraryOutput
+from app.schemas.ai import GenerationRequest, ItineraryOutput, ModelMetadata
 from app.trips import service as trips_service
 from app.validation import output_check
 
@@ -47,32 +53,161 @@ Sessions = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
 # The rules of step 9 arrive with IMP-308 and IMP-309, so the plan is saved with no findings.
 NO_FINDINGS: Final = {"errors": 0, "warnings": 0, "infos": 0}
+SEVERITY_KEYS: Final = tuple(NO_FINDINGS)
+
+
+@dataclass
+class Job:
+    """One generation run: its row, its transactions and its clock."""
+
+    generation_id: UUID
+    sessions: Sessions
+    trip_id: UUID
+    user_id: UUID
+    started: float
+    validating: bool = False
+
+    def elapsed_ms(self) -> int:
+        return round((time.perf_counter() - self.started) * 1000)
+
+    async def mark_validating(self) -> None:
+        """running -> validating once; a fallback after step 8 is already validating."""
+        if not self.validating:
+            async with self.sessions() as session:
+                await repository.mark_validating(session, self.generation_id)
+            self.validating = True
+
+    async def active_ids(self, request: GenerationRequest) -> set[str]:
+        # Read again: a place can go inactive while the provider is answering.
+        async with self.sessions() as session:
+            active = await places_service.active_place_names(
+                session, request.trip.destination_id, [p.place_id for p in request.shortlist]
+            )
+        return {str(id_) for id_ in active}
+
+    async def fail(
+        self,
+        reason: FailureReason,
+        *,
+        usage: TokenUsage | None = None,
+        validation_summary: dict[str, Any] | None = None,
+    ) -> None:
+        async with self.sessions() as session:
+            await repository.fail(
+                session,
+                self.generation_id,
+                reason,
+                usage=usage,
+                latency_ms=self.elapsed_ms(),
+                validation_summary=validation_summary,
+            )
 
 
 async def end_invalid_output(
-    generation_id: UUID,
-    sessions: Sessions,
-    kind: InvalidOutputKind | None,
-    validation_summary: dict[str, object],
+    job: Job,
+    request: GenerationRequest,
+    answer_summary: dict[str, Any],
     *,
     usage: TokenUsage | None,
-    latency_ms: int,
+    metadata: ModelMetadata,
 ) -> None:
     """The one route for an answer that cannot be saved; it is never retried blindly.
 
-    shortcut: ends failed with invalid_output (PD-IMP-306-1); IMP-402 replaces this body with the
-    rule-based fallback (fallback_reason invalid_output, failure_reason null, IMD-22).
+    The rule-based plan replaces it (fallback_reason invalid_output, IMD-22) until IMP-502 adds
+    the repair call in front of this route. ``answer_summary`` is step 8 of the refused answer.
     """
-    logger.warning("generation %s invalid output: %s", generation_id, kind or "place check")
-    async with sessions() as session:
-        await repository.fail(
-            session,
-            generation_id,
-            "invalid_output",
-            usage=usage,
-            latency_ms=latency_ms,
-            validation_summary=validation_summary,
+    kind = answer_summary.get("kind") or "place check"
+    logger.warning("generation %s invalid output: %s", job.generation_id, kind)
+    await run_fallback(
+        job,
+        request,
+        "invalid_output",
+        answer_summary=answer_summary,
+        usage=usage,
+        metadata=metadata,
+    )
+
+
+async def run_fallback(
+    job: Job,
+    request: GenerationRequest,
+    provider_failure: FailureReason | None,
+    *,
+    answer_summary: dict[str, Any] | None = None,
+    usage: TokenUsage | None = None,
+    metadata: ModelMetadata | None = None,
+) -> None:
+    """The rule-based plan through steps 8 to 11; ``provider_failure`` is None for mode rule_based.
+
+    The summary keeps the refused answer's step-8 counts; errors, warnings and infos are the saved
+    plan's. Only if this plan is unusable too does the generation end failed /
+    unresolved_validation (§6.4).
+    """
+    await job.mark_validating()
+    active = await job.active_ids(request)
+    # Only places still active, so step 8 has nothing to reject in the rule-based plan.
+    shortlist = [place for place in request.shortlist if str(place.place_id) in active]
+    try:
+        output = fallback_planner.plan_rule_based(
+            request.model_copy(update={"shortlist": shortlist})
         )
+    except fallback_planner.NoPlanError:
+        await job.fail("unresolved_validation", usage=usage)
+        return
+    checked = output_check.check_output(output, active, request.trip.num_days)
+    counts = output_check.summary(checked)
+    validation_summary = {**counts, **(answer_summary or {})}
+    validation_summary.update({key: counts[key] for key in SEVERITY_KEYS})
+    if provider_failure is not None:
+        validation_summary["provider_failure"] = provider_failure
+    if not checked.usable:
+        await job.fail("unresolved_validation", usage=usage, validation_summary=validation_summary)
+        return
+    await save(
+        job,
+        request,
+        checked.output,
+        outcome="fallback_rule_based",
+        usage=usage,
+        validation_summary=validation_summary,
+        metadata=metadata,
+    )
+
+
+async def save(
+    job: Job,
+    request: GenerationRequest,
+    output: ItineraryOutput,
+    *,
+    outcome: Literal["model", "fallback_rule_based"],
+    usage: TokenUsage | None,
+    validation_summary: dict[str, Any],
+    metadata: ModelMetadata | None,
+) -> None:
+    """Steps 9 and 11: recalculate, then save the plan and complete the record together."""
+    async with job.sessions() as session:
+        plan = await recalculate(session, output, request, job.trip_id, job.user_id)
+    async with job.sessions() as session:
+        await itinerary_service.save_generated_plan(
+            session,
+            job.trip_id,
+            job.user_id,
+            plan,
+            job.generation_id,
+            validation_summary=NO_FINDINGS,
+            origin=outcome,
+        )
+        await repository.complete(
+            session,
+            job.generation_id,
+            outcome=outcome,
+            usage=usage,
+            latency_ms=job.elapsed_ms(),
+            validation_summary=validation_summary,
+            adapter_version=metadata.adapter_version if metadata else None,
+            model_version=metadata.model_version if metadata else None,
+        )
+    logger.info("generation %s completed %s in %d ms", job.generation_id, outcome, job.elapsed_ms())
 
 
 def routing_for(session: AsyncSession) -> schedule.Routing:
@@ -127,44 +262,50 @@ async def recalculate(
 
 async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) -> None:
     started = time.perf_counter()
-
-    def elapsed_ms() -> int:
-        return round((time.perf_counter() - started) * 1000)
-
     async with sessions() as session:
         row = await repository.mark_running(session, generation_id)
-        trip_id, user_id = row.trip_id, row.user_id
+        job = Job(generation_id, sessions, row.trip_id, row.user_id, started)
         prompt_template_id, prompt_version = row.prompt_template_id, row.prompt_version
+        rule_based = row.model_id == fallback_planner.MODEL_ID  # IMD-43: set at insert
 
-    retrieved = await request_builder.retrieve(trip_id, user_id, provider, sessions)
-    logger.info(
-        "generation %s retrieval %s in %d ms", generation_id, retrieved.mode, retrieved.retrieval_ms
-    )
-    async with sessions() as session:
-        await repository.record_retrieval(
-            session,
+    retrieved = None
+    if not rule_based:  # mode rule_based makes no model call, embeddings included (FR-036)
+        retrieved = await request_builder.retrieve(job.trip_id, job.user_id, provider, sessions)
+        logger.info(
+            "generation %s retrieval %s in %d ms",
             generation_id,
-            mode=retrieved.mode,
-            embedding_model_id=retrieved.embedding_model_id,
-            retrieval_ms=retrieved.retrieval_ms,
+            retrieved.mode,
+            retrieved.retrieval_ms,
         )
+        async with sessions() as session:
+            await repository.record_retrieval(
+                session,
+                generation_id,
+                mode=retrieved.mode,
+                embedding_model_id=retrieved.embedding_model_id,
+                retrieval_ms=retrieved.retrieval_ms,
+            )
 
     async with sessions() as session:
         request = await request_builder.build(
             session,
-            trip_id=trip_id,
-            user_id=user_id,
+            trip_id=job.trip_id,
+            user_id=job.user_id,
             prompt_template_id=prompt_template_id,
             prompt_version=prompt_version,
             retrieved=retrieved,
         )
+    if rule_based:
+        await run_fallback(job, request, None)
+        return
 
+    metadata = provider.get_model_metadata()
     try:
         passages_built = len(request.passage_ids())
         request, truncated_count = limits.enforce_input_limit(
             request,
             get_settings().ai_max_input_tokens,
-            request_builder.passage_similarities(retrieved),
+            request_builder.passage_similarities(retrieved) if retrieved else {},
         )
         passages_sent = len(request.passage_ids())
         # PD-IMP-301-2: not on the protocol until ProviderResult has the field; MOCK sends none.
@@ -183,29 +324,19 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
         result = await provider.generate_itinerary(request)
     except ProviderInvalidOutput as exc:
         await end_invalid_output(
-            generation_id,
-            sessions,
-            exc.kind,
-            output_check.summary(kind=exc.kind),
-            usage=None,
-            latency_ms=elapsed_ms(),
+            job, request, output_check.summary(kind=exc.kind), usage=None, metadata=metadata
         )
         return
     except ProviderError as exc:
         logger.warning("generation %s provider error %s", generation_id, exc.failure_reason)
-        async with sessions() as session:
-            await repository.fail(
-                session, generation_id, exc.failure_reason, latency_ms=elapsed_ms()
-            )
+        if exc.retryable:  # the adapter's retries are spent (§8.3): the rule-based plan
+            await run_fallback(job, request, exc.failure_reason, metadata=metadata)
+        else:  # quota and configuration errors keep their cause (IMD-44)
+            await job.fail(exc.failure_reason)
         return
 
-    async with sessions() as session:
-        await repository.mark_validating(session, generation_id)
-        # Read again: a place can go inactive while the provider is answering.
-        active = await places_service.active_place_names(
-            session, request.trip.destination_id, [p.place_id for p in request.shortlist]
-        )
-
+    await job.mark_validating()
+    active = await job.active_ids(request)
     try:
         answer = output_check.apply_limits(
             result.output,
@@ -214,45 +345,25 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
         )
     except ProviderInvalidOutput as exc:
         await end_invalid_output(
-            generation_id,
-            sessions,
-            exc.kind,
-            output_check.summary(kind=exc.kind),
-            usage=result.usage,
-            latency_ms=elapsed_ms(),
+            job, request, output_check.summary(kind=exc.kind), usage=result.usage, metadata=metadata
         )
         return
 
     checked = output_check.check_output(
-        answer, {str(id_) for id_ in active}, request.trip.num_days, request.passage_ids()
+        answer, active, request.trip.num_days, request.passage_ids()
     )
-    validation_summary = output_check.summary(checked)
     if not checked.usable:
         await end_invalid_output(
-            generation_id,
-            sessions,
-            None,
-            validation_summary,
-            usage=result.usage,
-            latency_ms=elapsed_ms(),
+            job, request, output_check.summary(checked), usage=result.usage, metadata=metadata
         )
         return
 
-    async with sessions() as session:
-        plan = await recalculate(session, checked.output, request, trip_id, user_id)
-    metadata = provider.get_model_metadata()
-    async with sessions() as session:
-        await itinerary_service.save_generated_plan(
-            session, trip_id, user_id, plan, generation_id, validation_summary=NO_FINDINGS
-        )
-        await repository.complete(
-            session,
-            generation_id,
-            outcome="model",
-            usage=result.usage,
-            latency_ms=elapsed_ms(),
-            validation_summary=validation_summary,
-            adapter_version=metadata.adapter_version,
-            model_version=metadata.model_version,
-        )
-    logger.info("generation %s completed in %d ms", generation_id, elapsed_ms())
+    await save(
+        job,
+        request,
+        checked.output,
+        outcome="model",
+        usage=result.usage,
+        validation_summary=output_check.summary(checked),
+        metadata=metadata,
+    )

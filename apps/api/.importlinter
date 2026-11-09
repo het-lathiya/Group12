@@ -75,6 +75,7 @@ source_modules =
     app.budget.engine
     app.validation.rules
     app.validation.validator
+    app.generation.fallback_planner
 forbidden_modules =
     fastapi
     sqlalchemy

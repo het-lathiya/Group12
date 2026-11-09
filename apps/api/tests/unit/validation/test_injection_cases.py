@@ -94,9 +94,9 @@ def test_tc_028_an_invented_place_is_rejected_whatever_the_note_says(
 
     journal.run(Obeys(with_invented_place()))
 
-    assert journal.failed == "invalid_output"
-    assert journal.failed_with["validation_summary"]["invalid_ids"] == 1
-    assert journal.saved is None
+    assert journal.fell_back("invalid_output")  # IMP-402: the rule-based plan, not the answer
+    assert journal.completed["validation_summary"]["invalid_ids"] == 1
+    assert INVENTED not in journal.saved_ids()
 
 
 def test_tc_028_the_check_itself_ignores_the_note() -> None:
@@ -126,8 +126,8 @@ def test_tc_028_a_model_price_on_an_item_stops_the_answer(
 
     journal.run(gemini_answering(answer))
 
-    assert journal.failed_with["validation_summary"]["kind"] == "schema_violation"
-    assert journal.saved is None
+    assert journal.completed["validation_summary"]["kind"] == "schema_violation"
+    assert journal.fell_back("invalid_output")  # IMP-402: the rule-based plan, not the answer
 
 
 @pytest.mark.parametrize(
@@ -142,8 +142,8 @@ def test_tc_028_a_model_total_on_the_plan_stops_the_answer(
 
     journal.run(gemini_answering(obeying(extra)))
 
-    assert journal.failed_with["validation_summary"]["kind"] == "schema_violation"
-    assert journal.saved is None
+    assert journal.completed["validation_summary"]["kind"] == "schema_violation"
+    assert journal.fell_back("invalid_output")  # IMP-402: the rule-based plan, not the answer
 
 
 def test_tc_028_a_price_written_in_a_note_reaches_the_save_only_as_note_text(
@@ -236,9 +236,9 @@ def test_injection_tc_454_a_place_a_passage_asked_for_is_still_rejected(
 
     journal.run(Obeys(with_invented_place()))
 
-    assert journal.failed == "invalid_output"
-    assert journal.failed_with["validation_summary"]["invalid_ids"] == 1
-    assert journal.saved is None
+    assert journal.fell_back("invalid_output")  # IMP-402: the rule-based plan, not the answer
+    assert journal.completed["validation_summary"]["invalid_ids"] == 1
+    assert INVENTED not in journal.saved_ids()
 
 
 def test_injection_tc_454_a_model_price_is_refused_however_a_passage_asked_for_it(
@@ -250,5 +250,5 @@ def test_injection_tc_454_a_model_price_is_refused_however_a_passage_asked_for_i
 
     journal.run(gemini_answering(answer))
 
-    assert journal.failed_with["validation_summary"]["kind"] == "schema_violation"
-    assert journal.saved is None
+    assert journal.completed["validation_summary"]["kind"] == "schema_violation"
+    assert journal.fell_back("invalid_output")  # IMP-402: the rule-based plan, not the answer

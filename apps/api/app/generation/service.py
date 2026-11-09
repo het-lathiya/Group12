@@ -1,7 +1,9 @@
 """Generation service (MOD-B06): start a generation (API-22) and read its status (API-23).
 
 Create rules of §6.4, in order: trip owned and not archived; trip complete; no current itinerary;
-mode ai only (rule_based waits for IMP-402); the AI notice acknowledged (IMD-24). The daily caps
+for mode ai only, the AI notice acknowledged (IMD-24). Mode rule_based (IMP-402) stores the
+configured provider name with model_id rule_based_planner_v1, which is how the job and API-23 know
+the mode and why it never counts against the AI caps (IMD-43). The daily caps
 (IMP-511) are added by their card. ``request_hash`` covers {trip_id, scope, day_number, mode,
 plan_revision}: the same request while one is active returns that generation, a different one is
 refused with GENERATION_IN_PROGRESS.
@@ -18,7 +20,7 @@ from app.ai.providers.base import ModelProvider
 from app.auth import service as auth_service
 from app.core.errors import Conflict, GenerationInProgress, ValidationFailed
 from app.db.models import AiGeneration
-from app.generation import jobs, records, repository
+from app.generation import fallback_planner, jobs, records, repository
 from app.generation.schemas import GenerationOut, GenerationStartIn
 from app.itinerary import service as itinerary_service
 from app.schemas.common import ErrorDetail
@@ -26,7 +28,7 @@ from app.trips import preference_mapping
 from app.trips import service as trips_service
 from app.validation.schemas import ValidationSummary
 
-RULE_BASED_MODEL_ID: Final = "rule_based_planner_v1"
+RULE_BASED_MODEL_ID: Final = fallback_planner.MODEL_ID
 TIMED_OUT_MESSAGE: Final = "Generation timed out."
 
 # §6.4: failure_reason -> (failure_message, next_action).
@@ -66,11 +68,7 @@ async def start_generation(
         )
     if trip.has_itinerary:
         raise Conflict("This trip already has an itinerary. Regenerate it instead.")
-    if body.mode == "rule_based":
-        raise ValidationFailed(
-            details=[ErrorDetail(field="mode", message="Rule-based planning is not available yet.")]
-        )
-    if not await auth_service.ai_notice_acknowledged(session, user_id):
+    if body.mode == "ai" and not await auth_service.ai_notice_acknowledged(session, user_id):
         raise ValidationFailed(
             details=[ErrorDetail(field="ai_notice", message="Acknowledge the AI notice first.")]
         )
@@ -100,7 +98,7 @@ async def start_generation(
         trip_id=trip_id,
         user_id=user_id,
         provider=metadata.provider,
-        model_id=metadata.model_id,
+        model_id=RULE_BASED_MODEL_ID if body.mode == "rule_based" else metadata.model_id,
         prompt_template_id=template.template_id,
         prompt_version=template.version,
         input_schema_version=template.meta.input_schema_version,
