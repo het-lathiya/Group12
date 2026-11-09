@@ -16,6 +16,12 @@ through steps 8 to 11 like a model answer and completes ``fallback_rule_based`` 
 ``validation_summary.provider_failure`` and failure_reason null (§8.3, IMD-22). Quota and
 configuration errors end ``failed`` with no fallback (IMD-44).
 
+After step 9 the merged validator (``app.validation.validator``, IMP-404) runs on the plan that is
+saved, model or rule-based (IMP-406): its findings are saved as the plan's warnings and counted in
+both summaries. A MUST_VISIT_MISSING finding names the place, the reason (filter conflict, closed
+every day, no room) and a fix; a must-visit place is never dropped silently (FR-034). Pace limits
+reach the validator for DAY_TOO_LONG (IMP-309).
+
 Step 7 is skipped while the provider's circuit breaker is open (IMP-401): opened by transient
 errors it gives the rule-based plan with that cause; opened by quota or auth it ends ``failed``
 with ``provider_quota_exhausted`` or ``config_error``. Each generation's provider result is
@@ -26,6 +32,7 @@ Never logged: the request built for the provider, its raw output, notes or promp
 
 import logging
 import time
+from collections import Counter
 from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, replace
@@ -39,7 +46,7 @@ from app.ai.errors import ProviderError, ProviderInvalidOutput
 from app.ai.providers.base import ModelProvider
 from app.budget import engine
 from app.core.config import get_settings
-from app.generation import fallback_planner, repository, request_builder, schedule
+from app.generation import fallback_planner, repository, request_builder, retrieval, schedule
 from app.generation.records import FailureReason, TokenUsage
 from app.itinerary import service as itinerary_service
 from app.itinerary.schemas import PlannedDay, PlannedItem
@@ -51,14 +58,14 @@ from app.routing.service import RoutingService
 from app.schemas.ai import GenerationRequest, ItineraryOutput, ModelMetadata
 from app.trips import service as trips_service
 from app.validation import output_check
+from app.validation.rules import Finding, ValidationContext
+from app.validation.validator import validate
 
 logger = logging.getLogger(__name__)
 
 Sessions = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
-# The rules of step 9 arrive with IMP-308 and IMP-309, so the plan is saved with no findings.
-NO_FINDINGS: Final = {"errors": 0, "warnings": 0, "infos": 0}
-SEVERITY_KEYS: Final = tuple(NO_FINDINGS)
+SEVERITY_KEYS: Final = {"error": "errors", "warning": "warnings", "info": "infos"}
 
 
 @dataclass
@@ -162,7 +169,7 @@ async def run_fallback(
     checked = output_check.check_output(output, active, request.trip.num_days)
     counts = output_check.summary(checked)
     validation_summary = {**counts, **(answer_summary or {})}
-    validation_summary.update({key: counts[key] for key in SEVERITY_KEYS})
+    validation_summary.update({key: counts[key] for key in SEVERITY_KEYS.values()})
     if provider_failure is not None:
         validation_summary["provider_failure"] = provider_failure
     if not checked.usable:
@@ -189,9 +196,17 @@ async def save(
     validation_summary: dict[str, Any],
     metadata: ModelMetadata | None,
 ) -> None:
-    """Steps 9 and 11: recalculate, then save the plan and complete the record together."""
+    """Steps 9 and 11: recalculate and validate, then save the plan, its warnings and the record
+    together. The record's counts add the plan's findings to step 8's."""
     async with job.sessions() as session:
         plan = await recalculate(session, output, request, job.trip_id, job.user_id)
+        findings = await plan_findings(session, request, plan, job.trip_id, job.user_id)
+    counts = Counter(SEVERITY_KEYS[finding.severity] for finding in findings)
+    plan_summary = {key: counts[key] for key in SEVERITY_KEYS.values()}
+    validation_summary = {
+        **validation_summary,
+        **{key: validation_summary.get(key, 0) + plan_summary[key] for key in plan_summary},
+    }
     async with job.sessions() as session:
         await itinerary_service.save_generated_plan(
             session,
@@ -199,8 +214,9 @@ async def save(
             job.user_id,
             plan,
             job.generation_id,
-            validation_summary=NO_FINDINGS,
+            validation_summary=plan_summary,
             origin=outcome,
+            findings=findings,
         )
         await repository.complete(
             session,
@@ -213,6 +229,45 @@ async def save(
             model_version=metadata.model_version if metadata else None,
         )
     logger.info("generation %s completed %s in %d ms", job.generation_id, outcome, job.elapsed_ms())
+
+
+async def plan_findings(
+    session: AsyncSession,
+    request: GenerationRequest,
+    plan: Sequence[PlannedDay],
+    trip_id: UUID,
+    user_id: UUID,
+) -> list[Finding]:
+    """The merged validator on the recalculated plan; MUST_VISIT_MISSING gets its reason."""
+    must_visit = [str(place_id) for place_id in request.must_visit_place_ids]
+    ids = {*request.shortlist_ids(), *must_visit}
+    names = await places_service.active_place_names(
+        session, request.trip.destination_id, [UUID(place_id) for place_id in sorted(ids)]
+    )
+    limits = request.limits
+    ctx = ValidationContext(
+        start_date=request.trip.start_date,
+        end_date=request.trip.end_date,
+        places={str(place_id): name for place_id, name in names.items()},
+        must_visit_ids=frozenset(must_visit),
+        shortlist_ids=frozenset(request.shortlist_ids()),
+        pace_limits=(limits.max_items_per_day, limits.max_active_minutes_per_day),
+    )
+    findings = validate(plan, ctx)
+    if not any(finding.code == "MUST_VISIT_MISSING" for finding in findings):
+        return findings
+    trip = await trips_service.get_trip(session, user_id, trip_id)
+    prefs = await trips_service.get_preferences(session, user_id, trip_id)
+    reasons = await retrieval.must_visit_reasons(session, trip, prefs)
+
+    def with_reason(finding: Finding) -> Finding:
+        if finding.code != "MUST_VISIT_MISSING":
+            return finding
+        reason, fix = reasons.get(str(finding.place_id), retrieval.NO_ROOM)
+        message = f"{finding.message} {reason}"[:500]
+        return finding.model_copy(update={"message": message, "suggested_fix": fix})
+
+    return [with_reason(finding) for finding in findings]
 
 
 def routing_for(session: AsyncSession) -> schedule.Routing:

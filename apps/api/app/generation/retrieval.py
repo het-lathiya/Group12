@@ -4,7 +4,9 @@ The filters come from pm-2 (``trips/preference_mapping.py``) and run in the card
 excluded categories, closed on every trip day (explicit closed rows only), minimum group cost
 above the activity budget. The children rule of pm-2 runs after step-free. A place that fails is
 removed unless it is a must-visit place, which stays with ``conflict_note`` set (FR-027 AC2).
-Ranking and the shortlist cut are in ``generation/ranking.py``; ``ranked_shortlist`` runs both.
+Ranking and the shortlist cut are in ``generation/ranking.py``; ``ranked_shortlist`` runs both, and
+every must-visit place stays in the shortlist whatever its rank or the size cap (IMP-406).
+``must_visit_reasons`` gives the reason and fix that a MUST_VISIT_MISSING finding names.
 ``semantic_retrieval`` runs before ranking, outside any transaction, and never raises for a
 retrieval failure; its result carries ``retrieval_ms`` for IMP-316 (Amendment A1 §6.7, §6.11).
 """
@@ -37,6 +39,25 @@ NOTE_CATEGORY: Final = "Must-visit place is in a category that is not planned."
 NOTE_CHILDREN: Final = "Must-visit place is not suitable for children."
 NOTE_CLOSED: Final = "Must-visit place is closed on every day of the trip."
 NOTE_OVER_BUDGET: Final = "Must-visit place costs more than the activity budget."
+FIX_PREFERENCES: Final = "Change the trip's preferences, or remove it from the must-visit list."
+# FR-034 AC2: why a must-visit place is missing, and the fix to suggest, by its conflict note.
+MUST_VISIT_REASONS: Final[dict[str, tuple[str, str]]] = {
+    NOTE_STEP_FREE: ("It is not confirmed step-free.", FIX_PREFERENCES),
+    NOTE_CATEGORY: ("Its category is not planned.", FIX_PREFERENCES),
+    NOTE_CHILDREN: ("It is not suitable for children.", FIX_PREFERENCES),
+    NOTE_CLOSED: (
+        "It is closed on every day of the trip.",
+        "Change the trip dates, or remove it from the must-visit list.",
+    ),
+    NOTE_OVER_BUDGET: (
+        "It costs more than the activity budget.",
+        "Raise the budget, or remove it from the must-visit list.",
+    ),
+}
+NO_ROOM: Final = (
+    "No day of the plan had room for it.",
+    "Add it to a day with room, or remove it from the must-visit list.",
+)
 
 
 @dataclass(frozen=True)
@@ -153,6 +174,18 @@ async def retrieve_candidates(
     budget = await _trip_activity_budget(session, trip)
     rows = await places_repository.candidates(session, trip.destination_id)
     return apply_filters(rows, trip, prefs, must_visit, budget)
+
+
+async def must_visit_reasons(
+    session: AsyncSession, trip: TripOut, prefs: PreferencesOut
+) -> dict[str, tuple[str, str]]:
+    """(reason, suggested fix) per must-visit place ID: its filter conflict, else no room."""
+    candidates = await retrieve_candidates(session, trip, prefs, prefs.must_visit_place_ids)
+    notes = {str(c.place.id): c.conflict_note for c in candidates if c.must_visit}
+    return {
+        str(place_id): MUST_VISIT_REASONS.get(notes.get(str(place_id)) or "", NO_ROOM)
+        for place_id in prefs.must_visit_place_ids
+    }
 
 
 async def semantic_retrieval(

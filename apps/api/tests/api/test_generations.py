@@ -1174,3 +1174,207 @@ async def test_fallback_mode_rule_based_twice_gives_the_same_plan(
         )
 
     assert plans[0] == plans[1]  # FR-036 AC2 through the whole pipeline
+
+
+# IMP-406: must-visit places, explicit constraints and AI-written text (TC-141 to TC-144)
+
+
+async def place_id(session: AsyncSession, name: str) -> str:
+    found = await session.scalar(select(Place.id).where(Place.name == name))
+    assert found is not None, name
+    return str(found)
+
+
+async def trip_with(
+    client: httpx.AsyncClient,
+    user: AuthUser,
+    destination: Destination,
+    *,
+    must_visit: list[str],
+    end_date: str = "2026-12-06",
+    acknowledge: bool = True,
+    **preferences: Any,
+) -> str:
+    if acknowledge:
+        await acknowledge_notice(client, user)
+    response = await client.post(
+        "/api/v1/trips",
+        json={
+            "title": "Must-visit trip",
+            "destination_id": str(destination.id),
+            "start_date": "2026-12-04",
+            "end_date": end_date,
+            "adults": 2,
+        },
+        headers=user.headers,
+    )
+    assert response.status_code == 201, response.text
+    trip_id: str = response.json()["id"]
+    saved = await client.put(
+        f"/api/v1/trips/{trip_id}/preferences",
+        json={**PREFERENCES, **preferences, "must_visit_place_ids": must_visit},
+        headers=user.headers,
+    )
+    assert saved.status_code == 200, saved.text
+    return trip_id
+
+
+async def itinerary(client: httpx.AsyncClient, user: AuthUser, trip_id: str) -> dict[str, Any]:
+    response = await client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=user.headers)
+    assert response.status_code == 200, response.text
+    body: dict[str, Any] = response.json()
+    return body
+
+
+@pytest.mark.asyncio
+async def test_tc_141_must_visit_places_that_fit_are_all_in_the_plan(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    names = [
+        "Sample Clock Square (sample)",
+        "Sample Maritime Museum (sample)",
+        "Sample Pier Bookshop (sample)",
+    ]
+    must_visit = [await place_id(db_session, name) for name in names]
+    trip_id = await trip_with(api_client, auth_user, sampleton, must_visit=must_visit)
+
+    # The rule-based plan places must-visit places first; the model's own answer is IMP-502's
+    # deterministic repair to complete (§8.13).
+    queued = (await start(api_client, auth_user, trip_id, mode="rule_based")).json()
+    await poll(api_client, auth_user, queued["id"], submitted, sessions)
+
+    body = await itinerary(api_client, auth_user, trip_id)
+    planned = {item["place"]["id"] for day in body["days"] for item in day["items"]}
+    assert set(must_visit) <= planned
+    assert all(
+        item["must_visit"] == (item["place"]["id"] in must_visit)
+        for day in body["days"]
+        for item in day["items"]
+    )
+    assert [f for f in body["findings"] if f["code"] == "MUST_VISIT_MISSING"] == []
+
+
+@pytest.mark.asyncio
+async def test_must_visit_place_is_forced_into_the_shortlist_beyond_the_cap(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    sent: list[GenerationRequest] = []
+
+    class Watching(MockProvider):
+        async def generate_itinerary(self, request: GenerationRequest) -> Any:
+            sent.append(request)
+            return await super().generate_itinerary(request)
+
+    api_app.dependency_overrides[get_model_provider] = lambda: Watching("ok", app_env="test")
+    # A one-day trip shortlists 12 of the 30 places; a religious place matches no interest.
+    abbey = await place_id(db_session, "Sample Quiet Abbey Ruins (sample)")
+    trip_id = await trip_with(
+        api_client, auth_user, sampleton, must_visit=[abbey], end_date="2026-12-04"
+    )
+
+    generation_id = (await start(api_client, auth_user, trip_id)).json()["id"]
+    await poll(api_client, auth_user, generation_id, submitted, sessions)
+
+    [request] = sent
+    assert abbey in request.shortlist_ids()
+    assert [str(i) for i in request.must_visit_place_ids] == [abbey]
+
+
+@pytest.mark.asyncio
+async def test_tc_142_must_visit_missing_names_the_place_and_the_reason(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    use_provider(api_app, "flawed")  # leaves the first shortlisted must-visit place out
+    square = await place_id(db_session, "Sample Clock Square (sample)")
+    trip_id = await trip_with(api_client, auth_user, sampleton, must_visit=[square])
+
+    generation_id = (await start(api_client, auth_user, trip_id)).json()["id"]
+    done = await poll(api_client, auth_user, generation_id, submitted, sessions)
+
+    assert (done["status"], done["outcome"]) == ("completed", "model")
+    assert done["validation_summary"]["errors"] >= 1
+    body = await itinerary(api_client, auth_user, trip_id)
+    [missing] = [f for f in body["findings"] if f["code"] == "MUST_VISIT_MISSING"]
+    assert (missing["place_id"], missing["item_id"], missing["severity"]) == (square, None, "error")
+    assert "Sample Clock Square (sample)" in missing["message"]
+    assert "No day of the plan had room for it." in missing["message"]
+    assert missing["suggested_fix"]
+    planned = {item["place"]["id"] for day in body["days"] for item in day["items"]}
+    assert square not in planned
+
+
+@pytest.mark.asyncio
+async def test_must_visit_missing_gives_a_filter_conflict_as_the_reason(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    use_provider(api_app, "flawed")
+    bridge = await place_id(db_session, "Sample Lantern Bridge (sample)")  # step_free false
+    trip_id = await trip_with(
+        api_client, auth_user, sampleton, must_visit=[bridge], step_free_required=True
+    )
+
+    generation_id = (await start(api_client, auth_user, trip_id)).json()["id"]
+    await poll(api_client, auth_user, generation_id, submitted, sessions)
+
+    body = await itinerary(api_client, auth_user, trip_id)
+    [missing] = [f for f in body["findings"] if f["code"] == "MUST_VISIT_MISSING"]
+    assert missing["place_id"] == bridge
+    assert "It is not confirmed step-free." in missing["message"]
+    assert missing["suggested_fix"].startswith("Change the trip's preferences")
+
+
+@pytest.mark.asyncio
+async def test_tc_143_tc_144_ai_text_and_retrieved_facts_are_separate_columns_and_labels(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    generation_id = (await start(api_client, auth_user, trip)).json()["id"]
+    await poll(api_client, auth_user, generation_id, submitted, sessions)
+
+    body = await itinerary(api_client, auth_user, trip)
+    days = body["days"]
+    assert {(day["theme_origin"], day["theme"].startswith("SAMPLE")) for day in days} == {
+        ("ai", True)
+    }
+    for day in days:
+        for item in day["items"]:
+            # FR-035 AC1: the AI note and the facts carry their own labels.
+            assert (item["note_origin"], item["note"].startswith("SAMPLE")) == ("ai", True)
+            assert item["place"]["hours_label"] in ("curated", "estimate", "unavailable")
+            if item["cost"] is not None:
+                assert item["cost"]["label"] in ("curated", "estimate", "unavailable")
+    # FR-035 AC2: distinct columns; the model's text never lands in a fact column.
+    rows = list(
+        await db_session.scalars(
+            select(ItineraryItem).where(ItineraryItem.trip_id == uuid.UUID(trip))
+        )
+    )
+    assert all(row.note and row.note_origin == "ai" for row in rows)
+    assert all(row.cost_label in (None, "curated", "estimate", "unavailable") for row in rows)

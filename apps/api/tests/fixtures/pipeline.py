@@ -47,6 +47,8 @@ class Journal:
         self.settings: dict[str, Any] = {}
         self.retrieval: dict[str, Any] = {}
         self.saved: list[PlannedDay] | None = None
+        self.findings: list[Any] = []  # the warnings saved with the plan
+        self.reasons: dict[str, tuple[str, str]] = {}  # must_visit_reasons; empty means no room
         self.completed: dict[str, Any] = {}
         self.failed: str | None = None
         self.failed_with: dict[str, Any] = {}
@@ -92,6 +94,13 @@ class Journal:
         async def save(session: object, *args: Any, **kwargs: Any) -> None:
             self.steps.append("save")
             self.saved = args[2]
+            self.findings = list(kwargs.get("findings", []))
+
+        async def reasons(*args: Any) -> dict[str, tuple[str, str]]:
+            return self.reasons
+
+        async def nothing(*args: Any) -> None:
+            return None
 
         async def complete(session: object, generation_id: UUID, **kwargs: Any) -> None:
             self.steps.append("complete")
@@ -105,7 +114,12 @@ class Journal:
         async def active_place_names(
             session: object, destination_id: UUID, place_ids: list[UUID]
         ) -> dict[UUID, str]:
-            return {place_id: "" for place_id in place_ids if place_id not in self.inactive}
+            names = {place.place_id: place.name for place in request.shortlist}
+            return {
+                place_id: names.get(place_id, "")
+                for place_id in place_ids
+                if place_id not in self.inactive
+            }
 
         repository = pipeline.repository
         monkeypatch.setattr(repository, "mark_running", mark_running)
@@ -124,6 +138,9 @@ class Journal:
         monkeypatch.setattr(pipeline.request_builder, "build", build)
         monkeypatch.setattr(pipeline.itinerary_service, "save_generated_plan", save)
         monkeypatch.setattr(pipeline.places_service, "active_place_names", active_place_names)
+        monkeypatch.setattr(pipeline.retrieval, "must_visit_reasons", reasons)
+        monkeypatch.setattr(pipeline.trips_service, "get_trip", nothing)
+        monkeypatch.setattr(pipeline.trips_service, "get_preferences", nothing)
 
     @asynccontextmanager
     async def sessions(self) -> AsyncIterator[Any]:

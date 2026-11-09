@@ -24,6 +24,7 @@ from app.db.models import (
     TripPlace,
 )
 from app.itinerary.schemas import PlannedDay
+from app.schemas.ai import PlanFinding
 
 
 async def lock_trip(session: AsyncSession, trip_id: UUID, user_id: UUID) -> Trip | None:
@@ -115,6 +116,35 @@ async def replace_plan(
         )
     await session.flush()
     return snapshot_days
+
+
+async def insert_warnings(
+    session: AsyncSession, trip_id: UUID, plan_revision: int, findings: Sequence[PlanFinding]
+) -> None:
+    """Step 11's warnings (§8.12): item_ref becomes item_id; MUST_VISIT_MISSING has no item and
+    keeps its place_id (IMD-42). Call after ``replace_plan``, which removed the old warnings."""
+    if not findings:
+        return
+    numbers = {day.id: day.day_number for day in await plan_days(session, trip_id)}
+    refs = {
+        f"d{numbers[item.day_id]}-i{item.position}": item.id
+        for item, _, _ in await plan_items(session, trip_id)
+    }
+    for finding in findings:
+        session.add(
+            ItineraryWarning(
+                trip_id=trip_id,
+                plan_revision=plan_revision,
+                code=finding.code,
+                severity=finding.severity,
+                message=finding.message,
+                day_number=finding.day_number,
+                item_id=refs.get(finding.item_ref) if finding.item_ref else None,
+                place_id=finding.place_id,
+                suggested_fix=finding.suggested_fix,
+            )
+        )
+    await session.flush()
 
 
 async def budget_settings_snapshot(session: AsyncSession, trip_id: UUID) -> dict[str, Any]:
