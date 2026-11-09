@@ -44,6 +44,34 @@ const EFFECTS: Schemas["PreferenceEffect"][] = [
 
 type Call = { method: string; path: string; body: unknown };
 
+/** API-33 for the review step's BudgetSettingsForm: no allowances set. */
+const COSTS = {
+  currency: "GBP",
+  estimate: { min: "0.00", max: "0.00" },
+  contingency: { pct: 10, amount: "0.00" },
+  planning_total: "0.00",
+  per_traveller: { travellers: 2, largest_share: "0.00", label: "average" },
+  budget: { amount: null, status: "none", ratio_pct: null, excess: null },
+  by_day: [],
+  by_category: [
+    { category: "transport", min: "0.00", max: "0.00", label: "unavailable" },
+    {
+      category: "accommodation",
+      min: "0.00",
+      max: "0.00",
+      label: "unavailable",
+    },
+  ],
+  alerts: [],
+  complete: false,
+  incomplete_items: [],
+  settings: {
+    transport_allowance_per_day: null,
+    stay_budget_per_night: null,
+    contingency_pct: 10,
+  },
+};
+
 const DRAFT_TRIP: Schemas["TripOut"] = {
   id: TRIP_ID,
   title: "Weekend in Sampleton",
@@ -147,6 +175,7 @@ function fakeApi() {
       );
     }
     if (key === `GET /api/v1/trips/${TRIP_ID}`) return json(DRAFT_TRIP);
+    if (key === `GET /api/v1/trips/${TRIP_ID}/costs`) return json(COSTS);
     if (url.pathname === `/api/v1/trips/${TRIP_ID}/preferences`) {
       if (request.method === "PUT") {
         const saved = body as Schemas["PreferencesIn"];

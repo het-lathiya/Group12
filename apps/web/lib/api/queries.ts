@@ -217,6 +217,40 @@ export function useItinerary(tripId: string) {
   });
 }
 
+/** API-33: the trip's costs, computed by the API (the browser never totals, CLAUDE.md §4). */
+export function useCosts(tripId: string) {
+  return useQuery({
+    queryKey: queryKeys.costs(tripId),
+    queryFn: async () =>
+      unwrap(
+        await api().GET("/api/v1/trips/{trip_id}/costs", {
+          params: { path: { trip_id: tripId } },
+        }),
+      ),
+    retry: retryUnless404,
+  });
+}
+
+/** API-34: save the allowances; the answer is the recalculated costs (§7.4: invalidate `costs`, `itinerary`). */
+export function useUpdateBudgetSettings(tripId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: Schemas["BudgetSettingsPatch"]) =>
+      unwrap(
+        await api().PATCH("/api/v1/trips/{trip_id}/budget-settings", {
+          params: { path: { trip_id: tripId } },
+          body,
+        }),
+      ),
+    onSuccess: async (costs) => {
+      queryClient.setQueryData(queryKeys.costs(tripId), costs);
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.itinerary(tripId),
+      });
+    },
+  });
+}
+
 /** API-14: replace the trip's preferences (§7.4: invalidate `preferences` and `trip`). */
 export function useSavePreferences(tripId: string) {
   const queryClient = useQueryClient();

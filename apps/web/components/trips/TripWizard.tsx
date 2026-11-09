@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import { BudgetSettingsForm } from "@/components/costs/BudgetSettingsForm";
 import {
   ErrorState,
   type ErrorStateError,
@@ -307,11 +308,23 @@ function Wizard({
           </div>
           <div hidden={step !== REVIEW}>
             {step === REVIEW && trip && preferences.data && (
-              <ReviewStep
-                trip={trip}
-                preferences={preferences.data}
-                onEdit={goTo}
-              />
+              <>
+                <ReviewStep
+                  trip={trip}
+                  preferences={preferences.data}
+                  onEdit={goTo}
+                />
+                {/* FR-072: the budget step; transport and stay come only from the traveller. */}
+                <section aria-labelledby="budget-inputs" className="mt-8">
+                  <h3 id="budget-inputs" className="mb-4 text-lg font-semibold">
+                    Transport and stay budget
+                  </h3>
+                  <BudgetSettingsForm
+                    tripId={trip.id}
+                    currency={trip.destination.currency}
+                  />
+                </section>
+              </>
             )}
           </div>
         </div>
