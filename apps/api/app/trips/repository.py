@@ -85,6 +85,11 @@ async def get_owned(session: AsyncSession, user_id: UUID, trip_id: UUID) -> Trip
     return None if row is None else TripRow(row[0], row[1], bool(row[2]))
 
 
+async def update_trip(session: AsyncSession, trip_id: UUID, values: dict[str, Any]) -> None:
+    """API-11: write the given columns of a trip the service has just read with ``get_owned``."""
+    await session.execute(update(Trip).where(Trip.id == trip_id).values(**values))
+
+
 async def list_owned(
     session: AsyncSession, user_id: UUID, *, limit: int, offset: int, include_archived: bool
 ) -> tuple[list[TripRow], int]:

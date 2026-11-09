@@ -1,8 +1,8 @@
-"""Trip routes API-07, API-08, API-10, API-14 and API-15 (specification §6.6.2; FR-005, FR-007,
-FR-008, FR-009, FR-010).
+"""Trip routes API-07, API-08, API-10, API-11, API-14 and API-15 (specification §6.6.2; FR-005,
+FR-007 to FR-010, FR-013).
 
-API-11, API-12 and API-13 are declared with their final shapes and answer 501 NOT_IMPLEMENTED
-until IMP-410 and IMP-602 build them (IMD-37).
+API-12 and API-13 are declared with their final shapes and answer 501 NOT_IMPLEMENTED until
+IMP-602 builds them (IMD-37).
 
 Mounted under /api/v1, whose router requires CurrentUser (IMP-108); the user comes from the token.
 """
@@ -50,8 +50,10 @@ async def get_trip(trip_id: UUID, user: CurrentUser, session: DbSession) -> Trip
 
 
 @router.patch("/{trip_id}", response_model=TripOut, summary="API-11 Update one of my trips")
-async def update_trip(trip_id: UUID, body: TripPatch) -> TripOut:
-    raise EndpointNotImplemented()
+async def update_trip(
+    trip_id: UUID, body: TripPatch, user: CurrentUser, session: DbSession
+) -> TripOut:
+    return await service.update_trip(session, user.user_id, trip_id, body)
 
 
 @router.delete(

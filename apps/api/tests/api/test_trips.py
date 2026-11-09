@@ -1,4 +1,5 @@
-"""API-07, API-08 and API-10 (§6.6.2; FR-005, FR-007, FR-008: TC-063, TC-068 to TC-073).
+"""API-07, API-08, API-10 and API-11 (§6.6.2; FR-005, FR-007, FR-008, FR-013: TC-063, TC-068 to
+TC-073, TC-085, TC-086).
 
 Runs against the migrated test database (tests/fixtures/db.py); every test is rolled back. The
 supported destination is the Sampleton SAMPLE fixture, loaded through the seed (IMP-107).
@@ -576,3 +577,141 @@ async def test_trip_routes_need_a_token(api_client: httpx.AsyncClient) -> None:
         assert response.json()["error"]["code"] == "UNAUTHENTICATED"
     expired = bearer(make_token(uuid.uuid4(), expired=True))
     assert (await api_client.get("/api/v1/trips", headers=expired)).status_code == 401
+
+
+# API-11 and drafts (FR-013, IMP-410)
+
+PREFERENCES = {
+    "interests": ["food"],
+    "pace": "relaxed",
+    "budget_priority": "saving",
+    "transport_pref": "walking",
+    "accommodation_type": "any",
+    "step_free_required": False,
+    "notes": None,
+    "must_visit_place_ids": [],
+}
+
+
+@pytest.mark.asyncio
+async def test_tc_085_draft_stores_the_fields_entered_so_far(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    # Details step left: a draft without preferences or a budget.
+    trip = await create(api_client, auth_user, sampleton, budget=None, children=0, group_needs=[])
+    assert trip["status"] == "draft"
+    assert await db_session.get(TripPreferences, uuid.UUID(trip["id"])) is None
+
+    # The traveller goes back and changes one step: only the fields sent change.
+    response = await api_client.patch(
+        f"/api/v1/trips/{trip['id']}",
+        json={"title": "Long weekend", "adults": 3},
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 200, response.text
+    saved = response.json()
+    assert (saved["title"], saved["adults"], saved["children"]) == ("Long weekend", 3, 0)
+    assert saved["start_date"] == trip["start_date"]
+    assert saved["budget"] is None
+    assert saved["status"] == "draft"
+    assert saved["plan_stale"] is False
+
+
+@pytest.mark.asyncio
+async def test_tc_086_draft_is_restored_after_sign_out(
+    api_client: httpx.AsyncClient,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+    await api_client.patch(
+        f"/api/v1/trips/{trip['id']}",
+        json={"budget": {"amount": "900.00", "currency": "GBP"}},
+        headers=auth_user.headers,
+    )
+
+    # Signed out and in again: a new token for the same user reads the draft back.
+    later = bearer(make_token(auth_user.user_id, email=auth_user.email))
+    listed = (await api_client.get("/api/v1/trips", headers=later)).json()["items"]
+    reopened = await api_client.get(f"/api/v1/trips/{trip['id']}", headers=later)
+    preferences = await api_client.get(f"/api/v1/trips/{trip['id']}/preferences", headers=later)
+
+    assert [(item["id"], item["status"]) for item in listed] == [(trip["id"], "draft")]
+    assert reopened.status_code == 200
+    assert reopened.json()["budget"] == {"amount": "900.00", "currency": "GBP"}
+    assert reopened.json()["title"] == trip["title"]
+    assert preferences.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_draft_becomes_ready_only_when_its_preferences_are_saved(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+    url = f"/api/v1/trips/{trip['id']}"
+
+    patched = await api_client.patch(url, json={"status": "ready"}, headers=auth_user.headers)
+    assert patched.json()["status"] == "draft"  # no preferences yet
+
+    saved = await api_client.put(f"{url}/preferences", json=PREFERENCES, headers=auth_user.headers)
+    assert saved.status_code == 200, saved.text
+    assert (await api_client.get(url, headers=auth_user.headers)).json()["status"] == "ready"
+
+
+@pytest.mark.asyncio
+async def test_draft_patch_applies_the_api_07_rules(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+    url = f"/api/v1/trips/{trip['id']}"
+
+    response = await api_client.patch(
+        url,
+        json={"end_date": (START - timedelta(days=1)).isoformat(), "adults": 0},
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 422
+    assert {"end_date", "adults"} <= set(error_fields(response))
+    unchanged = (await api_client.get(url, headers=auth_user.headers)).json()
+    assert (unchanged["end_date"], unchanged["adults"]) == (trip["end_date"], 2)
+
+
+@pytest.mark.asyncio
+async def test_draft_patch_of_another_users_trip_is_404(
+    api_client: httpx.AsyncClient,
+    auth_user: AuthUser,
+    other_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+
+    response = await api_client.patch(
+        f"/api/v1/trips/{trip['id']}", json={"title": "Not mine"}, headers=other_user.headers
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"
+    mine = await api_client.get(f"/api/v1/trips/{trip['id']}", headers=auth_user.headers)
+    assert mine.json()["title"] == trip["title"]
+
+
+@pytest.mark.asyncio
+async def test_draft_archived_is_read_only_until_restored(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+    url = f"/api/v1/trips/{trip['id']}"
+
+    archived = await api_client.patch(url, json={"status": "archived"}, headers=auth_user.headers)
+    refused = await api_client.patch(url, json={"title": "Edited"}, headers=auth_user.headers)
+    restored = await api_client.patch(url, json={"status": "ready"}, headers=auth_user.headers)
+
+    assert archived.json()["status"] == "archived"
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "CONFLICT"
+    assert restored.json()["status"] == "draft"  # no itinerary yet (§5.4)
