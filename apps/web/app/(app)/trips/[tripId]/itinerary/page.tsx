@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useSyncExternalStore } from "react";
@@ -15,6 +16,11 @@ import { ApiError } from "@/lib/api/client";
 import { useItinerary, useTrip } from "@/lib/api/queries";
 import type { components } from "@/lib/api/schema";
 import { formatDayDate } from "@/lib/format";
+
+const MapPanel = dynamic(
+  () => import("@/components/map/MapPanel").then((module) => module.MapPanel),
+  { ssr: false, loading: () => <div role="status" className="h-[420px] rounded-xl border bg-muted">Loading map…</div> },
+);
 
 type Day = components["schemas"]["Day"];
 
@@ -65,51 +71,74 @@ function DaySkeleton() {
 
 function Days({ days }: { days: Day[] }) {
   const tabletUp = useTabletUp();
+  const [activeDayNumber, setActiveDayNumber] = useState(days[0].day_number);
+  const [mobileView, setMobileView] = useState<"list" | "map">("list");
+  const activeDay =
+    days.find((day) => day.day_number === activeDayNumber) ?? days[0];
 
   if (!tabletUp) {
     return (
-      <Tabs defaultValue={dayId(days[0])}>
-        <TabsList aria-label="Days">
-          {days.map((day) => (
-            <TabsTrigger key={day.day_number} value={dayId(day)}>
-              Day {day.day_number}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        {days.map((day) => (
-          <TabsContent key={day.day_number} value={dayId(day)}>
-            <DayColumn day={day} />
-          </TabsContent>
-        ))}
-      </Tabs>
+      <div className="flex flex-col gap-4">
+        <div className="flex gap-2" aria-label="Itinerary view">
+          <Button type="button" size="sm" variant={mobileView === "list" ? "default" : "outline"} aria-pressed={mobileView === "list"} onClick={() => setMobileView("list")}>List</Button>
+          <Button type="button" size="sm" variant={mobileView === "map" ? "default" : "outline"} aria-pressed={mobileView === "map"} onClick={() => setMobileView("map")}>Map</Button>
+        </div>
+        {mobileView === "map" ? (
+          <>
+            <Tabs value={dayId(activeDay)} onValueChange={(value) => {
+              const selected = days.find((day) => dayId(day) === value);
+              if (selected) setActiveDayNumber(selected.day_number);
+            }}>
+              <TabsList aria-label="Map day">
+                {days.map((day) => <TabsTrigger key={day.day_number} value={dayId(day)}>Day {day.day_number}</TabsTrigger>)}
+              </TabsList>
+            </Tabs>
+            <MapPanel items={activeDay.items} />
+          </>
+        ) : (
+          <Tabs value={dayId(activeDay)} onValueChange={(value) => {
+            const selected = days.find((day) => dayId(day) === value);
+            if (selected) setActiveDayNumber(selected.day_number);
+          }}>
+            <TabsList aria-label="Days">
+              {days.map((day) => <TabsTrigger key={day.day_number} value={dayId(day)}>Day {day.day_number}</TabsTrigger>)}
+            </TabsList>
+            {days.map((day) => <TabsContent key={day.day_number} value={dayId(day)}><DayColumn day={day} /></TabsContent>)}
+          </Tabs>
+        )}
+      </div>
     );
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[240px_1fr] lg:gap-8">
+    <div className="grid gap-6 lg:grid-cols-[200px_minmax(0,1fr)_minmax(320px,420px)] lg:gap-6">
       <nav aria-label="Days" className="hidden lg:block">
         <ul className="sticky top-24 flex flex-col gap-1">
           {days.map((day) => (
             <li key={day.day_number}>
-              <a
-                href={`#${dayId(day)}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  document.getElementById(dayId(day))?.focus();
-                }}
-                className="flex min-h-10 items-center rounded-lg px-3 text-sm font-medium text-foreground tabular-nums transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
+              <button type="button" aria-current={activeDayNumber === day.day_number ? "date" : undefined} onClick={() => {
+                setActiveDayNumber(day.day_number);
+                document.getElementById(dayId(day))?.focus();
+              }} className="flex min-h-10 w-full items-center rounded-lg px-3 text-left text-sm font-medium text-foreground tabular-nums transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                 {dayLabel(day)}
-              </a>
+              </button>
             </li>
           ))}
         </ul>
       </nav>
       <div className="flex flex-col gap-6">
         {days.map((day) => (
-          <DayColumn key={day.day_number} day={day} id={dayId(day)} />
+          <div key={day.day_number} onFocusCapture={() => setActiveDayNumber(day.day_number)}>
+            <DayColumn day={day} id={dayId(day)} />
+          </div>
         ))}
       </div>
+      <aside className="hidden lg:block">
+        <div className="sticky top-24">
+          <h2 className="mb-3 text-lg font-semibold">Day {activeDay.day_number} map</h2>
+          <MapPanel items={activeDay.items} />
+        </div>
+      </aside>
     </div>
   );
 }
