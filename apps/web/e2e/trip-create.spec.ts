@@ -2,6 +2,7 @@ import path from "node:path";
 
 import type { Page, TestInfo } from "@playwright/test";
 
+import { checkA11y } from "./axe";
 import { expect, test } from "./fixtures/users";
 
 // TC-068 (FR-007 AC1, E2E-02 wizard part): sign in, create a trip with preferences and a must-visit
@@ -45,6 +46,7 @@ test("trip-create: a new trip is saved step by step and opens the generate page 
   await expect(
     page.getByRole("heading", { level: 1, name: "Plan a new trip" }),
   ).toBeVisible();
+  await checkA11y(page);
 
   // Step 1: details. An end date before the start date is caught before anything is sent.
   await page
@@ -104,4 +106,5 @@ test("trip-create: a new trip is saved step by step and opens the generate page 
 
   await page.getByRole("link", { name: "Generate itinerary" }).click();
   await expect(page).toHaveURL(`/trips/${tripId}/generate`);
+  await checkA11y(page);
 });
