@@ -16,6 +16,11 @@ through steps 8 to 11 like a model answer and completes ``fallback_rule_based`` 
 ``validation_summary.provider_failure`` and failure_reason null (§8.3, IMD-22). Quota and
 configuration errors end ``failed`` with no fallback (IMD-44).
 
+Step 7 is skipped while the provider's circuit breaker is open (IMP-401): opened by transient
+errors it gives the rule-based plan with that cause; opened by quota or auth it ends ``failed``
+with ``provider_quota_exhausted`` or ``config_error``. Each generation's provider result is
+recorded on the breaker once, after the adapter's retries; retrieval's embeddings never are.
+
 Never logged: the request built for the provider, its raw output, notes or prompt text (FR-125).
 """
 
@@ -29,7 +34,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import limits
+from app.ai import factory, limits
 from app.ai.errors import ProviderError, ProviderInvalidOutput
 from app.ai.providers.base import ModelProvider
 from app.budget import engine
@@ -300,6 +305,14 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
         return
 
     metadata = provider.get_model_metadata()
+    breaker = factory.breaker_for(provider)
+    if breaker.state == "open" and breaker.open_reason is not None:
+        logger.warning("generation %s skips the provider: breaker open", generation_id)
+        if breaker.open_reason in ("provider_quota_exhausted", "config_error"):
+            await job.fail(breaker.open_reason)  # IMD-44: no fallback
+        else:
+            await run_fallback(job, request, breaker.open_reason, metadata=metadata)
+        return
     try:
         passages_built = len(request.passage_ids())
         request, truncated_count = limits.enforce_input_limit(
@@ -323,11 +336,13 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
             )
         result = await provider.generate_itinerary(request)
     except ProviderInvalidOutput as exc:
+        breaker.record_success()  # the service answered
         await end_invalid_output(
             job, request, output_check.summary(kind=exc.kind), usage=None, metadata=metadata
         )
         return
     except ProviderError as exc:
+        breaker.record_failure(exc)
         logger.warning("generation %s provider error %s", generation_id, exc.failure_reason)
         if exc.retryable:  # the adapter's retries are spent (§8.3): the rule-based plan
             await run_fallback(job, request, exc.failure_reason, metadata=metadata)
@@ -335,6 +350,7 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
             await job.fail(exc.failure_reason)
         return
 
+    breaker.record_success()
     await job.mark_validating()
     active = await job.active_ids(request)
     try:
