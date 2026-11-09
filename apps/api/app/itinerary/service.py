@@ -36,6 +36,7 @@ from app.itinerary.schemas import (
     Totals,
 )
 from app.rag import service as rag_service
+from app.schemas.ai import PlanFinding
 from app.trips import service as trips_service
 from app.trips.schemas import TripOut
 from app.validation.schemas import Finding
@@ -58,8 +59,14 @@ async def save_generated_plan(
     *,
     validation_summary: dict[str, Any],
     origin: Literal["model", "fallback_rule_based"] = "model",
+    findings: Sequence[PlanFinding] = (),
 ) -> SavedPlan:
-    """``origin`` fallback_rule_based saves no note (IMD-131) and a version of reason fallback."""
+    """``origin`` fallback_rule_based saves no note (IMD-131) and a version of reason fallback.
+
+    ``findings`` are the validator's on this plan, saved as its warnings (§8.12, IMD-42). Model
+    text is stored only in the day theme and the item note (note_origin ai); hours, prices and
+    travel come only from backend columns (FR-035).
+    """
     trip = await repository.lock_trip(session, trip_id, user_id)
     if trip is None:
         raise NotFound()
@@ -67,6 +74,7 @@ async def save_generated_plan(
         session, trip_id, trip.start_date, plan, origin=origin, generation_id=generation_id
     )
     plan_revision = await repository.mark_plan_saved(session, trip_id)
+    await repository.insert_warnings(session, trip_id, plan_revision, findings)
     snapshot = {
         "schema": SNAPSHOT_SCHEMA,
         "plan_revision": plan_revision,
