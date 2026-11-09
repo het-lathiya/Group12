@@ -6,6 +6,7 @@ import { useSyncExternalStore } from "react";
 
 import { FallbackNotice } from "@/components/generation/FallbackNotice";
 import { DayColumn } from "@/components/itinerary/DayColumn";
+import { WarningsPanel } from "@/components/itinerary/WarningsPanel";
 import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
 import { Button } from "@/components/ui/button";
@@ -175,6 +176,7 @@ export default function ItineraryPage() {
             {itinerary.data.source && (
               <FallbackNotice outcome={itinerary.data.source.outcome} />
             )}
+            <WarningsPanel findings={itinerary.data.findings} />
             <Days days={itinerary.data.days} />
           </>
         )
