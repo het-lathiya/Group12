@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Page } from "@playwright/test";
 
 import type { components } from "../lib/api/schema";
+import { checkA11y } from "./axe";
 import { expect, test } from "./fixtures/users";
 
 // TC-369 (US-153 AC1): the walking skeleton from the browser. Sign in, create a trip with the
@@ -115,6 +116,7 @@ test(
     expect(days.length).toBeGreaterThan(0);
     expect(days.flatMap((day) => day.items).length).toBeGreaterThan(0);
     await expectSavedDays(page, days);
+    await checkA11y(page);
 
     // The plan is saved, not held by the page.
     await page.reload();
