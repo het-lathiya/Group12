@@ -176,18 +176,17 @@ def test_tc_136_tc_022_tc_023_bad_answers_are_classified_and_take_the_one_route(
     routed: list[str | None] = []
     real = pipeline.end_invalid_output
 
-    async def spy(generation_id: UUID, sessions: Any, given: Any, *args: Any, **kw: Any) -> None:
-        routed.append(given)
-        await real(generation_id, sessions, given, *args, **kw)
+    async def spy(job: Any, request: Any, summary: dict[str, Any], **kw: Any) -> None:
+        routed.append(summary["kind"])
+        await real(job, request, summary, **kw)
 
     monkeypatch.setattr(pipeline, "end_invalid_output", spy)
 
     journal.run(recorded_gemini(recording))
 
     assert routed == [kind]
-    assert journal.failed == "invalid_output"
-    assert journal.failed_with["validation_summary"]["kind"] == kind
-    assert "save" not in journal.steps
+    assert journal.completed["validation_summary"]["kind"] == kind
+    assert journal.fell_back("invalid_output")  # IMP-402: the answer itself is never saved
 
 
 def test_an_item_past_the_pace_maximum_is_refused_before_saving(
@@ -201,8 +200,8 @@ def test_an_item_past_the_pace_maximum_is_refused_before_saving(
 
     journal.run(recorded_gemini())
 
-    assert journal.failed_with["validation_summary"]["kind"] == "schema_violation"
-    assert "save" not in journal.steps
+    assert journal.completed["validation_summary"]["kind"] == "schema_violation"
+    assert journal.fell_back("invalid_output")
 
 
 def test_a_place_gone_inactive_during_the_call_is_rejected(
@@ -213,9 +212,9 @@ def test_a_place_gone_inactive_during_the_call_is_rejected(
 
     journal.run(MockProvider("ok", app_env="test"))
 
-    assert journal.failed == "invalid_output"
-    assert journal.failed_with["validation_summary"]["invalid_ids"] == 1
-    assert "save" not in journal.steps
+    assert journal.fell_back("invalid_output")
+    assert journal.completed["validation_summary"]["invalid_ids"] == 1
+    assert THALI not in journal.saved_ids()
 
 
 def test_the_counts_reach_the_completed_record_when_a_duplicate_is_dropped(

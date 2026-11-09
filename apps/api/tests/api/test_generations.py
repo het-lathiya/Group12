@@ -28,6 +28,7 @@ from fixtures.db import insert_auth_user
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.errors import ProviderUnavailable
 from app.ai.factory import get_model_provider
 from app.ai.providers.base import ModelProvider
 from app.ai.providers.gemini import GeminiProvider
@@ -171,6 +172,14 @@ async def poll(
         while queue:
             await jobs.run(*queue.pop(0), sessions)
     raise AssertionError("generation did not finish")
+
+
+async def trip_destination(session: AsyncSession, trip_id: str) -> uuid.UUID:
+    destination = await session.scalar(
+        select(Trip.destination_id).where(Trip.id == uuid.UUID(trip_id))
+    )
+    assert destination is not None
+    return destination
 
 
 async def plan_rows(session: AsyncSession, trip_id: str) -> tuple[list[uuid.UUID], int]:
@@ -374,9 +383,9 @@ async def test_tc_115_an_incomplete_trip_lists_the_missing_fields(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("body", "field"), [({"mode": "ai", "scope": "day"}, "scope"), ({"mode": "rule_based"}, "mode")]
+    ("body", "field"), [({"mode": "ai", "scope": "day"}, "scope"), ({"mode": "plan"}, "mode")]
 )
-async def test_unknown_fields_and_rule_based_mode_are_refused(
+async def test_unknown_fields_and_modes_are_refused(
     api_client: httpx.AsyncClient,
     auth_user: AuthUser,
     trip: str,
@@ -490,13 +499,13 @@ async def test_tc_118_a_failed_job_gives_a_reason_and_leaves_the_previous_plan_u
 
     # API-22 refuses a trip with a plan, so the second job is started as API-31 will start it.
     generation_id = await queued_row(db_session, auth_user, trip)
-    await jobs.run(generation_id, MockProvider("timeout", app_env="test"), sessions)
+    await jobs.run(generation_id, MockProvider("quota", app_env="test"), sessions)
     failed = await poll(api_client, auth_user, str(generation_id), submitted, sessions)
 
-    # Interim until IMP-403 routes a timeout to the rule-based fallback.
+    # A timeout now ends in the rule-based plan (IMP-402); quota still fails (IMD-44).
     assert (failed["status"], failed["outcome"]) == ("failed", "failed")
-    assert failed["failure_reason"] == "provider_timeout"
-    assert failed["failure_message"] == "The AI service did not return a usable plan."
+    assert failed["failure_reason"] == "provider_quota_exhausted"
+    assert failed["failure_message"] == "AI generation is paused for today."
     assert failed["next_action"] == "retry_rule_based"
     assert failed["itinerary_version_id"] is None
     assert await plan_rows(db_session, trip) == before
@@ -691,7 +700,7 @@ async def test_a_crash_between_items_and_version_leaves_the_previous_plan_intact
 
 
 @pytest.mark.asyncio
-async def test_tc_135_an_id_outside_the_shortlist_is_rejected_before_saving(
+async def test_tc_135_tc_307_an_id_outside_the_shortlist_is_never_saved_and_the_fallback_runs(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
@@ -703,28 +712,42 @@ async def test_tc_135_an_id_outside_the_shortlist_is_rejected_before_saving(
     use_provider(api_app, "unknown_place")
     generation_id = (await start(api_client, auth_user, trip)).json()["id"]
 
-    failed = await poll(api_client, auth_user, generation_id, submitted, sessions)
+    done = await poll(api_client, auth_user, generation_id, submitted, sessions)
 
-    assert (failed["status"], failed["failure_reason"]) == ("failed", "invalid_output")
-    assert await plan_rows(db_session, trip) == ([], 0)
-    versions = select(func.count()).select_from(ItineraryVersion)
-    assert await db_session.scalar(versions.where(ItineraryVersion.trip_id == uuid.UUID(trip))) == 0
+    # IMP-402: the answer is refused and the rule-based plan is saved in its place (§8.3).
+    assert (done["status"], done["outcome"]) == ("completed", "fallback_rule_based")
+    assert (done["failure_reason"], done["fallback_reason"]) == (None, "invalid_output")
+    places = set(
+        await db_session.scalars(
+            select(Place.id).where(
+                Place.destination_id == (await trip_destination(db_session, trip))
+            )
+        )
+    )
+    saved = set(
+        await db_session.scalars(
+            select(ItineraryItem.place_id).where(ItineraryItem.trip_id == uuid.UUID(trip))
+        )
+    )
+    assert saved
+    assert saved <= places
     row = await db_session.get(AiGeneration, uuid.UUID(generation_id), populate_existing=True)
     assert row is not None
     assert row.validation_summary == {
-        "errors": 1,
+        "errors": 0,
         "warnings": 0,
         "infos": 0,
         "invalid_ids": 1,
         "rejected_items": 1,
         "unknown_source_ids": 0,
         "kind": None,
+        "provider_failure": "invalid_output",
     }
-    assert failed["validation_summary"]["errors"] == 1
+    assert done["validation_summary"]["errors"] == 0
 
 
 @pytest.mark.asyncio
-async def test_tc_011_invalid_output_is_classified_and_not_called_again(
+async def test_tc_011_invalid_output_is_classified_not_called_again_and_falls_back(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
@@ -746,11 +769,11 @@ async def test_tc_011_invalid_output_is_classified_and_not_called_again(
     )
     generation_id = (await start(api_client, auth_user, trip)).json()["id"]
 
-    failed = await poll(api_client, auth_user, generation_id, submitted, sessions)
+    done = await poll(api_client, auth_user, generation_id, submitted, sessions)
 
     assert calls == 1
-    assert (failed["status"], failed["failure_reason"]) == ("failed", "invalid_output")
-    assert await plan_rows(db_session, trip) == ([], 0)
+    assert (done["status"], done["outcome"]) == ("completed", "fallback_rule_based")
+    assert (done["failure_reason"], done["fallback_reason"]) == (None, "invalid_output")
     row = await db_session.get(AiGeneration, uuid.UUID(generation_id), populate_existing=True)
     assert row is not None
     assert row.validation_summary["kind"] == "malformed_json"
@@ -1031,3 +1054,123 @@ async def test_the_request_holds_only_trip_data_and_shortlisted_places(
     assert auth_user.email not in dumped
     assert str(auth_user.user_id) not in dumped
     assert "Weekend in Sampleton" not in dumped
+
+
+# IMP-402: the rule-based fallback planner (TC-145, TC-331; IMD-22, IMD-43, IMD-131)
+
+
+@pytest.mark.asyncio
+async def test_tc_145_fallback_an_unavailable_provider_saves_a_labelled_rule_based_plan(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    api_app.dependency_overrides[get_model_provider] = lambda: MockProvider(
+        "ok", app_env="test", raise_error=ProviderUnavailable()
+    )
+    generation_id = (await start(api_client, auth_user, trip)).json()["id"]
+
+    done = await poll(api_client, auth_user, generation_id, submitted, sessions)
+
+    assert (done["status"], done["outcome"]) == ("completed", "fallback_rule_based")
+    assert (done["failure_reason"], done["fallback_reason"]) == (None, "provider_unavailable")
+    # IMD-43: a fallback after an AI attempt keeps the configured model and reports mode ai.
+    assert (done["mode"], done["provider"], done["model_id"]) == ("ai", "MOCK", "mock-v1")
+    items = list(
+        await db_session.scalars(
+            select(ItineraryItem).where(ItineraryItem.trip_id == uuid.UUID(trip))
+        )
+    )
+    assert items
+    assert {(i.origin, i.note, i.note_origin) for i in items} == {
+        ("fallback_rule_based", None, "none")
+    }
+    version = await db_session.get(ItineraryVersion, uuid.UUID(done["itinerary_version_id"]))
+    assert version is not None
+    assert version.reason == "fallback"
+    plan = await api_client.get(f"/api/v1/trips/{trip}/itinerary", headers=auth_user.headers)
+    assert plan.status_code == 200, plan.text
+    body = plan.json()
+    assert body["source"]["outcome"] == "fallback_rule_based"
+    assert {day["theme_origin"] for day in body["days"]} == {"none"}
+    assert all(day["theme"].startswith(f"Day {day['day_number']} around ") for day in body["days"])
+    assert {item["note_origin"] for day in body["days"] for item in day["items"]} == {"none"}
+
+
+@pytest.mark.asyncio
+async def test_tc_331_fallback_mode_rule_based_is_recorded_as_rule_based_planner_v1(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    calls = 0
+
+    class Counting(MockProvider):
+        async def generate_itinerary(self, request: GenerationRequest) -> Any:
+            nonlocal calls
+            calls += 1
+            return await super().generate_itinerary(request)
+
+    api_app.dependency_overrides[get_model_provider] = lambda: Counting("ok", app_env="test")
+    # Mode rule_based needs no AI notice (§6.4).
+    trip_id = await create_trip(api_client, auth_user, sampleton, acknowledge=False)
+
+    response = await start(api_client, auth_user, trip_id, mode="rule_based")
+    assert response.status_code == 202, response.text
+    queued = response.json()
+    assert (queued["mode"], queued["provider"], queued["model_id"]) == (
+        "rule_based",
+        "MOCK",
+        "rule_based_planner_v1",
+    )
+    done = await poll(api_client, auth_user, queued["id"], submitted, sessions)
+
+    assert calls == 0
+    assert (done["status"], done["outcome"]) == ("completed", "fallback_rule_based")
+    assert (done["failure_reason"], done["fallback_reason"]) == (None, None)
+    row = await db_session.get(AiGeneration, uuid.UUID(queued["id"]), populate_existing=True)
+    assert row is not None
+    assert (row.model_id, row.retrieval_mode, row.adapter_version) == (
+        "rule_based_planner_v1",
+        None,
+        None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_fallback_mode_rule_based_twice_gives_the_same_plan(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    plans = []
+    for _ in range(2):
+        trip_id = await create_trip(api_client, auth_user, sampleton, acknowledge=False)
+        queued = (await start(api_client, auth_user, trip_id, mode="rule_based")).json()
+        await poll(api_client, auth_user, queued["id"], submitted, sessions)
+        body = (
+            await api_client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=auth_user.headers)
+        ).json()
+        plans.append(
+            [
+                (
+                    day["day_number"],
+                    day["theme"],
+                    [(i["place"]["id"], i["start_time"]) for i in day["items"]],
+                )
+                for day in body["days"]
+            ]
+        )
+
+    assert plans[0] == plans[1]  # FR-036 AC2 through the whole pipeline
