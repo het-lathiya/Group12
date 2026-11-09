@@ -73,6 +73,8 @@ source_modules =
     app.rag.query
     app.rag.mmr
     app.budget.engine
+    app.validation.rules
+    app.validation.validator
 forbidden_modules =
     fastapi
     sqlalchemy

@@ -1,0 +1,169 @@
+"""Validator rules (MOD-B07, §8.12, §9.3.4 to §9.3.7; IMP-404).
+
+Pure: no I/O and no framework imports. Each rule reads a recalculated plan (the times and travel
+that step 9 stored, IMP-308) and a ``ValidationContext`` and returns findings. ``RULES`` is the
+fixed order in which ``app.validation.validator.validate`` runs them. A plan is any object with
+the attributes of the ``Plan*`` protocols, so ``PlannedDay`` and the saved rows both fit and this
+module imports no other module's schemas.
+"""
+
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import date
+from typing import Final, Protocol
+
+from app.routing.estimate import BUFFER_MIN
+from app.schemas.ai import FindingCode, PlanFinding, Severity
+
+Finding = PlanFinding  # {code, severity, message, day_number, item_ref, place_id, suggested_fix}
+
+# §8.12: the 13 finding codes and their severities. OUTSIDE_HOURS is an error when the hours are
+# curated and a warning when they are an estimate (its rule, IMP-309, picks); ESTIMATE_USED is in
+# the catalogue but never emitted (IMD-124 B6).
+CATALOGUE: Final[Mapping[FindingCode, Severity]] = {
+    "OVERLAP": "error",
+    "TRANSFER_TOO_SHORT": "warning",
+    "CLOSED_ON_DAY": "error",
+    "OUTSIDE_HOURS": "error",
+    "HOURS_UNVERIFIED": "info",
+    "DAY_TOO_LONG": "warning",
+    "BUDGET_EXCEEDED": "warning",
+    "BUDGET_NEAR": "info",
+    "MUST_VISIT_MISSING": "error",
+    "UNKNOWN_PLACE": "error",
+    "OUTSIDE_TRIP_DATES": "error",
+    "COST_INCOMPLETE": "warning",
+    "ESTIMATE_USED": "info",
+}
+
+
+class PlanItem(Protocol):
+    @property
+    def place_id(self) -> str: ...
+    @property
+    def start_time(self) -> str: ...
+    @property
+    def duration_min(self) -> int: ...
+    @property
+    def travel_from_prev_min(self) -> int | None: ...
+    @property
+    def travel_source(self) -> str | None: ...
+
+
+class PlanDay(Protocol):
+    @property
+    def day_number(self) -> int: ...
+    @property
+    def items(self) -> Sequence[PlanItem]: ...
+
+
+@dataclass(frozen=True)
+class ValidationContext:
+    """What the rules know besides the plan. Travel times are on the items (step 9 stored them).
+
+    ``places`` maps active place IDs to names; ``shortlist_ids`` is None outside generation, where
+    no shortlist exists. ``pace_limits`` (items, active minutes) is read by IMP-309's DAY_TOO_LONG.
+    """
+
+    start_date: date
+    end_date: date
+    places: Mapping[str, str] = field(default_factory=dict)
+    must_visit_ids: frozenset[str] = frozenset()
+    shortlist_ids: frozenset[str] | None = None
+    pace_limits: tuple[int, int] | None = None
+
+    @property
+    def num_days(self) -> int:
+        return (self.end_date - self.start_date).days + 1
+
+    @property
+    def active_place_ids(self) -> frozenset[str]:
+        return frozenset(self.places)
+
+
+Rule = Callable[[Sequence[PlanDay], ValidationContext], list[Finding]]
+
+
+def minutes(hhmm: str) -> int:
+    hours, mins = hhmm.split(":")
+    return int(hours) * 60 + int(mins)
+
+
+def item_ref(day_number: int, position: int) -> str:
+    return f"d{day_number}-i{position}"
+
+
+def finding(
+    code: FindingCode,
+    message: str,
+    *,
+    day_number: int | None = None,
+    item_ref: str | None = None,
+    place_id: str | None = None,
+    suggested_fix: str | None = None,
+) -> Finding:
+    return Finding.model_validate(
+        {
+            "code": code,
+            "severity": CATALOGUE[code],
+            "message": message,
+            "day_number": day_number,
+            "item_ref": item_ref,
+            "place_id": place_id,
+            "suggested_fix": suggested_fix,
+        }
+    )
+
+
+def _gaps(plan: Sequence[PlanDay]) -> list[tuple[int, int, PlanItem, int]]:
+    """(day, position of the later item, the later item, gap in minutes) for consecutive items of
+    one day; items of different days are never paired (TC-306)."""
+    pairs = []
+    for day in plan:
+        for position in range(2, len(day.items) + 1):
+            previous, current = day.items[position - 2], day.items[position - 1]
+            gap = minutes(current.start_time) - minutes(previous.start_time) - previous.duration_min
+            pairs.append((day.day_number, position, current, gap))
+    return pairs
+
+
+def overlap(plan: Sequence[PlanDay], ctx: ValidationContext) -> list[Finding]:
+    """§9.3.4: the next item starts before the previous one ends; back-to-back (gap 0) is fine."""
+    return [
+        finding(
+            "OVERLAP",
+            f"{item_ref(day, position)} starts {-gap} min before {item_ref(day, position - 1)} "
+            "ends.",
+            day_number=day,
+            item_ref=item_ref(day, position),
+            suggested_fix="Move one of the two items, shorten the earlier visit or start later.",
+        )
+        for day, position, _, gap in _gaps(plan)
+        if gap < 0
+    ]
+
+
+def transfer_too_short(plan: Sequence[PlanDay], ctx: ValidationContext) -> list[Finding]:
+    """§9.3.5: 0 <= gap < travel + buffer (5 after routing_api, 15 after fallback_estimate)."""
+    findings = []
+    for day, position, item, gap in _gaps(plan):
+        if gap < 0 or item.travel_from_prev_min is None or item.travel_source is None:
+            continue
+        need = item.travel_from_prev_min + BUFFER_MIN[item.travel_source]
+        if gap < need:
+            estimate = " (estimate)" if item.travel_source == "fallback_estimate" else ""
+            findings.append(
+                finding(
+                    "TRANSFER_TOO_SHORT",
+                    f"{gap} min to reach {item_ref(day, position)}, but the transfer needs "
+                    f"{item.travel_from_prev_min} min{estimate} plus a "
+                    f"{BUFFER_MIN[item.travel_source]}-min buffer: {need - gap} min short.",
+                    day_number=day,
+                    item_ref=item_ref(day, position),
+                    suggested_fix=f"Start {item_ref(day, position)} {need - gap} min later.",
+                )
+            )
+    return findings
+
+
+RULES: Final[tuple[Rule, ...]] = (overlap, transfer_too_short)
