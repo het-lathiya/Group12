@@ -211,12 +211,23 @@ jobs:
           . "$RUNNER_TEMP/deploy-helpers.sh"
           cluster="$(cluster_of "$API_SERVICE_ARN")"
           service_task="$RUNNER_TEMP/service-task.json"
-          aws ecs describe-task-definition --query taskDefinition --output json --task-definition \
-            "$(aws ecs describe-services --cluster "$cluster" --services "${API_SERVICE_ARN##*/}" \
-              --query 'services[0].taskDefinition' --output text)" > "$service_task"
+          service="${API_SERVICE_ARN##*/}"
+          # Express Mode leaves services[0].taskDefinition null; the PRIMARY deployment holds it.
+          task_definition="$(aws ecs describe-services --cluster "$cluster" --services "$service" \
+            --query "services[0].deployments[?status=='PRIMARY'].taskDefinition | [0]" --output text)"
+          case "$task_definition" in
+            arn:*) echo "service task definition: $task_definition" ;;
+            *) echo "::error::no PRIMARY deployment task definition for $service in $cluster (got '${task_definition:-empty}')"; exit 1 ;;
+          esac
+          aws ecs describe-task-definition --task-definition "$task_definition" \
+            --query taskDefinition --output json > "$service_task"
+          # Keep only what register-task-definition accepts (AWS CLI reference), minus null values.
           release_arn="$(jq --arg family "group12-api-$DEPLOY_ENV-release" --arg image "$API_IMAGE" '
-            del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities,
-                .registeredAt, .registeredBy, .deregisteredAt)
+            {family, taskRoleArn, executionRoleArn, networkMode, containerDefinitions, volumes,
+             placementConstraints, requiresCompatibilities, cpu, memory, pidMode, ipcMode,
+             proxyConfiguration, inferenceAccelerators, ephemeralStorage, runtimePlatform,
+             enableFaultInjection}
+            | with_entries(select(.value != null))
             | .family = $family | .containerDefinitions[0].image = $image' "$service_task" \
             | aws ecs register-task-definition --cli-input-json file:///dev/stdin \
               --query taskDefinition.taskDefinitionArn --output text)"

@@ -79,6 +79,8 @@ A failing release task stops the run before any service changes. An embedding ou
 
 The release task runs with the service's **current** environment, because its revision is copied from the running service. A new template value such as `SEED_DIRS` therefore reaches the release task on the deploy after the one that sets it.
 
+**Express Mode note.** An Express Mode service leaves `taskDefinition` and `networkConfiguration` empty in `describe-services`. Its task definition is only under `deployments`, on the entry with status `PRIMARY`, and the workflow stops with an error when that entry is missing. The task definition families are `default-group12-<service>-<env>`, for example `default-group12-api-staging`. The release task's network comes from `AWS_SUBNET_IDS` and `API_TASKS_SECURITY_GROUP`.
+
 **Forced failure (TC-438).** Run **Deploy staging** from `main` with `simulate_release_failure` set. The release command becomes `false`, the run fails at the release step, and neither service changes. Record the run link for IMP-299.
 
 **Rollback.** Redeploy the previous tag's images: run `deploy-production.yml` with that tag, or on staging rerun the earlier commit's deploy. Production migrations are forward only: the `down` files exist for tests, so a rollback never reverses a migration, and the older image must work with the newer schema.
