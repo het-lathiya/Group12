@@ -2,6 +2,7 @@ import path from "node:path";
 
 import type { Page, TestInfo } from "@playwright/test";
 
+import { checkA11y } from "./axe";
 import { expect, test, type TestUsers } from "./fixtures/users";
 
 // TC-278 (US-122 AC1-AC2, FR-114): no horizontal scroll and no clipped control at each project width.
@@ -22,6 +23,7 @@ async function expectFitsViewport(
   await expect(
     page.getByRole("heading", { level: 1, name: heading }),
   ).toBeVisible();
+  await checkA11y(page);
 
   const { scrollWidth, innerWidth } = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
@@ -98,4 +100,5 @@ test("smoke: a signed-out visit to /dashboard lands on /sign-in", async ({
   await expect(
     page.getByRole("heading", { level: 1, name: "Sign in" }),
   ).toBeVisible();
+  await checkA11y(page);
 });

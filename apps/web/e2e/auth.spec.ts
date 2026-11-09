@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Page } from "@playwright/test";
 
 import { MESSAGES } from "../components/auth/messages";
+import { checkA11y } from "./axe";
 import { expect, randomPassword, test, uniqueEmail } from "./fixtures/users";
 
 // E2E-01 (auth part): sign-up, sign-in, reload, sign-out and Back against the local Supabase stack.
@@ -51,6 +52,7 @@ test("auth: sign-up rejects empty and weak input per field (TC-053)", async ({
       signUpCalls.push(request.url());
   });
   await page.goto("/sign-up");
+  await checkA11y(page);
 
   await page.getByRole("button", { name: "Create account" }).click();
   const email = page.getByLabel("Email");
