@@ -12,17 +12,22 @@ environment), never from a file in the repository (TC-013), and no message holds
   (``app.core.config.check_settings``).
 - FINETUNED_MODEL: refused with ``ProviderBadRequest`` (IMD-92), "not enabled before Stage 2".
 
+``breaker_for`` gives each provider its one ``CircuitBreaker`` (IMP-401); the Gemini adapter gets
+the same instance, so its health check reports the breaker's state.
+
 ``startup_provider`` is the start-up step of ``app.main``: it checks that PROMPT_TEMPLATE_VERSION
 names an existing ``itinerary_generate`` template, builds the provider, calls ``health_check`` once
 and logs the metadata. ``get_model_provider`` is the FastAPI dependency the generation code uses.
 """
 
 import logging
+import weakref
 from functools import cache
 from typing import Annotated, Final, get_args
 
 from fastapi import Depends, Request
 
+from app.ai.breaker import CircuitBreaker
 from app.ai.errors import ProviderBadRequest, ProviderConfigError
 from app.ai.prompts import registry
 from app.ai.providers.base import ModelProvider
@@ -37,6 +42,14 @@ FINETUNED_NOT_ENABLED: Final = (
 
 
 _gemini_providers: dict[tuple[object, ...], ModelProvider] = {}
+_breakers: "weakref.WeakKeyDictionary[ModelProvider, CircuitBreaker]" = weakref.WeakKeyDictionary()
+
+
+def breaker_for(provider: ModelProvider) -> CircuitBreaker:
+    """The provider's circuit breaker, created on first use (one instance per provider)."""
+    if provider not in _breakers:
+        _breakers[provider] = CircuitBreaker()
+    return _breakers[provider]
 
 
 @cache
@@ -80,7 +93,10 @@ def _gemini(settings: Settings) -> ModelProvider:
     if key not in _gemini_providers:
         from app.ai.providers.gemini import GeminiProvider
 
-        _gemini_providers[key] = GeminiProvider(settings)
+        breaker = CircuitBreaker()
+        provider = GeminiProvider(settings, breaker=breaker)
+        _breakers[provider] = breaker
+        _gemini_providers[key] = provider
     return _gemini_providers[key]
 
 
@@ -88,6 +104,7 @@ def reset_provider_cache() -> None:
     """Forget the built providers (tests only)."""
     _build.cache_clear()
     _gemini_providers.clear()
+    _breakers.clear()
 
 
 async def startup_provider(settings: Settings) -> ModelProvider:

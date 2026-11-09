@@ -166,10 +166,11 @@ def test_a_transient_error_is_retried_up_to_gemini_max_retries(sleeps: list[floa
     assert len(sleeps) == 1
     assert 0.75 <= sleeps[0] <= 1.25
 
+    # §8.14 (IMP-401): never a third attempt, whatever GEMINI_MAX_RETRIES says.
     failing = Replay(vendor_error(503, "UNAVAILABLE"))
     with pytest.raises(ProviderUnavailable):
         embed(provider(failing, gemini_max_retries=2))
-    assert failing.count == 3
+    assert failing.count == 2
 
 
 def test_a_retry_honours_retry_after(sleeps: list[float]) -> None:

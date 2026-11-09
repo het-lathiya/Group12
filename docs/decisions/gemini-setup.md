@@ -57,6 +57,13 @@ These are observations of the installed package, not documented facts:
 - `HttpRetryOptions(attempts=0)` and `attempts=1` still make one retry on 429 and 5xx, so the adapter lists a status no server sends as the only retryable one. `test_gemini_the_sdk_makes_one_attempt_only` guards this.
 - The Interactions error classes are exported only from a private module, so the version is pinned exactly in `apps/api/pyproject.toml`.
 
+## Retry setting (IMP-401)
+
+- The SDK's own retries stay switched off as above (`HttpRetryOptions(attempts=0, http_status_codes=[599])`), so every HTTP request the SDK sends is one adapter attempt.
+- The adapter's `_with_retries` makes at most `min(1 + GEMINI_MAX_RETRIES, 2)` attempts, for generation and embeddings alike. Only `ProviderTimeout`, `ProviderRateLimited` and `ProviderUnavailable` are retried, after 1, 2 or 4 s with ±25 % jitter, or after `retry-after` when that is longer. A wait that would reach the end of the 70 s allowance is not made, and each attempt's timeout is `min(GEMINI_TIMEOUT_S, time left)`.
+- With the defaults (`GEMINI_TIMEOUT_S=35`, `GEMINI_MAX_RETRIES=1`) the worst case is two attempts within 70 s. `test_retry.py` and `test_gemini_the_sdk_makes_one_attempt_only` guard this.
+- The circuit breaker (`app/ai/breaker.py`) is recorded by the pipeline once per generation, after these retries; embedding calls never touch it (Amendment A1, IMD-112).
+
 ## Live result
 
 Live smoke (TC-029): **Verified**, 7 November 2026. The key holder ran `make live-smoke` on branch `fix/IMP-301-wire-schema` at `589ded8`: `2 passed` (TC-029 generation and the live embedding test). That commit has the same tree as `4b10e3f` on `main`, so the result applies to the merged code.
