@@ -74,6 +74,36 @@ def test_tc_137_items_on_a_day_outside_the_trip_are_rejected() -> None:
         ("OUTSIDE_TRIP_DATES", "d3-i2"),
     ]
     assert (result.invalid_ids, result.rejected_items) == (0, 2)
+    assert result.usable  # IMD-126: dropped, not a reason to refuse the answer
+
+
+def test_output_check_imd_126_a_day_past_the_trip_is_dropped_not_a_schema_violation() -> None:
+    answer = plan((1, [FORT]), (2, [MARKET]), (3, [THALI]))
+
+    limited = apply_limits(answer, trip_days=2, max_items_per_day=5)
+    result = check_output(limited, SHORTLIST, 2)
+
+    assert limited == answer
+    assert result.output.place_ids() == [FORT, MARKET]
+    assert result.usable
+    assert summary(result)["errors"] == 1
+    assert summary(result)["rejected_items"] == 1
+
+
+def test_output_check_an_answer_with_only_days_outside_the_trip_is_not_usable() -> None:
+    answer = plan((3, [FORT]))
+
+    result = check_output(apply_limits(answer, trip_days=2, max_items_per_day=5), SHORTLIST, 2)
+
+    assert result.output.days == []
+    assert not result.usable
+
+
+def test_output_check_unknown_place_still_makes_the_answer_unusable() -> None:
+    result = check_output(plan((1, [FORT]), (3, [MARKET]), (2, [INVENTED])), SHORTLIST, 2)
+
+    assert [f.code for f in result.findings] == ["OUTSIDE_TRIP_DATES", "UNKNOWN_PLACE"]
+    assert not result.usable
 
 
 def test_the_second_occurrence_of_a_place_is_rejected_and_the_plan_stays_usable() -> None:
@@ -114,11 +144,10 @@ def test_a_valid_answer_passes_unchanged() -> None:
 @pytest.mark.parametrize(
     ("days", "trip_days", "max_items"),
     [
-        (((1, [FORT]), (2, [MARKET]), (3, [THALI])), 2, 5),
         (((1, [FORT]), (1, [MARKET])), 2, 5),
         (((1, [FORT, MARKET, THALI]),), 2, 2),
     ],
-    ids=["more days than the trip", "a day twice", "over the pace maximum"],
+    ids=["a day twice", "over the pace maximum"],
 )
 def test_tc_023_trip_limits_are_a_schema_violation(
     days: tuple[tuple[int, list[str]], ...], trip_days: int, max_items: int
@@ -304,3 +333,23 @@ def test_output_check_limits_keep_the_io_2_answer_and_its_citations() -> None:
 
 def test_output_check_a_refused_answer_counts_no_citation() -> None:
     assert summary(kind="malformed_json")["unknown_source_ids"] == 0
+
+
+def test_output_check_imd_126_the_pipeline_saves_the_answer_without_the_outside_day(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answer = plan((1, [FORT]), (3, [MARKET]))  # the sample trip has 2 days
+
+    class Answers(MockProvider):
+        async def generate_itinerary(self, request: Any) -> Any:
+            result = await super().generate_itinerary(request)
+            return result.model_copy(update={"output": answer})
+
+    journal = Journal(monkeypatch, sample_request())
+
+    journal.run(Answers("ok", app_env="test"))
+
+    assert journal.completed["outcome"] == "model"
+    assert journal.saved_ids() == {FORT}
+    recorded = journal.completed["validation_summary"]
+    assert (recorded["errors"], recorded["rejected_items"]) == (1, 1)
