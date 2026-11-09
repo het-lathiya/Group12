@@ -59,7 +59,7 @@ function Cost({ cost }: { cost: Item["cost"] }) {
 export function ItineraryItemCard({ item }: { item: Item }) {
   const leg = item.travel_from_previous;
   return (
-    <div className="grid grid-cols-[56px_minmax(0,1fr)]">
+    <div id={`item-${item.id}`} tabIndex={-1} className="grid scroll-mt-24 grid-cols-[56px_minmax(0,1fr)] rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
       {leg && (
         <p className="col-start-2 flex flex-wrap items-center gap-x-2 border-l border-border pb-3 pl-4 text-sm text-muted-foreground">
           <span className="tabular-nums">{formatDuration(leg.minutes)}</span>
