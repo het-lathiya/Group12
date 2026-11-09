@@ -1,6 +1,9 @@
+import { Inbox } from "lucide-react";
 import type { ReactNode } from "react";
 
 export type EmptyStateProps = {
+  /** A decorative icon; a neutral inbox by default. */
+  icon?: ReactNode;
   title: string;
   description?: string;
   /** The next step, usually a Button or a Button-styled link. */
@@ -9,8 +12,9 @@ export type EmptyStateProps = {
   headingLevel?: 2 | 3;
 };
 
-/** Shown when a list or page has nothing to display yet (§7.6). */
+/** Shown when a list or page has nothing to display yet (§7.6): icon, title, hint, one action. */
 export function EmptyState({
+  icon = <Inbox className="size-6" />,
   title,
   description,
   action,
@@ -20,6 +24,9 @@ export function EmptyState({
 
   return (
     <section className="flex flex-col items-center gap-3 rounded-xl border border-dashed bg-card px-4 py-10 text-center">
+      <span aria-hidden="true" className="text-muted-foreground">
+        {icon}
+      </span>
       <Heading className="font-heading text-lg font-semibold text-card-foreground">
         {title}
       </Heading>

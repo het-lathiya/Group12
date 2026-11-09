@@ -1,5 +1,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
+const STILL = "motion-reduce:animate-none";
+
 export type LoadingSkeletonProps = {
   /** `cards` for card grids, `list` for rows, `text` for paragraphs. */
   shape?: "cards" | "list" | "text";
@@ -8,7 +10,10 @@ export type LoadingSkeletonProps = {
   label?: string;
 };
 
-/** Placeholder blocks shown while data loads (§7.6); announced once as a polite status. */
+/**
+ * Placeholder blocks shown while data loads (§7.6), shaped like the final cards, rows or text; no
+ * spinner, and no pulse under prefers-reduced-motion. Announced once as a polite status.
+ */
 export function LoadingSkeleton({
   shape = "list",
   count = 3,
@@ -25,21 +30,27 @@ export function LoadingSkeleton({
           className="grid grid-cols-1 gap-4 lg:grid-cols-3"
         >
           {blocks.map((index) => (
-            <Skeleton key={index} className="h-36 w-full rounded-xl" />
+            <Skeleton
+              key={index}
+              className={`h-36 w-full rounded-xl ${STILL}`}
+            />
           ))}
         </div>
       )}
       {shape === "list" && (
         <div aria-hidden="true" className="flex flex-col gap-3">
           {blocks.map((index) => (
-            <Skeleton key={index} className="h-14 w-full" />
+            <Skeleton key={index} className={`h-14 w-full ${STILL}`} />
           ))}
         </div>
       )}
       {shape === "text" && (
         <div aria-hidden="true" className="flex flex-col gap-2">
           {blocks.map((index) => (
-            <Skeleton key={index} className="h-4 w-full last:w-2/3" />
+            <Skeleton
+              key={index}
+              className={`h-4 w-full last:w-2/3 ${STILL}`}
+            />
           ))}
         </div>
       )}

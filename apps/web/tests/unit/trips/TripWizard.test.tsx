@@ -433,9 +433,15 @@ describe("TripWizard (FR-007 to FR-009)", () => {
     await fillDetails(user);
     await user.click(next());
 
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("Something went wrong on our side.");
-    expect(alert).toHaveTextContent("Request ID: req-500");
+    // Inline (IMP-412): the form stays on the page, so the error is polite, not role="alert".
+    const error = (
+      await screen.findByRole("heading", {
+        name: "Your changes could not be saved",
+      })
+    ).closest("section") as HTMLElement;
+    expect(error).toHaveAttribute("aria-live", "polite");
+    expect(error).toHaveTextContent("Something went wrong on our side.");
+    expect(error).toHaveTextContent("Reference: req-500");
     expect(screen.getByLabelText("Trip title")).toHaveValue(
       "Weekend in Sampleton",
     );
