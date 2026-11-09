@@ -71,7 +71,12 @@ class Replay:
 
 
 def provider(replay: Replay, **overrides: Any) -> GeminiProvider:
-    values: dict[str, Any] = {"gemini_api_key": KEY, "gemini_model_id": MODEL}
+    # One attempt: these tests map single answers; test_retry.py covers the retries (IMP-401).
+    values: dict[str, Any] = {
+        "gemini_api_key": KEY,
+        "gemini_model_id": MODEL,
+        "gemini_max_retries": 0,
+    }
     client = httpx.AsyncClient(transport=httpx.MockTransport(replay))
     return GeminiProvider(Settings(**(values | overrides)), http_client=client)
 
@@ -94,6 +99,7 @@ def test_gemini_tc_013_the_key_comes_from_the_environment_and_never_surfaces(
     clean_settings_env.setenv("DATABASE_URL", "postgresql://u:p@localhost/x")
     clean_settings_env.setenv("GEMINI_API_KEY", KEY)
     clean_settings_env.setenv("GEMINI_MODEL_ID", MODEL)
+    clean_settings_env.setenv("GEMINI_MAX_RETRIES", "0")  # one attempt, no real backoff wait
     replay = Replay(recording("unavailable_503"))
     client = httpx.AsyncClient(transport=httpx.MockTransport(replay))
     gemini = GeminiProvider(load_settings(), http_client=client)
@@ -146,7 +152,9 @@ def test_gemini_tc_018_no_answer_within_the_timeout_is_a_provider_timeout() -> N
         return recording("ok")
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(never))
-    settings = Settings(gemini_api_key=KEY, gemini_model_id=MODEL, gemini_timeout_s=0.01)
+    settings = Settings(
+        gemini_api_key=KEY, gemini_model_id=MODEL, gemini_timeout_s=0.01, gemini_max_retries=0
+    )
     with pytest.raises(ProviderTimeout):
         generate(GeminiProvider(settings, http_client=client))
 
@@ -279,6 +287,7 @@ def test_gemini_tc_161_a_blocked_or_empty_answer_names_its_reason() -> None:
 
 @pytest.mark.parametrize("name", ["unavailable_503", "rate_limited_429", "quota_429"])
 def test_gemini_the_sdk_makes_one_attempt_only(name: str) -> None:
+    # Adapter retries off (IMP-401 adds them on top), so any second request would be the SDK's.
     replay = Replay(recording(name))
     with pytest.raises(ProviderError):
         generate(provider(replay))

@@ -2,11 +2,14 @@
 
 Uses the Interactions API (OD-14; docs/decisions/gemini-setup.md): ``_call_vendor`` holds the only
 vendor call, with store=false, the output's wire schema, the lowest thinking level the model accepts
-and no sampling parameter. One attempt per call: retries and the breaker are IMP-401, so the SDK's
-own retries are switched off. Vendor error text is never read: it can echo the prompt (NFR-024).
+and no sampling parameter. The SDK's own retries are switched off; ``_with_retries`` (IMP-401) makes
+at most two attempts inside the 70 s allowance, retrying only timeouts, rate limits and outages,
+each attempt bounded by the time left. Vendor error text is never read: it can echo the prompt
+(NFR-024). The circuit breaker is recorded by the pipeline, once per generation; the adapter only
+reads it for ``health_check``.
 
 ``embed_texts`` (Amendment A1 §6.5, IMP-312) uses the models API instead, through
-``_call_embed_vendor``, with the retries of §8.4 in the adapter. It leaves ``_last_state`` alone:
+``_call_embed_vendor``, with the same retries. It leaves ``_last_state`` and the breaker alone:
 an embedding failure says nothing about generation (IMD-112). Texts and vectors are never logged.
 """
 
@@ -14,7 +17,7 @@ import asyncio
 import json
 import random
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Final, Literal, cast
 
@@ -33,6 +36,7 @@ from google.genai._gaos.lib.compat_errors import (
 from google.genai._gaos.types.interactions.interaction import Interaction
 from pydantic import ValidationError
 
+from app.ai.breaker import CircuitBreaker
 from app.ai.errors import (
     ProviderAuthError,
     ProviderBadRequest,
@@ -113,6 +117,7 @@ EMBED_TASK_TYPES: Final[dict[EmbeddingPurpose, str]] = {
 RETRYABLE: Final = (ProviderTimeout, ProviderRateLimited, ProviderUnavailable)
 BACKOFF_BASE_S: Final = 1.0
 BACKOFF_JITTER: Final = 0.25
+MAX_ATTEMPTS: Final = 2  # §8.14: whatever GEMINI_MAX_RETRIES says, no path makes a third attempt
 
 Health = Literal["ok", "degraded", "down"]
 
@@ -292,17 +297,28 @@ def parse_output(
 class GeminiProvider:
     name: Literal["GEMINI"] = "GEMINI"
 
-    def __init__(self, settings: Settings, http_client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        http_client: httpx.AsyncClient | None = None,
+        *,
+        breaker: CircuitBreaker | None = None,
+        clock: Callable[[], float] | None = None,
+        sleep: Callable[[float], Awaitable[None]] | None = None,
+    ) -> None:
         self._api_key = settings.gemini_api_key.get_secret_value()
         self._model_id = settings.gemini_model_id
         self.embedding_model_id = settings.gemini_embedding_model_id
         self._max_retries = settings.gemini_max_retries
         self._max_input_tokens = settings.ai_max_input_tokens
         self._max_output_tokens = settings.ai_max_output_tokens
-        # shortcut: the whole allowance, not what is left of it; the retry loop of IMP-401 owns
-        # that clock and must bound each attempt by the time left.
+        # Per attempt; ``_with_retries`` lowers it to what is left of the allowance.
         self._timeout_s = min(settings.gemini_timeout_s, GEMINI_TIME_ALLOWANCE_S)
         self._http_client = http_client
+        self._breaker = breaker
+        # Injectable, so tests never sleep for real (IMD-27); None looks the default up per call.
+        self._clock = clock
+        self._sleep = sleep
         self._client: genai.Client | None = None
         self._last_state: Health = "ok"
 
@@ -383,11 +399,14 @@ class GeminiProvider:
         output_model = OUTPUT_MODELS[template.meta.output_schema_version]
 
         started = time.perf_counter()
+        schema = wire_schema(output_model)
+
+        async def attempt(timeout_s: float) -> tuple[Interaction, ItineraryOutput]:
+            interaction = await self._call_vendor(system_text, user_text, schema, timeout_s)
+            return interaction, parse_output(interaction, output_model)
+
         try:
-            interaction = await self._call_vendor(
-                system_text, user_text, wire_schema(output_model), self._timeout_s
-            )
-            output = parse_output(interaction, output_model)
+            interaction, output = await self._with_retries(attempt)
         except ProviderAuthError:
             self._last_state = "down"
             raise
@@ -438,25 +457,29 @@ class GeminiProvider:
         except ValueError:  # the body of a 200 answer that is not an embedding response
             raise ProviderInvalidOutput("malformed_json") from None
 
-    async def _embed_with_retries(
-        self, contents: list[types.Content], config: types.EmbedContentConfig
-    ) -> types.EmbedContentResponse:
-        """§8.4: transient errors only, backoff 1, 2, 4 s with ±25 % jitter, within the allowance."""
-        deadline = time.monotonic() + GEMINI_TIME_ALLOWANCE_S
+    async def _with_retries[T](self, call: Callable[[float], Awaitable[T]]) -> T:
+        """§8.4: at most MAX_ATTEMPTS (1 + GEMINI_MAX_RETRIES) inside the 70 s allowance.
+
+        Only timeouts, rate limits and outages are retried, after 1, 2, 4 s with ±25 % jitter, or
+        ``retry_after_s`` if longer; a wait that would reach the end of the allowance is not made,
+        so no attempt starts once it is spent. Each attempt gets min(GEMINI_TIMEOUT_S, time left).
+        """
+        clock = self._clock or time.monotonic
+        deadline = clock() + GEMINI_TIME_ALLOWANCE_S
+        attempts = min(1 + self._max_retries, MAX_ATTEMPTS)
         attempt = 0
         while True:
-            left = deadline - time.monotonic()
             try:
-                return await self._call_embed_vendor(contents, config, min(self._timeout_s, left))
+                return await call(min(self._timeout_s, deadline - clock()))
             except RETRYABLE as exc:
                 backoff = BACKOFF_BASE_S * 2**attempt
                 delay = backoff * random.uniform(1 - BACKOFF_JITTER, 1 + BACKOFF_JITTER)  # noqa: S311
                 if isinstance(exc, ProviderRateLimited) and exc.retry_after_s is not None:
                     delay = max(delay, exc.retry_after_s)
-                if attempt >= self._max_retries or delay >= deadline - time.monotonic():
+                if attempt + 1 >= attempts or delay >= deadline - clock():
                     raise
             attempt += 1
-            await asyncio.sleep(delay)
+            await (self._sleep or asyncio.sleep)(delay)
 
     async def embed_texts(
         self,
@@ -482,7 +505,9 @@ class GeminiProvider:
             output_dimensionality=EMBEDDING_DIMENSIONS,
             task_type=None if model_id == EMBEDDING_2 else EMBED_TASK_TYPES[purpose],
         )
-        response = await self._embed_with_retries(contents, config)
+        response = await self._with_retries(
+            lambda timeout_s: self._call_embed_vendor(contents, config, timeout_s)
+        )
         embeddings = response.embeddings or []
         if len(embeddings) != len(texts):
             raise ProviderInvalidOutput("schema_violation")
@@ -494,9 +519,13 @@ class GeminiProvider:
         )
 
     async def health_check(self) -> HealthStatus:
-        """From the configuration and the last call; never a generation call."""
+        """From the configuration, the breaker and the last call; never a generation call."""
         status: Health = self._last_state
         detail = None if status == "ok" else f"last Gemini call: {status}"
+        breaker = self._breaker.state if self._breaker else "closed"
+        if breaker != "closed":  # down while open, degraded while half-open (§8.4, API-02)
+            status = "down" if breaker == "open" else "degraded"
+            detail = f"circuit breaker {breaker.replace('_', '-')}"
         if not self._api_key or not self._model_id:
             status, detail = "down", "GEMINI_API_KEY or GEMINI_MODEL_ID is not set"
         return HealthStatus(status=status, detail=detail, checked_at=datetime.now(UTC))
