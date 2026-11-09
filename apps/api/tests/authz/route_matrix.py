@@ -117,6 +117,13 @@ MATRIX: tuple[RouteCase, ...] = (
     RouteCase("API-09", "GET", "/api/v1/itineraries/latest", "scoped"),
     RouteCase("API-24", "GET", "/api/v1/trips/{trip_id}/itinerary", "foreign"),
     RouteCase("API-33", "GET", "/api/v1/trips/{trip_id}/costs", "foreign"),
+    RouteCase(
+        "API-34",
+        "PATCH",
+        "/api/v1/trips/{trip_id}/budget-settings",
+        "foreign",
+        body=lambda _: {"transport_allowance_per_day": "1.00"},
+    ),
 )
 
 # §6.2 reference data: shared read-only rows, no owner (API-06, API-16, API-17).

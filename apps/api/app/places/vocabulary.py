@@ -8,6 +8,10 @@ Suitability flags are true, false or unknown; unknown is stored as NULL and neve
 
 from enum import StrEnum
 
+# Re-exported: the places module and its callers read the labels from here.
+from app.schemas.labels import SOURCE_LABELS as SOURCE_LABELS
+from app.schemas.labels import SourceLabel as SourceLabel
+
 
 class Category(StrEnum):
     SIGHT = "sight"
@@ -82,14 +86,6 @@ class SuitabilityFlag(StrEnum):
     INDOOR = "indoor"
 
 
-class SourceLabel(StrEnum):
-    """price_label and hours_label (§6.1 Labels)."""
-
-    CURATED = "curated"
-    ESTIMATE = "estimate"
-    UNAVAILABLE = "unavailable"
-
-
 class VerificationStatus(StrEnum):
     UNVERIFIED = "unverified"
     CURATED_CHECKED = "curated_checked"
@@ -101,5 +97,4 @@ CATEGORIES: frozenset[str] = frozenset(category.value for category in Category)
 OFFERED_CATEGORIES: frozenset[str] = frozenset(category.value for category in OfferedCategory)
 TAGS: frozenset[str] = frozenset(tag.value for tag in Tag)
 SUITABILITY_FLAGS: tuple[str, ...] = tuple(flag.value for flag in SuitabilityFlag)
-SOURCE_LABELS: frozenset[str] = frozenset(label.value for label in SourceLabel)
 VERIFICATION_STATUSES: frozenset[str] = frozenset(status.value for status in VerificationStatus)

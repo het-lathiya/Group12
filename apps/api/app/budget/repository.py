@@ -4,6 +4,7 @@ Other modules create or change a trip's settings only through these functions.
 """
 
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func
@@ -14,7 +15,8 @@ from app.db.models import BudgetSettings
 
 
 async def get_settings(session: AsyncSession, trip_id: UUID) -> BudgetSettings | None:
-    return await session.get(BudgetSettings, trip_id)
+    # populate_existing: a row upserted earlier in this transaction is read back as stored.
+    return await session.get(BudgetSettings, trip_id, populate_existing=True)
 
 
 async def upsert_settings(
@@ -39,6 +41,11 @@ async def upsert_settings(
         )
         if value is not None
     }
+    await save_settings(session, trip_id, values)
+
+
+async def save_settings(session: AsyncSession, trip_id: UUID, values: dict[str, Any]) -> None:
+    """Upsert exactly the columns given; None clears an allowance (API-34). Same caller rules."""
     statement = insert(BudgetSettings).values(trip_id=trip_id, **values)
     if values:
         statement = statement.on_conflict_do_update(

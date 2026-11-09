@@ -1,4 +1,6 @@
-"""API-33 (§6.6.6; FR-071, FR-076, IMD-05): the trip's costs, computed on read, nothing written.
+"""API-33 and API-34 (§6.6.6; FR-071, FR-072, FR-076, IMD-05): the trip's costs, computed on read.
+
+API-34 writes budget_settings only; itinerary_warnings and plan_revision are left as they are.
 
 The engine runs in ``itinerary.service.cost_summary``, which API-24's totals share. This module
 turns its minor units into the declared ``CostSummaryOut``.
@@ -13,6 +15,7 @@ from app.budget import engine, repository
 from app.budget.schemas import (
     AmountRange,
     BudgetSettingsOut,
+    BudgetSettingsPatch,
     BudgetStatus,
     CategoryCostLine,
     Contingency,
@@ -21,8 +24,10 @@ from app.budget.schemas import (
     PerTraveller,
 )
 from app.core.config import get_settings
+from app.core.errors import Conflict, ValidationFailed
 from app.core.flags import is_enabled
 from app.itinerary import service as itinerary_service
+from app.schemas.common import ErrorDetail
 from app.trips import service as trips_service
 from app.validation.schemas import Finding
 
@@ -94,3 +99,21 @@ async def get_costs(session: AsyncSession, user_id: UUID, trip_id: UUID) -> Cost
             contingency_pct=int(stored_pct),
         ),
     )
+
+
+async def update_budget_settings(
+    session: AsyncSession, user_id: UUID, trip_id: UUID, body: BudgetSettingsPatch
+) -> CostSummaryOut:
+    """API-34: save the fields sent (an allowance sent as null is cleared), return the costs."""
+    trip = await trips_service.get_trip(session, user_id, trip_id)  # 404 for another user's
+    if trip.status == "archived":
+        raise Conflict("This trip is archived. Restore it before changing it.")
+    values = {name: getattr(body, name) for name in body.model_fields_set}  # Decimals, not strings
+    if values.get("contingency_pct", 0) is None:
+        del values["contingency_pct"]  # the column has no "not set": null leaves it unchanged
+    if "contingency_pct" in values and not is_enabled(get_settings(), "contingency"):
+        raise ValidationFailed(
+            details=[ErrorDetail(field="contingency_pct", message="The contingency buffer is off.")]
+        )
+    await repository.save_settings(session, trip_id, values)
+    return await get_costs(session, user_id, trip_id)
