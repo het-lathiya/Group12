@@ -170,12 +170,15 @@ jobs:
 
           # Sends the full rendered configuration (A1 §4.3) and waits until only the new image is active.
           update_service() { # service ARN, template, image
-            local arn="$1" template="$2" active="" attempt
+            local arn="$1" template="$2" active="" attempt input="$RUNNER_TEMP/update-${1##*/}.json"
             export IMAGE="$3"
+            # The AWS CLI rejects --cli-input-json from file:///dev/stdin ("Invalid JSON received"), so it reads a file.
             envsubst < "$template" \
-              | jq --arg arn "$arn" 'del(.serviceName, .cluster, .infrastructureRoleArn) + {serviceArn: $arn}' \
-              | aws ecs update-express-gateway-service --cli-input-json file:///dev/stdin \
-                --query service.serviceArn --output text
+              | jq --arg arn "$arn" 'del(.serviceName, .cluster, .infrastructureRoleArn) + {serviceArn: $arn}' > "$input"
+            jq -e . "$input" > /dev/null || { echo "::error::$input is not valid JSON"; return 1; }
+            jq -c 'keys' "$input" # keys only: the values hold the service environment
+            aws ecs update-express-gateway-service --cli-input-json "file://$input" \
+              --query service.serviceArn --output text
             # services-stable alone can return before the rollout has started.
             for attempt in $(seq 1 60); do
               active="$(aws ecs describe-express-gateway-service --service-arn "$arn" \
@@ -222,15 +225,19 @@ jobs:
           aws ecs describe-task-definition --task-definition "$task_definition" \
             --query taskDefinition --output json > "$service_task"
           # Keep only what register-task-definition accepts (AWS CLI reference), minus null values.
-          release_arn="$(jq --arg family "group12-api-$DEPLOY_ENV-release" --arg image "$API_IMAGE" '
+          release_input="$RUNNER_TEMP/release-task-definition.json"
+          jq --arg family "group12-api-$DEPLOY_ENV-release" --arg image "$API_IMAGE" '
             {family, taskRoleArn, executionRoleArn, networkMode, containerDefinitions, volumes,
              placementConstraints, requiresCompatibilities, cpu, memory, pidMode, ipcMode,
              proxyConfiguration, inferenceAccelerators, ephemeralStorage, runtimePlatform,
              enableFaultInjection}
             | with_entries(select(.value != null))
-            | .family = $family | .containerDefinitions[0].image = $image' "$service_task" \
-            | aws ecs register-task-definition --cli-input-json file:///dev/stdin \
-              --query taskDefinition.taskDefinitionArn --output text)"
+            | .family = $family | .containerDefinitions[0].image = $image' "$service_task" > "$release_input"
+          jq -e . "$release_input" > /dev/null || { echo "::error::$release_input is not valid JSON"; exit 1; }
+          jq -c 'keys' "$release_input" # keys only: the values hold the task environment
+          # The AWS CLI rejects --cli-input-json from file:///dev/stdin ("Invalid JSON received"), so it reads a file.
+          release_arn="$(aws ecs register-task-definition --cli-input-json "file://$release_input" \
+            --query taskDefinition.taskDefinitionArn --output text)"
           echo "release revision: $release_arn"
 
           command='["sh", "scripts/release.sh"]'
