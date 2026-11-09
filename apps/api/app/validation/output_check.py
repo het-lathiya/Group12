@@ -1,8 +1,10 @@
 """Step 8 of the pipeline: an answer against its schema, the shortlist and the trip (§8.11).
 
 ``apply_limits`` adds the limits that depend on the trip to the checks of the schema and classifies
-a failure as ``ProviderInvalidOutput("schema_violation")``. ``check_output`` then rejects, item by
-item, what the model may not choose, and removes citations of passages the request did not hold
+a failure as ``ProviderInvalidOutput("schema_violation")``; days outside the trip are left to
+``check_output`` (IMD-126). ``check_output`` then rejects, item by item, what the model may not
+choose: an item on a day outside the trip is dropped with OUTSIDE_TRIP_DATES and the rest of the
+answer stays usable (§8.11 step 2), and removes citations of passages the request did not hold
 (A1 §6.10): a citation never costs an item and has no finding code. ``summary`` gives the counts for
 ``ai_generations.validation_summary``. No text from the answer goes into a message or a count.
 """
@@ -30,21 +32,28 @@ class OutputCheckResult:
 
     @property
     def usable(self) -> bool:
-        """§8.12: at least one item and no UNKNOWN_PLACE or OUTSIDE_TRIP_DATES.
+        """§8.12: at least one item and no UNKNOWN_PLACE.
 
-        A dropped duplicate has no finding code, so it leaves the plan usable.
+        Items outside the trip are already dropped, so OUTSIDE_TRIP_DATES no longer remains
+        (IMD-126); a dropped duplicate has no finding code. Both leave the plan usable.
         """
-        return bool(self.output.days) and not self.findings
+        return bool(self.output.days) and all(f.code != "UNKNOWN_PLACE" for f in self.findings)
 
 
 def apply_limits(
     output: ItineraryOutput, *, trip_days: int, max_items_per_day: int
 ) -> ItineraryOutput:
+    """The answer unchanged, or ``schema_violation``; only days 1..trip_days are counted."""
     context = {"trip_days": trip_days, "max_items_per_day": max_items_per_day}
+    data = output.model_dump()
+    data["days"] = [day for day in data["days"] if day["day_number"] <= trip_days]
+    if not data["days"]:
+        return output  # every day is outside the trip: check_output drops them all
     try:
-        return type(output).model_validate(output.model_dump(), context=context)
+        type(output).model_validate(data, context=context)
     except ValidationError:
         raise ProviderInvalidOutput("schema_violation") from None
+    return output
 
 
 def _finding(code: str, message: str, day_number: int, position: int) -> PlanFinding:
