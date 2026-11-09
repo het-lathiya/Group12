@@ -9,7 +9,9 @@ from app.validation import rules
 from app.validation.rules import CATALOGUE, ValidationContext
 from app.validation.validator import validate
 
-CTX = ValidationContext(start_date=date(2026, 12, 1), end_date=date(2026, 12, 3))
+CTX = ValidationContext(
+    start_date=date(2026, 12, 1), end_date=date(2026, 12, 3), places={"p": "A place"}
+)
 
 
 def item(

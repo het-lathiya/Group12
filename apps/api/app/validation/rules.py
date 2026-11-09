@@ -13,7 +13,7 @@ from datetime import date
 from typing import Final, Protocol
 
 from app.routing.estimate import BUFFER_MIN
-from app.schemas.ai import FindingCode, PlanFinding, Severity
+from app.schemas.ai import MAX_TRIP_DAYS, FindingCode, PlanFinding, Severity
 
 Finding = PlanFinding  # {code, severity, message, day_number, item_ref, place_id, suggested_fix}
 
@@ -166,4 +166,61 @@ def transfer_too_short(plan: Sequence[PlanDay], ctx: ValidationContext) -> list[
     return findings
 
 
-RULES: Final[tuple[Rule, ...]] = (overlap, transfer_too_short)
+def must_visit_missing(plan: Sequence[PlanDay], ctx: ValidationContext) -> list[Finding]:
+    """§9.3.7: a must-visit place with no item; referenced by place_id, item_ref null (IMD-42)."""
+    planned = {item.place_id for day in plan for item in day.items}
+    return [
+        finding(
+            "MUST_VISIT_MISSING",
+            f"Must-visit place {ctx.places.get(place_id, place_id)} is not in the plan.",
+            place_id=place_id,
+            suggested_fix="Add it to a day with room, or remove it from the must-visit list.",
+        )
+        for place_id in sorted(ctx.must_visit_ids - planned)
+    ]
+
+
+def unknown_place(plan: Sequence[PlanDay], ctx: ValidationContext) -> list[Finding]:
+    """§9.3.6: not an active place of the destination or, in generation, not in the shortlist."""
+    return [
+        finding(
+            "UNKNOWN_PLACE",
+            f"{item_ref(day.day_number, position)} is not an active place of this trip's "
+            "shortlist or destination.",
+            day_number=day.day_number,
+            item_ref=item_ref(day.day_number, position),
+            suggested_fix="Remove this item or replace it with an active place.",
+        )
+        for day in plan
+        for position, item in enumerate(day.items, start=1)
+        if item.place_id not in ctx.places
+        or (ctx.shortlist_ids is not None and item.place_id not in ctx.shortlist_ids)
+    ]
+
+
+def outside_trip_dates(plan: Sequence[PlanDay], ctx: ValidationContext) -> list[Finding]:
+    """§9.3.6: a day outside 1..num_days; days 1 and num_days (start and end dates) are inside."""
+    return [
+        finding(
+            "OUTSIDE_TRIP_DATES",
+            f"{item_ref(day.day_number, position)} is on day {day.day_number}, outside the "
+            f"trip's {ctx.num_days} days.",
+            # PlanFinding.day_number holds 1..14 only; the message and item_ref keep the day
+            day_number=day.day_number if 1 <= day.day_number <= MAX_TRIP_DAYS else None,
+            item_ref=item_ref(day.day_number, position),
+            suggested_fix="Move this item to a day of the trip or change the trip dates.",
+        )
+        for day in plan
+        if not 1 <= day.day_number <= ctx.num_days
+        for position in range(1, len(day.items) + 1)
+    ]
+
+
+# The order of the §8.12 table.
+RULES: Final[tuple[Rule, ...]] = (
+    overlap,
+    transfer_too_short,
+    must_visit_missing,
+    unknown_place,
+    outside_trip_dates,
+)
