@@ -9,7 +9,7 @@ type Outcome = components["schemas"]["ItinerarySource"]["outcome"];
 // IMP-403 card step 4 (wording of the card and the run; §7.5.6 words it slightly differently,
 // see PD-IMP-403-1). An info notice: the plan is usable, nothing failed for the traveller.
 export const FALLBACK_TEXT =
-  "Built by rules because the AI service was unavailable or failed checks";
+  "Built by rules because the AI service was unavailable or its answer failed checks";
 
 const NOTICES: Partial<Record<Outcome, string>> = {
   fallback_rule_based: FALLBACK_TEXT,

@@ -138,7 +138,7 @@ describe("ItineraryPage", () => {
 
     expect(
       await screen.findByText(
-        "Built by rules because the AI service was unavailable or failed checks",
+        "Built by rules because the AI service was unavailable or its answer failed checks",
       ),
     ).toBeInTheDocument();
     expect(

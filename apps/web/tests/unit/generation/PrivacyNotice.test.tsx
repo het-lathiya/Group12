@@ -85,8 +85,17 @@ function renderPage() {
   );
 }
 
+// The first query of the file pays for the first render (345 ms alone, 44 ms after); on a starved
+// machine that ran past the 1 s default (RUN-059), so the heading gets 4 s, inside the test's 5 s.
 const noticeHeading = () =>
-  screen.findByRole("heading", { name: "Before your first AI-written plan" });
+  screen.findByRole(
+    "heading",
+    { name: "Before your first AI-written plan" },
+    { timeout: 4000 },
+  );
+// The progress view counts real seconds, so "Elapsed 0:00" holds only for its first second; a slow
+// run that looks later would miss it. Any elapsed value shows the progress view is up.
+const progressShown = () => screen.findByText(/^Elapsed \d+:\d{2}$/);
 const acceptButton = () =>
   screen.getByRole("button", { name: "I understand, continue" });
 
@@ -133,7 +142,7 @@ describe("PrivacyNotice", () => {
 
     fireEvent.click(acceptButton());
 
-    await screen.findByText("Elapsed 0:00");
+    await progressShown();
     expect(calls).toEqual(["API-04", "API-22"]);
     expect(
       screen.queryByText("Before your first AI-written plan"),
@@ -153,7 +162,7 @@ describe("PrivacyNotice", () => {
     await waitFor(() => expect(acceptButton()).toBeDisabled());
     expect(acceptButton()).toHaveAttribute("aria-busy", "true");
     answer(json({ ai_notice_ack_at: ACKNOWLEDGED_AT }));
-    await screen.findByText("Elapsed 0:00");
+    await progressShown();
   });
 
   it("shows an alert when API-04 fails, starts nothing, and the button retries", async () => {
@@ -178,7 +187,7 @@ describe("PrivacyNotice", () => {
     failing = false;
     fireEvent.click(acceptButton());
 
-    await screen.findByText("Elapsed 0:00");
+    await progressShown();
     expect(calls).toEqual(["API-04", "API-04", "API-22"]);
   });
 
@@ -195,7 +204,7 @@ describe("PrivacyNotice", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Generate with AI" }));
 
-    await screen.findByText("Elapsed 0:00");
+    await progressShown();
     expect(calls).toEqual(["API-22"]);
     expect(
       screen.queryByText("Before your first AI-written plan"),
@@ -207,7 +216,7 @@ describe("PrivacyNotice", () => {
     fakeApi({});
     renderPage();
 
-    await screen.findByText("Elapsed 0:00");
+    await progressShown();
     await waitFor(() => expect(screen.getByRole("list")).toBeInTheDocument());
     expect(
       screen.queryByText("Before your first AI-written plan"),
@@ -235,7 +244,7 @@ describe("PrivacyNotice", () => {
     await noticeHeading();
     fireEvent.click(acceptButton());
 
-    await screen.findByText("Elapsed 0:00");
+    await progressShown();
     expect(calls).toEqual(["API-22", "API-04", "API-22"]);
   });
 });
