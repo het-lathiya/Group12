@@ -67,12 +67,13 @@ function DaySkeleton() {
 
 type DaysProps = {
   days: Day[];
+  edit: { tripId: string; planRevision: number };
   /** The open day tab below 768 px; null opens the first day. */
   tab: string | null;
   onTab: (tab: string) => void;
 };
 
-function Days({ days, tab, onTab }: DaysProps) {
+function Days({ days, edit, tab, onTab }: DaysProps) {
   const tabletUp = useTabletUp();
 
   if (!tabletUp) {
@@ -87,7 +88,7 @@ function Days({ days, tab, onTab }: DaysProps) {
         </TabsList>
         {days.map((day) => (
           <TabsContent key={day.day_number} value={dayId(day)}>
-            <DayColumn day={day} />
+            <DayColumn day={day} edit={edit} />
           </TabsContent>
         ))}
       </Tabs>
@@ -116,7 +117,12 @@ function Days({ days, tab, onTab }: DaysProps) {
       </nav>
       <div className="flex flex-col gap-6">
         {days.map((day) => (
-          <DayColumn key={day.day_number} day={day} id={dayId(day)} />
+          <DayColumn
+            key={day.day_number}
+            day={day}
+            id={dayId(day)}
+            edit={edit}
+          />
         ))}
       </div>
     </div>
@@ -124,8 +130,8 @@ function Days({ days, tab, onTab }: DaysProps) {
 }
 
 /**
- * /trips/[tripId]/itinerary (§7.5.7), read-only until IMP-408: the saved days and items of API-24,
- * shown as the server sent them, with the plan checks (WarningsPanel, IMP-405) beside or above. API-24 answers 404 for a trip with no plan and for a foreign or
+ * /trips/[tripId]/itinerary (§7.5.7): the saved days and items of API-24, shown as the server sent
+ * them, with retime and remove on each item (IMP-408), with the plan checks (WarningsPanel, IMP-405) beside or above. API-24 answers 404 for a trip with no plan and for a foreign or
  * missing trip alike, so API-10 tells the two apart (§7.5: not-found screen for the second).
  */
 export default function ItineraryPage() {
@@ -211,7 +217,15 @@ export default function ItineraryPage() {
                 />
               </div>
               <div className="min-w-0 xl:order-1">
-                <Days days={itinerary.data.days} tab={tab} onTab={setTab} />
+                <Days
+                  days={itinerary.data.days}
+                  edit={{
+                    tripId,
+                    planRevision: itinerary.data.plan_revision,
+                  }}
+                  tab={tab}
+                  onTab={setTab}
+                />
               </div>
             </div>
           </>
