@@ -31,11 +31,13 @@ from app.db.models import (
     ItineraryItem,
     ItineraryVersion,
     ItineraryWarning,
+    Place,
     Trip,
 )
 from app.db.models.rag import RagChunk
 from app.generation import jobs
 from app.itinerary import repository
+from app.itinerary import service as itinerary_service
 from app.itinerary.schemas import PlannedDay, PlannedItem
 from app.places import seed
 from app.rag import service as rag_service
@@ -406,6 +408,229 @@ async def test_reading_a_stored_version_is_not_built_yet(
     # IMD-37: version_id is reserved for IMP-610.
     assert response.status_code == 501
     assert response.json()["error"]["code"] == "NOT_IMPLEMENTED"
+
+
+# IMP-405: stored warnings, API-32 (FR-056, FR-058: TC-193, TC-194)
+
+
+async def leave_out_a_must_visit_place(
+    client: httpx.AsyncClient, session: AsyncSession, user: AuthUser, trip_id: str
+) -> uuid.UUID:
+    """Makes an active place that is not in the plan the trip's must-visit place."""
+    trip_uuid = uuid.UUID(trip_id)
+    planned = select(ItineraryItem.place_id).where(ItineraryItem.trip_id == trip_uuid)
+    trip = await session.get(Trip, trip_uuid)
+    assert trip is not None
+    place_id = await session.scalar(
+        select(Place.id)
+        .where(
+            Place.destination_id == trip.destination_id,
+            Place.is_active.is_(True),
+            Place.id.not_in(planned),
+        )
+        .order_by(Place.name)
+        .limit(1)
+    )
+    assert place_id is not None
+    saved = await client.put(
+        f"/api/v1/trips/{trip_id}/preferences",
+        json={"interests": ["museum", "food"], "must_visit_place_ids": [str(place_id)]},
+        headers=user.headers,
+    )
+    assert saved.status_code == 200, saved.text
+    return place_id
+
+
+async def warning_rows(session: AsyncSession, trip_id: str) -> list[tuple[int, str]]:
+    rows = await session.execute(
+        select(ItineraryWarning.plan_revision, ItineraryWarning.code)
+        .where(ItineraryWarning.trip_id == uuid.UUID(trip_id))
+        .order_by(ItineraryWarning.plan_revision, ItineraryWarning.code)
+    )
+    return [(revision, code) for revision, code in rows]
+
+
+@pytest.mark.asyncio
+async def test_tc_194_api_32_revalidates_and_replaces_the_warnings_of_the_revision(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, destination)
+    revision = (await generate(api_client, db_session, jobs_queue, auth_user, trip_id))[
+        "plan_revision"
+    ]
+    place_id = await leave_out_a_must_visit_place(api_client, db_session, auth_user, trip_id)
+    db_session.add_all(
+        [
+            ItineraryWarning(
+                trip_id=uuid.UUID(trip_id),
+                plan_revision=revision,
+                code="COST_INCOMPLETE",
+                severity="warning",
+                message="Replaced by the revalidation.",
+            ),
+            ItineraryWarning(
+                trip_id=uuid.UUID(trip_id),
+                plan_revision=revision - 1,
+                code="COST_INCOMPLETE",
+                severity="warning",
+                message="Another revision keeps its warnings.",
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    response = await api_client.post(
+        f"/api/v1/trips/{trip_id}/itinerary/validate",
+        json={"plan_revision": revision},
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["plan_revision"] == revision
+    assert body["validation_summary"] == {"errors": 1, "warnings": 0, "infos": 0}
+    (finding,) = body["findings"]
+    assert finding["code"] == "MUST_VISIT_MISSING"
+    assert finding["severity"] == "error"
+    assert (finding["place_id"], finding["item_id"]) == (str(place_id), None)  # IMD-42
+    assert finding["message"]
+    assert finding["suggested_fix"]
+    assert await warning_rows(db_session, trip_id) == [
+        (revision - 1, "COST_INCOMPLETE"),
+        (revision, "MUST_VISIT_MISSING"),
+    ]
+    trip = await db_session.get(Trip, uuid.UUID(trip_id))
+    assert trip is not None
+    assert trip.plan_revision == revision  # the plan is not changed
+    read = await api_client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=auth_user.headers)
+    assert read.json()["findings"] == body["findings"]  # API-24: the current revision's
+
+
+@pytest.mark.asyncio
+async def test_api_32_warnings_need_the_current_revision(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, destination)
+    revision = (await generate(api_client, db_session, jobs_queue, auth_user, trip_id))[
+        "plan_revision"
+    ]
+    before = await warning_rows(db_session, trip_id)
+
+    response = await api_client.post(
+        f"/api/v1/trips/{trip_id}/itinerary/validate",
+        json={"plan_revision": revision - 1},
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "STALE_PLAN"
+    assert await warning_rows(db_session, trip_id) == before
+
+
+@pytest.mark.asyncio
+async def test_api_32_warnings_of_another_users_trip_or_no_plan_are_not_found(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    empty_trip = await create_trip(api_client, auth_user, destination)
+    trip_id = await create_trip(api_client, auth_user, destination)
+    revision = (await generate(api_client, db_session, jobs_queue, auth_user, trip_id))[
+        "plan_revision"
+    ]
+    other = await make_user(db_session)
+
+    foreign = await api_client.post(
+        f"/api/v1/trips/{trip_id}/itinerary/validate",
+        json={"plan_revision": revision},
+        headers=other.headers,
+    )
+    no_plan = await api_client.post(
+        f"/api/v1/trips/{empty_trip}/itinerary/validate",
+        json={"plan_revision": 0},
+        headers=auth_user.headers,
+    )
+
+    assert foreign.status_code == no_plan.status_code == 404
+    assert foreign.json()["error"]["code"] == "NOT_FOUND"
+    assert foreign.json()["error"]["message"] == "Not found."
+    assert no_plan.json()["error"]["message"] == "No itinerary yet."
+
+
+@pytest.mark.asyncio
+async def test_tc_193_a_saved_version_returns_its_warnings_and_repair_summary(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, destination)
+    generation = await generate(api_client, db_session, jobs_queue, auth_user, trip_id)
+    revision, version_id = generation["plan_revision"], generation["itinerary_version_id"]
+    place_id = await leave_out_a_must_visit_place(api_client, db_session, auth_user, trip_id)
+    await api_client.post(
+        f"/api/v1/trips/{trip_id}/itinerary/validate",
+        json={"plan_revision": revision},
+        headers=auth_user.headers,
+    )
+    # A later revision (an edit) with warnings of its own leaves the version's untouched.
+    await db_session.execute(
+        update(Trip).where(Trip.id == uuid.UUID(trip_id)).values(plan_revision=revision + 1)
+    )
+    db_session.add(
+        ItineraryWarning(
+            trip_id=uuid.UUID(trip_id),
+            plan_revision=revision + 1,
+            code="COST_INCOMPLETE",
+            severity="warning",
+            message="Of the later revision.",
+        )
+    )
+    await db_session.flush()
+
+    findings, summary = await itinerary_service.version_findings(
+        db_session, auth_user.user_id, uuid.UUID(trip_id), uuid.UUID(version_id)
+    )
+
+    assert [(f.code, f.place_id, f.item_id) for f in findings] == [
+        ("MUST_VISIT_MISSING", place_id, None)
+    ]
+    assert all(f.suggested_fix for f in findings)
+    assert summary["deterministic_repairs"] == 0
+    assert summary["repair_attempts"] == 0
+    assert {"errors", "warnings", "infos"} <= set(summary)
+
+
+@pytest.mark.asyncio
+async def test_generation_saves_warnings_with_fixes_and_the_versions_repair_counts(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, destination)
+    generation = await generate(api_client, db_session, jobs_queue, auth_user, trip_id)
+
+    version = await db_session.get(ItineraryVersion, uuid.UUID(generation["itinerary_version_id"]))
+    assert version is not None
+    assert version.validation_summary["deterministic_repairs"] == 0
+    assert version.validation_summary["repair_attempts"] == 0
+    rows = await db_session.scalars(
+        select(ItineraryWarning).where(ItineraryWarning.trip_id == uuid.UUID(trip_id))
+    )
+    assert all(row.suggested_fix for row in rows)
 
 
 # API-09 (FR-014: TC-087, TC-088; IMD-122 keeps the §6 shape, 200 with nulls when none)
