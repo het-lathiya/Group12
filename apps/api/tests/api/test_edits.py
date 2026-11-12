@@ -761,3 +761,156 @@ async def test_retime_route_refuses_a_body_without_a_retime(
     assert response.status_code == status_code, response.text
     assert response.json()["error"]["code"] == code
     assert await state(db_session, trip_id) == before
+
+
+# FR-060 (server side): API-26 move
+
+
+@pytest.mark.asyncio
+async def test_move_route_across_days_keeps_positions_dense_in_both_days(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    before = await route_state(api_client, auth_user, trip_id)
+    moving = before["days"][1]["items"][0]
+
+    response = await api_client.patch(
+        item_url(moving["id"]),
+        json={"plan_revision": before["plan_revision"], "day_number": 1, "position": 2},
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    days = {day["day_number"]: day["items"] for day in result["changed_days"]}
+    assert set(days) == {1, 2}
+    assert days[1][1]["id"] == moving["id"]
+    assert len(days[1]) == len(before["days"][0]["items"]) + 1
+    assert len(days[2]) == len(before["days"][1]["items"]) - 1
+    for day_items in days.values():
+        assert [item["position"] for item in day_items] == list(range(1, len(day_items) + 1))
+    assert_matches_itinerary(result, await route_state(api_client, auth_user, trip_id))
+
+
+@pytest.mark.asyncio
+async def test_move_route_within_a_day_and_to_the_end_of_a_day(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    before = await route_state(api_client, auth_user, trip_id)
+    first, second = before["days"][0]["items"][:2]
+
+    down = await api_client.patch(  # position only: stays on its day
+        item_url(first["id"]),
+        json={"plan_revision": before["plan_revision"], "position": 2},
+        headers=auth_user.headers,
+    )
+    assert down.status_code == 200, down.text
+    day_one = down.json()["changed_days"][0]["items"]
+    assert [item["id"] for item in day_one[:2]] == [second["id"], first["id"]]
+
+    last = await api_client.patch(  # day only: after that day's last item
+        item_url(second["id"]),
+        json={"plan_revision": down.json()["plan_revision"], "day_number": 2},
+        headers=auth_user.headers,
+    )
+    assert last.status_code == 200, last.text
+    day_two = next(d for d in last.json()["changed_days"] if d["day_number"] == 2)["items"]
+    assert day_two[-1]["id"] == second["id"]
+
+
+# FR-060 AC3, TC-199
+
+
+@pytest.mark.asyncio
+async def test_tc_199_move_route_saves_a_conflicting_move_and_reports_it(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    before = await route_state(api_client, auth_user, trip_id)
+    codes_before = {f["code"] for f in before["findings"] if f["day_number"] == 1}
+    revision_now = before["plan_revision"]
+    moved = [item["id"] for day in before["days"][1:] for item in day["items"]]
+
+    for item_id in moved:  # every later item onto day 1: more than the pace allows
+        response = await api_client.patch(
+            item_url(item_id),
+            json={"plan_revision": revision_now, "day_number": 1},
+            headers=auth_user.headers,
+        )
+        assert response.status_code == 200, response.text  # never refused, never reverted
+        revision_now = response.json()["plan_revision"]
+
+    result = response.json()
+    new_codes = {f["code"] for f in result["findings"] if f["day_number"] == 1} - codes_before
+    assert new_codes & {"DAY_TOO_LONG", "OVERLAP", "CLOSED_ON_DAY"}, result["findings"]
+    current = await route_state(api_client, auth_user, trip_id)
+    assert [item["id"] for item in current["days"][0]["items"]][-len(moved) :] == moved
+    assert_matches_itinerary(result, current)
+
+
+@pytest.mark.asyncio
+async def test_move_route_refuses_a_stale_revision_and_changes_nothing(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    first = (await items(db_session, trip_id))[0]
+    before = await state(db_session, trip_id)
+
+    response = await api_client.patch(
+        item_url(first.id),
+        json={"plan_revision": before["revision"] - 1, "day_number": 2, "position": 1},
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "STALE_PLAN"
+    assert await state(db_session, trip_id) == before
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"day_number": 2, "start_time": "10:00"},  # PD-IMP-409-1: move and retime together
+        {"day_number": 9},  # a day the plan does not have
+        {"position": 99},  # past the end of the day
+    ],
+)
+@pytest.mark.asyncio
+async def test_move_route_refuses_an_invalid_move_with_invalid_edit(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+    body: dict[str, Any],
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    first = (await items(db_session, trip_id))[0]
+    before = await state(db_session, trip_id)
+
+    response = await api_client.patch(
+        item_url(first.id),
+        json={"plan_revision": before["revision"], **body},
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "INVALID_EDIT"
+    assert await state(db_session, trip_id) == before
