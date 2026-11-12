@@ -67,13 +67,8 @@ sys.stdout.write(f"postgresql+psycopg://{user}:{password}@{host}:5432/{db_name}?
   unset value
 fi
 
-keys="GEMINI_API_KEY ORS_API_KEY"
-# HS256 mode only (A1 §4.1): a template in JWKS mode does not reference the shared secret.
-if grep -q SUPABASE_JWT_SECRET "$here/services/api.staging.json.tmpl"; then
-  keys="$keys SUPABASE_JWT_SECRET"
-fi
-
-for key in $keys; do
+# JWKS mode only (IMD-115): no SUPABASE_JWT_SECRET parameter is stored.
+for key in GEMINI_API_KEY ORS_API_KEY; do
   name="$prefix/$key"
   if exists "$name" && [ "$overwrite" = no ]; then
     echo "parameter $name exists"

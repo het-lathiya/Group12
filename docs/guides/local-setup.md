@@ -71,6 +71,28 @@ supabase status -o env
 
 Replace the whole `<placeholder>`, angle brackets included. These keys are created by your local stack and only work against it, but treat them like any other secret: they stay in the untracked files.
 
+**JWKS mode (Supabase CLI v2.12x and later).** Newer CLI stacks sign access tokens with an asymmetric key (ES256), so the HS256 `JWT_SECRET` no longer verifies them. Point the API at the stack's published keys instead; the API then ignores `SUPABASE_JWT_SECRET` (IMD-04, IMD-123):
+
+```bash
+SUPABASE_JWKS_URL=http://127.0.0.1:54321/auth/v1/.well-known/jwks.json
+```
+
+**Without env files.** The API reads its settings from the environment as well as from `apps/api/.env`, and the web app reads `NEXT_PUBLIC_*` from the environment, so you can export the values in your shell instead of creating the files. The values a local run needs:
+
+| Variable | Local value |
+| --- | --- |
+| `APP_ENV` | `local` |
+| `AI_PROVIDER` | `MOCK` |
+| `DATABASE_URL` | `postgresql+psycopg://postgres:postgres@127.0.0.1:54322/postgres` (the stack database) |
+| `SUPABASE_URL` | `http://127.0.0.1:54321` |
+| `SUPABASE_JWKS_URL` | as above (JWKS mode), or `SUPABASE_JWT_SECRET` from `JWT_SECRET` on an older stack |
+| `DB_AUTH_STUB` | `false` on the Supabase stack, `true` on a plain database |
+| `NEXT_PUBLIC_SUPABASE_URL` | `http://127.0.0.1:54321` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `ANON_KEY` from `supabase status -o env` |
+| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000/api/v1` |
+
+Export them in the terminal that runs `make api` or `make web`; never write them into a tracked file.
+
 ## 5. Start the test database (about 2 minutes)
 
 ```bash
@@ -87,7 +109,9 @@ make db-migrate
 make seed
 ```
 
-These build the tables in the stack database and load the SAMPLE fixture destination. Until IMP-106 and IMP-107 are merged, they print `not yet implemented (IMP-106)` or `(IMP-107)` and exit 0; carry on.
+These build the tables in the stack database and load the SAMPLE fixture destination.
+
+**A plain PostgreSQL database** (no Supabase stack, for example a throwaway `pgvector/pgvector:pg16`) has no `auth` schema. Use `make db-bootstrap` instead of `make db-migrate`: it applies the auth stub when the schema is missing, then runs the migrations. Set `DB_AUTH_STUB=true` for that database.
 
 ## 7. Run the API and the web app (about 5 minutes)
 

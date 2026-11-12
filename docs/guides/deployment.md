@@ -96,3 +96,48 @@ Express Mode keeps one task running, so there is no sleep (A1 §9.2). After a de
 | 3 | | | |
 
 **Wake-up routine before a demo or a test session:** to be written with the measurements.
+
+## 8. Staging windows (IMD-137)
+
+Staging is off between planned staging windows, to keep the AWS bill down. Kirtan turns it on for a window and off again afterwards, and logs every start and stop in the table below.
+
+- Merges to `main` are allowed at any time. The automatic **Deploy staging** run that fails while staging is off is expected.
+- Staging must be on, with a green **Deploy staging** run of the latest `main`, before any staging check, the IMP-414 staging run and each gate.
+- A stopped RDS instance starts again by itself after 7 days. Stop it again when that happens and log it.
+- The load balancer is billed while the services exist, even with no task running.
+
+**Start order**
+
+1. Start the RDS instance `group12-rds`: to be confirmed by Kirtan in the next staging window (the command, and how long it takes).
+2. Wait until it reports `available`:
+   `aws rds describe-db-instances --db-instance-identifier group12-rds --query 'DBInstances[0].DBInstanceStatus' --output text`
+3. Scale the API service, then the web service, back up: to be confirmed by Kirtan in the next staging window (Express Mode scaling is set through `update-express-gateway-service --scaling-target`; whether `minTaskCount` may be 0 is not confirmed).
+4. Re-run the deploy of the latest `main`:
+   `gh workflow run deploy-staging.yml --ref main -f simulate_release_failure=false`
+   and wait for it to end green before any check.
+
+**Stop order** (after the window)
+
+1. Scale the web service, then the API service, down: to be confirmed by Kirtan in the next staging window.
+2. Stop the RDS instance `group12-rds`: to be confirmed by Kirtan in the next staging window.
+3. Check what is left running (read-only):
+   - `aws ecs describe-services --cluster default --services group12-api-staging group12-web-staging --query 'services[].{name:serviceName,running:runningCount,desired:desiredCount}' --output table`
+   - `aws rds describe-db-instances --db-instance-identifier group12-rds --query 'DBInstances[0].DBInstanceStatus' --output text`
+
+**Stop and start log**
+
+| Date (YYYY-MM-DD) | Time (IST) | Action (start, stop, auto-restart stopped) | By | Deploy run link (after a start) | Note |
+| --- | --- | --- | --- | --- | --- |
+| | | | | | |
+
+## 9. Rollback alarm (IMD-139)
+
+**Current alarm (as observed on 9 November 2026).** Each Express Mode service has the alarm `default/<service>/RollbackAlarm`. It fires when the share of 4xx and 5xx responses is above 1 % in 2 of 3 minutes, and a firing alarm rolls the deployment back. Because 4xx responses count, ordinary client errors (for example 401 without a token, 404, 422) can roll a healthy deployment back.
+
+**Target (IMD-139).** For the web and API services, count only 5xx responses and failed health checks, not 4xx. The health-check rollback stays on. No change is made yet: Kirtan applies it once the place where Express Mode keeps this configuration is confirmed.
+
+**Inspect the alarms (read-only):**
+
+`aws cloudwatch describe-alarms --alarm-name-prefix default/group12- --query 'MetricAlarms[].{name:AlarmName,state:StateValue,threshold:Threshold,operator:ComparisonOperator,periods:EvaluationPeriods,datapoints:DatapointsToAlarm}' --output table`
+
+Run it with `--query 'MetricAlarms[].Metrics'` instead to see the metrics the alarm adds up. Where the alarm is configured, and how to change it, is to be confirmed by Kirtan in the next staging window.

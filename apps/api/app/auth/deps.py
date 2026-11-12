@@ -32,7 +32,10 @@ async def verified_claims(
     if credentials is None or not credentials.credentials:
         raise Unauthenticated()
     settings: Settings = request.app.state.settings
-    return await verifier_for(settings).verify(credentials.credentials)
+    claims = await verifier_for(settings).verify(credentials.credentials)
+    # The access-log middleware hashes this into user_hash; the raw ID is never logged.
+    request.state.user_id = claims.user_id
+    return claims
 
 
 async def db_session() -> AsyncIterator[AsyncSession]:

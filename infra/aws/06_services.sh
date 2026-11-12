@@ -90,11 +90,17 @@ api_phase() {
   echo "waiting for $API_SERVICE to become stable"
   aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$API_SERVICE"
 
-  local groups subnets rds_group
+  local network groups subnets rds_group
+  # Express Mode leaves services[0].networkConfiguration (and taskDefinition) null; the PRIMARY
+  # deployment holds them, as in the deploy workflows' fix (FIX-IMP-218, A1 §4.5).
+  network="services[0].deployments[?status=='PRIMARY'].networkConfiguration.awsvpcConfiguration | [0]"
   groups="$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$API_SERVICE" \
-    --query 'services[0].networkConfiguration.awsvpcConfiguration.securityGroups' --output text)"
+    --query "$network.securityGroups" --output text)"
   subnets="$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$API_SERVICE" \
-    --query 'services[0].networkConfiguration.awsvpcConfiguration.subnets' --output text)"
+    --query "$network.subnets" --output text)"
+  case "$subnets" in
+    "" | None) echo "no PRIMARY deployment network configuration on $API_SERVICE" >&2; exit 1 ;;
+  esac
   case "$groups" in
     sg-*[[:space:]]* | "" | None) echo "expected one security group on $API_SERVICE, found: $groups" >&2; exit 1 ;;
   esac
