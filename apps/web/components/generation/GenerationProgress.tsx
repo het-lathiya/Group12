@@ -7,11 +7,12 @@ import {
   CheckCircle2,
   Circle,
   Loader2,
-  OctagonX,
 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { PausedAiNotice } from "@/components/generation/FallbackNotice";
 import { ErrorState } from "@/components/states/ErrorState";
 import { Button } from "@/components/ui/button";
 import { ApiError, OFFLINE_MESSAGE } from "@/lib/api/client";
@@ -38,18 +39,23 @@ export type GenerationProgressProps = {
   generationId: string;
   /** Starts a new generation after a failure. */
   onRetry: () => void;
+  /** Starts a rule-based generation (next_action retry_rule_based, the quota pause). */
+  onRuleBased: () => void;
   retrying?: boolean;
 };
 
 /**
  * Generation status (§7.5.6, §7.6): polls API-23 with the §7.4 back-off, shows the steps and the
- * elapsed time, and announces each status change. On `completed` it opens the itinerary; on
- * `failed` it shows API-23's `failure_message` with "Try again"; after 160 s without an end it
- * offers a reload (IMD-12). Other `next_action` choices arrive with IMP-403.
+ * elapsed time, and announces each status change. On `completed` it opens the itinerary. On
+ * `failed` (IMP-403): a provider quota pause shows PausedAiNotice with "Build a rule-based plan";
+ * any other failure shows ErrorState with API-23's `failure_message`, the action its
+ * `next_action` names, and the generation id as the reference. After 160 s without an end it
+ * offers a reload (IMD-12).
  */
 export function GenerationProgress({
   generationId,
   onRetry,
+  onRuleBased,
   retrying = false,
 }: GenerationProgressProps) {
   const [elapsed, setElapsed] = useState(0);
@@ -183,31 +189,34 @@ export function GenerationProgress({
         </div>
       )}
 
-      {status === "failed" && (
-        <div
-          role="alert"
-          className="mt-4 flex flex-col gap-3 rounded-lg bg-destructive/10 px-3 py-3 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
-        >
-          <p className="flex items-center gap-2 font-medium">
-            <OctagonX aria-hidden="true" className="size-4 shrink-0" />
-            {data?.failure_message ?? "The plan could not be built."}
-          </p>
-          <Button
-            variant="outline"
-            onClick={onRetry}
-            disabled={retrying}
-            aria-busy={retrying}
-          >
-            {retrying && (
-              <Loader2
-                aria-hidden="true"
-                className="motion-safe:animate-spin"
-              />
-            )}
-            Try again
-          </Button>
-        </div>
-      )}
+      {status === "failed" &&
+        data &&
+        (data.failure_reason === "provider_quota_exhausted" ? (
+          <PausedAiNotice onBuildRuleBased={onRuleBased} building={retrying} />
+        ) : (
+          <div className="mt-4">
+            <ErrorState
+              title="The plan could not be built"
+              error={{ message: data.failure_message, requestId: data.id }}
+              {...(data.next_action === "edit_trip"
+                ? {
+                    action: (
+                      <Button asChild variant="outline">
+                        <Link href={`/trips/new?draft=${data.trip_id}`}>
+                          Edit trip
+                        </Link>
+                      </Button>
+                    ),
+                  }
+                : data.next_action === "retry_rule_based"
+                  ? {
+                      onRetry: onRuleBased,
+                      retryLabel: "Build a rule-based plan",
+                    }
+                  : { onRetry })}
+            />
+          </div>
+        ))}
 
       {timedOut && (
         <div

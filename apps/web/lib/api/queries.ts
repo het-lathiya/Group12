@@ -123,11 +123,11 @@ export function useCreateTrip() {
 export function useStartGeneration(tripId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async () =>
+    mutationFn: async (mode: "ai" | "rule_based" = "ai") =>
       unwrap(
         await api().POST("/api/v1/trips/{trip_id}/generations", {
           params: { path: { trip_id: tripId } },
-          body: { mode: "ai" },
+          body: { mode },
         }),
       ),
     // The 202 body is the first status, so the first poll waits 2 s (§7.4).
