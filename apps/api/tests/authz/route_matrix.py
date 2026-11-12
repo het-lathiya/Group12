@@ -36,6 +36,7 @@ class Owned:
     generation_id: uuid.UUID
     destination_id: uuid.UUID
     place_id: uuid.UUID
+    item_id: uuid.UUID
 
     def secrets(self) -> list[str]:
         """Values of A that must never appear in a response to B."""
@@ -65,7 +66,9 @@ class RouteCase:
         return f"{self.api_id} {self.method} {self.path}"
 
     def url(self, owned: Owned) -> str:
-        return self.path.format(trip_id=owned.trip_id, generation_id=owned.generation_id)
+        return self.path.format(
+            trip_id=owned.trip_id, generation_id=owned.generation_id, item_id=owned.item_id
+        )
 
 
 def trip_body(owned: Owned) -> dict[str, Any]:
@@ -116,6 +119,20 @@ MATRIX: tuple[RouteCase, ...] = (
     RouteCase("API-23", "GET", "/api/v1/generations/{generation_id}", "foreign"),
     RouteCase("API-09", "GET", "/api/v1/itineraries/latest", "scoped"),
     RouteCase("API-24", "GET", "/api/v1/trips/{trip_id}/itinerary", "foreign"),
+    RouteCase(
+        "API-26",
+        "PATCH",
+        "/api/v1/itinerary/items/{item_id}",
+        "foreign",
+        body=lambda _: {"plan_revision": 1, "duration_min": 60},
+    ),
+    RouteCase(
+        "API-27",
+        "DELETE",
+        "/api/v1/itinerary/items/{item_id}",
+        "foreign",
+        params={"plan_revision": 1},
+    ),
     RouteCase(
         "API-32",
         "POST",

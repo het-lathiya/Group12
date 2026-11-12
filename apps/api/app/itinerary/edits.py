@@ -14,7 +14,8 @@ the start time of the item it displaces (or follows the previous item when appen
 unlocked items after it shift forward to max(own start, previous end + travel + buffer)
 (FR-060). Kept items keep their note and ``source_chunk_ids``; a replaced item drops them, since
 they describe the old place. The routes (API-25 to API-29) are IMP-408, IMP-409, IMP-504 and
-IMP-505; they translate their bodies into these operations.
+IMP-505; they translate their bodies into these operations (``patch_item`` and ``remove_item``
+for API-26 and API-27).
 """
 
 from collections.abc import Sequence
@@ -26,10 +27,16 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.budget import engine
-from app.core.errors import GenerationInProgress, InvalidEdit, NotFound, StalePlan
+from app.core.errors import (
+    EndpointNotImplemented,
+    GenerationInProgress,
+    InvalidEdit,
+    NotFound,
+    StalePlan,
+)
 from app.db.models import ItineraryDay, ItineraryItem, Place
 from app.itinerary import repository, service
-from app.itinerary.schemas import EditResultOut
+from app.itinerary.schemas import EditResultOut, ItemPatchIn
 from app.places import repository as places_repository
 from app.routing.cache import RouteCacheRepository
 from app.routing.client import get_client
@@ -176,6 +183,35 @@ async def apply_edit(
         totals=totals,
         findings=await service.stored_findings(session, trip_id, plan_revision),
     )
+
+
+async def _locate(session: AsyncSession, user_id: UUID, item_id: UUID) -> tuple[UUID, int]:
+    location = await repository.item_location(session, item_id, user_id)
+    if location is None:
+        raise NotFound()  # another user's item reads as missing, never 403
+    return location
+
+
+async def patch_item(
+    session: AsyncSession, user_id: UUID, item_id: UUID, body: ItemPatchIn
+) -> EditResultOut:
+    """API-26: a body with start_time and/or duration_min is a retime (FR-063)."""
+    if body.is_locked is not None or body.day_number is not None or body.position is not None:
+        raise EndpointNotImplemented()  # lock is IMP-506, move is IMP-409
+    if body.start_time is None and body.duration_min is None:
+        raise InvalidEdit("The request changes nothing.")
+    trip_id, _ = await _locate(session, user_id, item_id)
+    start = None if body.start_time is None else time.fromisoformat(body.start_time)
+    op = Retime(item_id, start_time=start, duration_min=body.duration_min)
+    return await apply_edit(session, user_id, trip_id, body.plan_revision, op)
+
+
+async def remove_item(
+    session: AsyncSession, user_id: UUID, item_id: UUID, plan_revision: int
+) -> EditResultOut:
+    """API-27 (FR-061); a removed must-visit item comes back as MUST_VISIT_MISSING."""
+    trip_id, _ = await _locate(session, user_id, item_id)
+    return await apply_edit(session, user_id, trip_id, plan_revision, Remove(item_id))
 
 
 async def _active_place(session: AsyncSession, trip: TripOut, place_id: UUID) -> Place:
