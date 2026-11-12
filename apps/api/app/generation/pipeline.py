@@ -24,7 +24,11 @@ reach the validator for DAY_TOO_LONG (IMP-309).
 
 Step 7 is skipped while the provider's circuit breaker is open (IMP-401): opened by transient
 errors it gives the rule-based plan with that cause; opened by quota or auth it ends ``failed``
-with ``provider_quota_exhausted`` or ``config_error``. Each generation's provider result is
+with ``provider_quota_exhausted`` or ``config_error``. Every provider failure, open breaker
+included, is decided by the one table ``outcomes.resolve`` (IMP-403). The fallback uses what is
+left of the job's 120 s (the 15 s reserve of §8.2 and any unused time); an unexpected error in
+it, as anywhere in the job, ends ``failed`` / ``internal`` through the job runner, and a failed
+generation writes nothing to the itinerary tables. Each generation's provider result is
 recorded on the breaker once, after the adapter's retries; retrieval's embeddings never are.
 
 Never logged: the request built for the provider, its raw output, notes or prompt text (FR-125).
@@ -46,7 +50,14 @@ from app.ai.errors import ProviderError, ProviderInvalidOutput
 from app.ai.providers.base import ModelProvider
 from app.budget import engine
 from app.core.config import get_settings
-from app.generation import fallback_planner, repository, request_builder, retrieval, schedule
+from app.generation import (
+    fallback_planner,
+    outcomes,
+    repository,
+    request_builder,
+    retrieval,
+    schedule,
+)
 from app.generation.records import FailureReason, TokenUsage
 from app.itinerary import service as itinerary_service
 from app.itinerary.schemas import PlannedDay, PlannedItem
@@ -133,11 +144,22 @@ async def end_invalid_output(
     await run_fallback(
         job,
         request,
-        "invalid_output",
+        outcomes.INVALID_OUTPUT.reason,
         answer_summary=answer_summary,
         usage=usage,
         metadata=metadata,
     )
+
+
+async def end_with(
+    job: Job, request: GenerationRequest, outcome: outcomes.Outcome, metadata: ModelMetadata
+) -> None:
+    """The outcome table's verdict (``outcomes.resolve``): the labelled rule-based plan, or failed
+    with nothing written to the itinerary tables (FR-037 AC3)."""
+    if outcome.kind == "failed":
+        await job.fail(outcome.reason)
+    else:
+        await run_fallback(job, request, outcome.reason, metadata=metadata)
 
 
 async def run_fallback(
@@ -363,10 +385,7 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
     breaker = factory.breaker_for(provider)
     if breaker.state == "open" and breaker.open_reason is not None:
         logger.warning("generation %s skips the provider: breaker open", generation_id)
-        if breaker.open_reason in ("provider_quota_exhausted", "config_error"):
-            await job.fail(breaker.open_reason)  # IMD-44: no fallback
-        else:
-            await run_fallback(job, request, breaker.open_reason, metadata=metadata)
+        await end_with(job, request, outcomes.resolve_open_breaker(breaker.open_reason), metadata)
         return
     try:
         passages_built = len(request.passage_ids())
@@ -399,10 +418,7 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
     except ProviderError as exc:
         breaker.record_failure(exc)
         logger.warning("generation %s provider error %s", generation_id, exc.failure_reason)
-        if exc.retryable:  # the adapter's retries are spent (§8.3): the rule-based plan
-            await run_fallback(job, request, exc.failure_reason, metadata=metadata)
-        else:  # quota and configuration errors keep their cause (IMD-44)
-            await job.fail(exc.failure_reason)
+        await end_with(job, request, outcomes.resolve(exc), metadata)
         return
 
     breaker.record_success()

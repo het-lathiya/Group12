@@ -20,7 +20,7 @@ from app.ai.providers.base import ModelProvider
 from app.auth import service as auth_service
 from app.core.errors import Conflict, GenerationInProgress, ValidationFailed
 from app.db.models import AiGeneration
-from app.generation import fallback_planner, jobs, records, repository
+from app.generation import fallback_planner, jobs, outcomes, records, repository
 from app.generation.schemas import GenerationOut, GenerationStartIn
 from app.itinerary import service as itinerary_service
 from app.schemas.common import ErrorDetail
@@ -30,21 +30,6 @@ from app.validation.schemas import ValidationSummary
 
 RULE_BASED_MODEL_ID: Final = fallback_planner.MODEL_ID
 TIMED_OUT_MESSAGE: Final = "Generation timed out."
-
-# §6.4: failure_reason -> (failure_message, next_action).
-FAILURE_TEXT: Final[dict[str, tuple[str, str]]] = {
-    "provider_timeout": ("The AI service did not return a usable plan.", "retry_rule_based"),
-    "provider_rate_limited": ("The AI service did not return a usable plan.", "retry_rule_based"),
-    "provider_unavailable": ("The AI service did not return a usable plan.", "retry_rule_based"),
-    "invalid_output": ("The AI service did not return a usable plan.", "retry_rule_based"),
-    "provider_quota_exhausted": ("AI generation is paused for today.", "retry_rule_based"),
-    "unresolved_validation": (
-        "No plan satisfied the checks; adjust the trip or must-visit places.",
-        "edit_trip",
-    ),
-    "config_error": ("The AI service is not available right now.", "retry_rule_based"),
-    "internal": ("Something went wrong on our side.", "retry"),
-}
 
 
 async def start_generation(
@@ -127,7 +112,7 @@ async def get_generation(
 
 async def _to_out(session: AsyncSession, row: AiGeneration) -> GenerationOut:
     summary = row.validation_summary or {}
-    message, next_action = FAILURE_TEXT.get(row.failure_reason or "", (None, None))
+    message, next_action = outcomes.MESSAGES.get(row.failure_reason or "", (None, None))
     if summary.get("timed_out"):
         message = TIMED_OUT_MESSAGE
     saved = await itinerary_service.saved_plan_for_generation(session, row.id)
