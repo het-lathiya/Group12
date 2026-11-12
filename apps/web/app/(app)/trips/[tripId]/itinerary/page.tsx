@@ -2,17 +2,19 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 import { FallbackNotice } from "@/components/generation/FallbackNotice";
 import { DayColumn } from "@/components/itinerary/DayColumn";
+import { itemCardId } from "@/components/itinerary/ItineraryItemCard";
+import { WarningsPanel } from "@/components/itinerary/WarningsPanel";
 import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError } from "@/lib/api/client";
-import { useItinerary, useTrip } from "@/lib/api/queries";
+import { useItinerary, usePreferences, useTrip } from "@/lib/api/queries";
 import type { components } from "@/lib/api/schema";
 import { formatDayDate } from "@/lib/format";
 
@@ -63,12 +65,19 @@ function DaySkeleton() {
   );
 }
 
-function Days({ days }: { days: Day[] }) {
+type DaysProps = {
+  days: Day[];
+  /** The open day tab below 768 px; null opens the first day. */
+  tab: string | null;
+  onTab: (tab: string) => void;
+};
+
+function Days({ days, tab, onTab }: DaysProps) {
   const tabletUp = useTabletUp();
 
   if (!tabletUp) {
     return (
-      <Tabs defaultValue={dayId(days[0])}>
+      <Tabs value={tab ?? dayId(days[0])} onValueChange={onTab}>
         <TabsList aria-label="Days">
           {days.map((day) => (
             <TabsTrigger key={day.day_number} value={dayId(day)}>
@@ -116,7 +125,7 @@ function Days({ days }: { days: Day[] }) {
 
 /**
  * /trips/[tripId]/itinerary (§7.5.7), read-only until IMP-408: the saved days and items of API-24,
- * shown as the server sent them. API-24 answers 404 for a trip with no plan and for a foreign or
+ * shown as the server sent them, with the plan checks (WarningsPanel, IMP-405) beside or above. API-24 answers 404 for a trip with no plan and for a foreign or
  * missing trip alike, so API-10 tells the two apart (§7.5: not-found screen for the second).
  */
 export default function ItineraryPage() {
@@ -126,6 +135,24 @@ export default function ItineraryPage() {
     itinerary.error instanceof ApiError && itinerary.error.status === 404;
   const trip = useTrip(tripId, noPlan);
   const failed = noPlan ? trip : itinerary;
+  const preferences = usePreferences(itinerary.data ? tripId : undefined);
+  const placeNames = Object.fromEntries(
+    (preferences.data?.must_visit_places ?? []).map((p) => [p.id, p.name]),
+  );
+  const [tab, setTab] = useState<string | null>(null);
+
+  function goToItem(itemId: string) {
+    const day = itinerary.data?.days.find((d) =>
+      d.items.some((item) => item.id === itemId),
+    );
+    if (day) setTab(dayId(day)); // below 768 px the item may sit in a closed tab
+    // After the tab has rendered: bring the card into view and move focus to it.
+    requestAnimationFrame(() => {
+      const card = document.getElementById(itemCardId(itemId));
+      card?.scrollIntoView?.({ block: "center" });
+      card?.focus({ preventScroll: true });
+    });
+  }
   const { error } = failed;
   const tripNotFound = error instanceof ApiError && error.status === 404;
 
@@ -175,7 +202,18 @@ export default function ItineraryPage() {
             {itinerary.data.source && (
               <FallbackNotice outcome={itinerary.data.source.outcome} />
             )}
-            <Days days={itinerary.data.days} />
+            <div className="flex flex-col gap-6 xl:grid xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start xl:gap-8">
+              <div className="xl:sticky xl:top-24 xl:order-2">
+                <WarningsPanel
+                  findings={itinerary.data.findings}
+                  placeNames={placeNames}
+                  onGoToItem={goToItem}
+                />
+              </div>
+              <div className="min-w-0 xl:order-1">
+                <Days days={itinerary.data.days} tab={tab} onTab={setTab} />
+              </div>
+            </div>
           </>
         )
       )}

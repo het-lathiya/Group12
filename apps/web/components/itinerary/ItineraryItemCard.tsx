@@ -52,6 +52,9 @@ function Cost({ cost }: { cost: Item["cost"] }) {
   );
 }
 
+/** The id of an item's card, which "Go to item" scrolls to and focuses. */
+export const itemCardId = (itemId: string) => `item-${itemId}`;
+
 /**
  * One stop of a day's timeline (§7.5.7; guide §14): the leg from the previous stop, then the place
  * with its times, cost and note exactly as API-24 returns them. No time or amount is computed here.
@@ -76,7 +79,12 @@ export function ItineraryItemCard({ item }: { item: Item }) {
         {item.start_time}
       </time>
       <div className="border-l border-border pb-3 pl-4">
-        <div className="rounded-xl border bg-card p-3 shadow-xs sm:p-4">
+        {/* The focus target of WarningsPanel's "Go to item" (IMP-405). */}
+        <div
+          id={itemCardId(item.id)}
+          tabIndex={-1}
+          className="scroll-mt-24 rounded-xl border bg-card p-3 shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:p-4"
+        >
           <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
             <h3 className="min-w-0 text-base font-semibold text-card-foreground">
               {item.place.name}

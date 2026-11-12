@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ItineraryPage from "@/app/(app)/trips/[tripId]/itinerary/page";
@@ -165,5 +165,36 @@ describe("ItineraryPage", () => {
 
     await screen.findByRole("heading", { name: ITEM.place.name });
     expect(screen.queryByText(/Built by rules/)).not.toBeInTheDocument();
+  });
+
+  it("IMP-405: shows the plan checks, and Go to item moves focus to the item's card", async () => {
+    const withFinding: Itinerary = {
+      ...plan([ITEM]),
+      findings: [
+        {
+          id: "00000000-0000-4000-8000-0000000000f1",
+          code: "HOURS_UNVERIFIED",
+          severity: "info",
+          message: "Opening hours unavailable.",
+          day_number: 1,
+          item_id: ITEM.id,
+          place_id: null,
+          suggested_fix: "Check opening times before the visit.",
+        },
+      ],
+    };
+    renderPage(
+      () => json(withFinding),
+      () => json({ id: TRIP_ID }),
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Go to item" }));
+
+    await waitFor(() =>
+      expect(document.getElementById(`item-${ITEM.id}`)).toHaveFocus(),
+    );
+    expect(
+      screen.getByRole("region", { name: /Plan checks/ }),
+    ).toBeInTheDocument();
   });
 });
