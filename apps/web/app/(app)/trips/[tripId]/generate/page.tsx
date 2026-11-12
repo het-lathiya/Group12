@@ -24,7 +24,8 @@ const OFFLINE: ErrorStateError = { message: OFFLINE_MESSAGE };
  * A 409 GENERATION_IN_PROGRESS names the running job (IMD-119), which is then polled instead.
  * PrivacyNotice replaces the start button until the account has acknowledged it (IMD-24): API-03
  * says so, and a 422 on field `ai_notice` says so when that read has not answered. Acknowledging
- * starts the generation. "Build without AI" arrives with IMP-402.
+ * starts the generation. A failed generation offers what API-23's next_action names, and a
+ * provider quota pause offers "Build a rule-based plan" (mode rule_based, IMP-403).
  */
 export default function GeneratePage() {
   const { tripId } = useParams<{ tripId: string }>();
@@ -47,12 +48,12 @@ export default function GeneratePage() {
     });
   }
 
-  async function generate() {
+  async function generate(mode: "ai" | "rule_based" = "ai") {
     if (inFlight.current) return;
     inFlight.current = true;
     setStartError(null);
     try {
-      watch((await start.mutateAsync()).id);
+      watch((await start.mutateAsync(mode)).id);
     } catch (error) {
       if (!(error instanceof ApiError)) {
         setStartError({ error: OFFLINE, reload: false });
@@ -136,6 +137,7 @@ export default function GeneratePage() {
           key={generationId}
           generationId={generationId}
           onRetry={() => void generate()}
+          onRuleBased={() => void generate("rule_based")}
           retrying={running}
         />
       )}
