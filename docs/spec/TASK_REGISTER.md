@@ -1973,7 +1973,7 @@ It also brings the ORM models and the drift test up to date and switches the tes
 
 1. Confirm on the official Gemini pages the model identifier, API style (Interactions or generateContent, OD-14), structured-output keywords and rate limits for the team key; record them with date and Verified/Unverified status in docs/decisions/gemini-setup.md (blueprint §19.4.8 spike list).
 2. Add google-genai to pyproject.toml; import it only in app/ai/providers/gemini.py (import-linter contract must stay green).
-3. Implement GeminiProvider(settings) with generate_itinerary(request: GenerationRequest) -> ProviderResult[ItineraryOutput]: render the prompt via the prompt registry (IMP-111), attach the io-1 wire schema (repository schema minus $schema, $id, pattern; blueprint Appendix C), set store=false, send no sampling parameter unless the spike shows the model honours it, use the lowest thinking level the model accepts, timeout = min(GEMINI_TIMEOUT_S, remaining step-7 allowance) converted to ms in http_options.
+3. Implement GeminiProvider(settings) with generate_itinerary(request: GenerationRequest) -> ProviderResult[ItineraryOutput]: render the prompt via the prompt registry (IMP-111), attach the io-1 wire schema (repository schema minus $schema, $id and the numeric, length, count, format and pattern keywords, whose limits are stated in descriptions and enforced by code, IMD-136; blueprint Appendix C), set store=false, send no sampling parameter unless the spike shows the model honours it, use the lowest thinking level the model accepts, timeout = min(GEMINI_TIMEOUT_S, remaining step-7 allowance) converted to ms in http_options.
 4. Parse the response: empty text -> ProviderInvalidOutput(empty); json.loads failure -> malformed_json; Pydantic io-1 failure -> schema_violation; MAX_TOKENS/incomplete -> truncated; safety block (HTTP 400 code safety/jailbreak/prohibited_content/blocklist or SAFETY finish) -> blocked. Read the error code before classifying any 400.
 5. Map vendor errors to shared types per blueprint §19.4.6: timeout/504 -> ProviderTimeout; 429 rate -> ProviderRateLimited(retry_after_s); 429 quota_exceeded or 402 -> ProviderQuotaExhausted; 500/503 -> ProviderUnavailable; 403 -> ProviderAuthError; 400 invalid_request/404 model_not_found -> ProviderBadRequest. Never put vendor message text into errors, logs or records (NFR-024).
 6. Map usage to input_tokens, output_tokens, thinking_tokens, total_tokens (null when absent, never estimated); return generation_settings with the names and values actually sent and adapter_version.
@@ -3084,7 +3084,7 @@ Any embedding failure, or a missing index, falls back to lexical ranking, and th
 1. Implement outcomes.resolve(error_or_result) implementing the table of blueprint §19.2.2: ProviderTimeout/RateLimited/Unavailable after retries or breaker open for transient errors (a quota or auth breaker keeps the original failed cause, IMD-44) -> fallback_rule_based with fallback_reason provider_timeout/provider_rate_limited/provider_unavailable (stored in validation_summary.provider_failure; failure_reason stays null, IMD-22); ProviderInvalidOutput -> fallback_rule_based invalid_output; not usable after repair -> fallback_rule_based unresolved_validation; ProviderQuotaExhausted -> failed provider_quota_exhausted; AuthError/BadRequest -> failed config_error; unexpected -> failed internal.
 2. Run the fallback planner automatically for the fallback outcomes inside the remaining 15 s reserve; if the fallback itself fails, end failed internal.
 3. On failed outcomes write nothing to itinerary tables (old plan and plan_revision unchanged).
-4. Map each outcome to a user message key; the web shows FallbackNotice ("Built by rules because the AI service was unavailable or failed checks"), a paused-AI notice with a "Build a rule-based plan" button (API-22 mode rule_based) for quota, and ErrorState with request_id for failed.
+4. Map each outcome to a user message key; the web shows FallbackNotice ("Built by rules because the AI service was unavailable or its answer failed checks", §7.8, IMD-154), a paused-AI notice with a "Build a rule-based plan" button (API-22 mode rule_based) for quota, and ErrorState for failed, whose reference is the generation id because API-23 has no request_id (IMD-155).
 5. Failure-injection tests with MOCK scenarios timeout, rate_limited, quota, invalid_json, unknown_place and raise_error=ProviderUnavailable() / ProviderAuthError() (IMD-27).
 
 **Interfaces**
@@ -3277,7 +3277,7 @@ Any embedding failure, or a missing index, falls back to lexical ranking, and th
 2. If base_revision != trips.plan_revision raise StalePlan -> 409 STALE_PLAN with nothing changed (full UX in IMP-504).
 3. Before the revision check refuse with 409 GENERATION_IN_PROGRESS when a generation for the trip is queued, running, validating or repairing (IMD-23).
 4. Structurally impossible edits (day out of range, unknown place, moving a locked item) raise InvalidEdit -> 422 INVALID_EDIT.
-5. After applying: schedule.recalculate (IMP-308), budget engine, validator (IMP-404); save items, warnings for the new revision, plan_revision + 1, and an automatic itinerary_versions row with reason edit (IMD-18; pruned by IMP-610; with the versions switch off only one backup copy is kept).
+5. After applying: the FR-060 times rule in itinerary/edits.py (not schedule.recalculate, which would form an import cycle and undo a retime, IMD-153), budget engine, validator (IMP-404); save items, warnings for the new revision, plan_revision + 1, and an automatic itinerary_versions row with reason edit (IMD-18; pruned by IMP-610; with the versions switch off only one backup copy is kept).
 6. Edits with resulting conflicts succeed and return the findings (PR-06); only impossible edits are rejected.
 7. Edit response schema: {plan_revision, day (recalculated), totals, warnings}; the web replaces its cache with it.
 
@@ -3463,7 +3463,7 @@ Any embedding failure, or a missing index, falls back to lexical ranking, and th
 
 1. API-34 PATCH /api/v1/trips/{trip_id}/budget-settings {transport_allowance_per_day?, stay_budget_per_night?} (decimal strings, >= 0; contingency_pct accepted but its UI is IMP-608); owner only; upsert budget_settings; upserts budget_settings only and returns the recalculated CostSummaryOut with its budget findings, without writing itinerary_warnings (§6).
 2. Budget engine BF-05/BF-06 use the inputs; missing input -> line Unavailable and the total states it.
-3. Define the label enum in app/schemas/labels.py as exactly {curated, estimate, unavailable}; curated carries checked_on date; a unit test asserts no other value can be serialised.
+3. Define the label enum in app/schemas/labels.py as exactly {curated, estimate, unavailable}; curated prices carry no date and curated hours carry checked_on (IMD-130, IMD-149); a unit test asserts no other value can be serialised.
 4. Wizard budget step: BudgetSettingsForm fields; SourceBadge shows text plus colour (never colour alone).
 
 **Interfaces**
@@ -3546,7 +3546,7 @@ Any embedding failure, or a missing index, falls back to lexical ranking, and th
 
 1. CLI arguments: --dataset, --provider (MOCK|GEMINI|RULE_BASED), --repeats (default 3), --out eval/results/<run_id>/; the provider instance is chosen by the flag and never changes the application default.
 2. For each case: run steps 6 to 10 on the frozen request, store the raw output, score with the production validator and budget engine.
-3. Implement metrics 1 to 6, 10, 11 and 13 of blueprint §21.4 (12 cost per success with a dated price table or null; 7 and 9 marked not computed in v1) with definitions fixed in eval/metrics_v1.md.
+3. Blueprint §21.4 is not available (IMD-144): dataset v1 computes the three counts the specification defines, schema-valid answers (§8.11 step 1), answers whose place IDs are all valid (§8.11 step 3) and usable plans (§8.12), and marks the numbered metrics not computed in v1; definitions fixed in eval/metrics_v1.md.
 4. Write a run manifest: run_id, dataset id/version/hash, provider, model_id, prompt template id/version, schema versions, settings sent, git commit, start/end times.
 5. GEMINI runs are manual (make eval PROVIDER=GEMINI) and count against the caps; never run in PR CI.
 
@@ -3920,6 +3920,7 @@ Every number carries its run metadata.
 4. Verify plan_revision on every edit route (API-25 to API-29) inside the locked trip transaction: mismatch -> 409 STALE_PLAN, nothing written; an active generation -> 409 GENERATION_IN_PROGRESS (IMD-23) (check at the top of the shared edit transaction so all edits inherit it).
 5. Build PlacePicker reusing the explore search (API-16) inside a dialog; on success replace the itinerary query data with the response; on 409 STALE_PLAN refetch API-24 and show the "This plan changed since you opened it" Toast with a reload action.
 6. Offer an Undo action in the Toast that calls API-27 for the new item (traveller can cancel the addition, FR-062 AC2).
+7. Turn on removal undo: set EDIT_UNDO_ENABLED to true in apps/web/lib/api/queries.ts so the "Removed" toast offers Undo through API-25 (IMD-157).
 
 **Interfaces**
 
@@ -4019,6 +4020,7 @@ Every number carries its run metadata.
 4. Make repair.py skip locked items in every operation (already required in IMP-502; add explicit tests).
 5. Add the lock toggle to ItineraryItemCard as a button with aria-pressed and a visible lock icon + text 'Locked'.
 6. Guard with the IMD-11 flag 'locks': disabled -> the toggle is hidden and PATCH with locked returns 404 NOT_FOUND for that field; must-visit protection by the validator (MUST_VISIT_MISSING) still applies.
+7. Replace the interim 501 that API-26 answers for any body setting is_locked, including the §6 example {duration_min, is_locked: false}, with this implementation (IMD-158).
 
 **Interfaces**
 
