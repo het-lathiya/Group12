@@ -2,10 +2,10 @@
 
 With ``SUPABASE_JWKS_URL`` set, tokens are verified with the project's published asymmetric keys
 (5 s fetch timeout, key set cached 10 minutes); otherwise with HS256 and ``SUPABASE_JWT_SECRET``.
-Every token must carry ``exp``, a UUID ``sub`` and ``aud`` = ``authenticated``. Any failure is the
-same 401 UNAUTHENTICATED with the same message, so a caller never learns which check failed. A key
-set that cannot be fetched (and no cached key matches) is 503 SERVICE_UNAVAILABLE. Tokens are
-never logged.
+Every token must carry ``exp``, a UUID ``sub`` and ``aud`` = ``authenticated``; ``exp`` and ``iat``
+are checked with 30 s of clock leeway (IMD-140). Any failure is the same 401 UNAUTHENTICATED with
+the same message, so a caller never learns which check failed. A key set that cannot be fetched
+(and no cached key matches) is 503 SERVICE_UNAVAILABLE. Tokens are never logged.
 """
 
 import logging
@@ -29,6 +29,8 @@ HS256 = ["HS256"]
 JWKS_ALGORITHMS = ["ES256", "RS256", "EdDSA"]
 JWKS_FETCH_TIMEOUT_S = 5
 JWKS_CACHE_S = 600
+# IMD-140: tolerate a small clock difference between this API and Supabase Auth (exp and iat).
+CLOCK_LEEWAY_S = 30
 
 
 @dataclass(frozen=True)
@@ -102,6 +104,7 @@ class TokenVerifier:
                 key,
                 algorithms=algorithms,
                 audience=AUDIENCE,
+                leeway=CLOCK_LEEWAY_S,
                 options={"require": REQUIRED_CLAIMS},
             )
         except jwt.InvalidTokenError as exc:
