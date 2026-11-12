@@ -21,6 +21,9 @@ region="$AWS_REGION"
 account="$AWS_ACCOUNT_ID"
 oidc_host=token.actions.githubusercontent.com
 oidc_arn="arn:aws:iam::$account:oidc-provider/$oidc_host"
+# GitHub also presents the immutable subject form owner@<owner id>/repo@<repository id> (IMD-138).
+# The two IDs are public GitHub identifiers of het-lathiya and Group12, not secrets.
+github_repo_ids="${GITHUB_REPO%%/*}@185104529/${GITHUB_REPO#*/}@1436091116"
 
 ensure_role() { # role name, trust policy JSON
   if aws iam get-role --role-name "$1" --query Role.Arn --output text 2>/dev/null; then
@@ -65,7 +68,7 @@ else
     --query OpenIDConnectProviderArn --output text
 fi
 
-# Deploy role: exactly the three subjects of A1 §4.4 (TC-436). Its policy adds to A1 §4.4 the dependent
+# Deploy role: exactly the six subjects of A1 §4.4 and IMD-138 (TC-436). Its policy adds to A1 §4.4 the dependent
 # actions of UpdateExpressGatewayService (PD-IMP-217-1, IMP-218).
 ensure_role group12-github-deploy "$(cat <<JSON
 {
@@ -79,7 +82,10 @@ ensure_role group12-github-deploy "$(cat <<JSON
       "StringLike": {"$oidc_host:sub": [
         "repo:$GITHUB_REPO:ref:refs/heads/main",
         "repo:$GITHUB_REPO:ref:refs/tags/v*",
-        "repo:$GITHUB_REPO:environment:production"
+        "repo:$GITHUB_REPO:environment:production",
+        "repo:$github_repo_ids:ref:refs/heads/main",
+        "repo:$github_repo_ids:ref:refs/tags/v*",
+        "repo:$github_repo_ids:environment:production"
       ]}
     }
   }]

@@ -361,12 +361,22 @@ async def test_traveller_counts_and_currency_are_checked(
     response = await api_client.post(
         "/api/v1/trips",
         json=trip_body(
-            sampleton, adults=0, children=21, budget={"amount": "10.00", "currency": "gb"}
+            sampleton, adults=0, children=21, budget={"amount": "10.00", "currency": "GBP"}
         ),
         headers=auth_user.headers,
     )
     assert response.status_code == 422
-    assert error_fields(response) == ["adults", "children", "budget.currency"]
+    assert error_fields(response) == ["adults", "children"]
+
+    # Money.currency carries the §6.1 pattern (SG-3 F-1), so a malformed code fails at parsing,
+    # before the domain rules run, like any other type error.
+    response = await api_client.post(
+        "/api/v1/trips",
+        json=trip_body(sampleton, budget={"amount": "10.00", "currency": "gb"}),
+        headers=auth_user.headers,
+    )
+    assert response.status_code == 422
+    assert error_fields(response) == ["budget.currency"]
 
 
 @pytest.mark.asyncio

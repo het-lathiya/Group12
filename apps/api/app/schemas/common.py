@@ -38,7 +38,9 @@ class Money(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     amount: MoneyAmount
-    currency: str = Field(description="ISO 4217 code, three upper-case letters")
+    currency: str = Field(
+        pattern=r"^[A-Z]{3}$", description="ISO 4217 code, three upper-case letters"
+    )
 
 
 class Page[T](BaseModel):

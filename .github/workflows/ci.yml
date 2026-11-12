@@ -237,5 +237,8 @@ jobs:
       - name: Round trip (downgrade base, upgrade head)
         working-directory: apps/api
         run: .venv/bin/alembic downgrade base && .venv/bin/alembic upgrade head
-      - run: make test-api
-      - run: make test-authz
+      # TC-334 coverage (NFR-030): report only, the thresholds are still "proposed", so nothing fails on them.
+      - run: make test-api ARGS='--cov=app --cov-report='
+      - run: make test-authz ARGS='--cov=app --cov-append --cov-report='
+      - name: Coverage report for TC-334 (adds the unit suite)
+        run: make test-unit ARGS='--cov=app --cov-append --cov-report=term-missing:skip-covered'
