@@ -39,7 +39,7 @@ from app.ai.factory import get_model_provider
 from app.ai.providers.base import ModelProvider
 from app.ai.providers.mock import MockProvider
 from app.core.errors import EndpointNotImplemented
-from app.db.models import Destination, Place
+from app.db.models import Destination, ItineraryItem, Place
 from app.generation import jobs
 from app.main import create_app
 from app.places import seed
@@ -149,6 +149,13 @@ async def owned(
     done = await client.get(f"/api/v1/generations/{generation_id}", headers=a.headers)
     assert done.json()["status"] == "completed", done.text
 
+    item_id = await db_session.scalar(
+        select(ItineraryItem.id)
+        .where(ItineraryItem.trip_id == uuid.UUID(trip_id))
+        .order_by(ItineraryItem.position)
+        .limit(1)
+    )
+    assert item_id is not None
     owned = Owned(
         user_id=a.user_id,
         email=a.email,
@@ -157,6 +164,7 @@ async def owned(
         generation_id=uuid.UUID(generation_id),
         destination_id=destination.id,
         place_id=place_id,
+        item_id=item_id,
     )
     rows = await trip_rows(db_session, owned)
     for table in ("trip_places", "ai_generations", "itinerary_days", "itinerary_items"):

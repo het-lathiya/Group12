@@ -1,8 +1,8 @@
 """Itinerary, edit and version routes API-09, API-24 to API-29 and API-35 to API-38
 (specification §6.6.5; IMD-18, IMD-23).
 
-API-09 and API-24 are built (IMP-211, IMP-309). The others are declared with their final shapes and answer
-501 NOT_IMPLEMENTED until their cards build them (IMD-37): IMP-408 (API-26, API-27), IMP-504
+API-09, API-24, API-26 and API-27 are built (IMP-211, IMP-309, IMP-408). The others are declared with
+their final shapes and answer 501 NOT_IMPLEMENTED until their cards build them (IMD-37): IMP-504
 (API-25), IMP-505 (API-28, API-29), IMP-609 (API-35), IMP-610 (API-36 to API-38).
 API-30 and API-31 live in generation/router.py and API-32 in validation/router.py (IMD-13).
 """
@@ -13,7 +13,7 @@ from fastapi import APIRouter, status
 
 from app.auth.deps import CurrentUser, DbSession
 from app.core.errors import EndpointNotImplemented
-from app.itinerary import service
+from app.itinerary import edits, service
 from app.itinerary.schemas import (
     AlternativesOut,
     EditResultOut,
@@ -65,8 +65,10 @@ async def add_item(trip_id: UUID, body: ItemAddIn) -> EditResultOut:
     response_model=EditResultOut,
     summary="API-26 Move, retime, lock or unlock an item",
 )
-async def update_item(item_id: UUID, body: ItemPatchIn) -> EditResultOut:
-    raise EndpointNotImplemented()
+async def update_item(
+    item_id: UUID, body: ItemPatchIn, user: CurrentUser, session: DbSession
+) -> EditResultOut:
+    return await edits.patch_item(session, user.user_id, item_id, body)
 
 
 @router.delete(
@@ -74,8 +76,10 @@ async def update_item(item_id: UUID, body: ItemPatchIn) -> EditResultOut:
     response_model=EditResultOut,
     summary="API-27 Remove an item",
 )
-async def delete_item(item_id: UUID, plan_revision: int) -> EditResultOut:
-    raise EndpointNotImplemented()
+async def delete_item(
+    item_id: UUID, plan_revision: int, user: CurrentUser, session: DbSession
+) -> EditResultOut:
+    return await edits.remove_item(session, user.user_id, item_id, plan_revision)
 
 
 @router.get(

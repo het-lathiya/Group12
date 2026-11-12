@@ -37,6 +37,20 @@ async def lock_trip(session: AsyncSession, trip_id: UUID, user_id: UUID) -> Trip
     return await session.scalar(query)
 
 
+async def item_location(
+    session: AsyncSession, item_id: UUID, user_id: UUID
+) -> tuple[UUID, int] | None:
+    """(trip_id, day_number) of an item on one of the user's live trips; None for anyone else's."""
+    query = (
+        select(ItineraryItem.trip_id, ItineraryDay.day_number)
+        .join(ItineraryDay, ItineraryDay.id == ItineraryItem.day_id)
+        .join(Trip, Trip.id == ItineraryItem.trip_id)
+        .where(ItineraryItem.id == item_id, Trip.user_id == user_id, Trip.deleted_at.is_(None))
+    )
+    row = (await session.execute(query)).one_or_none()
+    return None if row is None else (row.trip_id, row.day_number)
+
+
 async def replace_plan(
     session: AsyncSession,
     trip_id: UUID,
