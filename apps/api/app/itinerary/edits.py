@@ -55,7 +55,7 @@ FOOD: Final = "food"
 class Move:
     item_id: UUID
     day_number: int
-    position: int
+    position: int | None = None  # None: after the target day's last item
 
 
 @dataclass(frozen=True)
@@ -195,14 +195,23 @@ async def _locate(session: AsyncSession, user_id: UUID, item_id: UUID) -> tuple[
 async def patch_item(
     session: AsyncSession, user_id: UUID, item_id: UUID, body: ItemPatchIn
 ) -> EditResultOut:
-    """API-26: a body with start_time and/or duration_min is a retime (FR-063)."""
-    if body.is_locked is not None or body.day_number is not None or body.position is not None:
-        raise EndpointNotImplemented()  # lock is IMP-506, move is IMP-409
-    if body.start_time is None and body.duration_min is None:
+    """API-26: day_number and/or position is a move (FR-060); start_time and/or duration_min is a
+    retime (FR-063). A move without day_number stays on its day; without position it goes last."""
+    if body.is_locked is not None:
+        raise EndpointNotImplemented()  # lock and unlock are IMP-506
+    moves = body.day_number is not None or body.position is not None
+    retimes = body.start_time is not None or body.duration_min is not None
+    if moves and retimes:  # PD-IMP-409-1: §6 does not define a combined move and retime
+        raise InvalidEdit("Move and retime are separate edits; send one, then the other.")
+    if not moves and not retimes:
         raise InvalidEdit("The request changes nothing.")
-    trip_id, _ = await _locate(session, user_id, item_id)
-    start = None if body.start_time is None else time.fromisoformat(body.start_time)
-    op = Retime(item_id, start_time=start, duration_min=body.duration_min)
+    trip_id, day_number = await _locate(session, user_id, item_id)
+    op: EditOperation
+    if moves:
+        op = Move(item_id, body.day_number or day_number, body.position)
+    else:
+        start = None if body.start_time is None else time.fromisoformat(body.start_time)
+        op = Retime(item_id, start_time=start, duration_min=body.duration_min)
     return await apply_edit(session, user_id, trip_id, body.plan_revision, op)
 
 
@@ -242,6 +251,7 @@ async def _apply(session: AsyncSession, plan: Plan, op: EditOperation) -> None:
             _unlocked(item)
             target = plan.day(day_number)
             plan.items[source].remove(item)
+            position = len(target) + 1 if position is None else position
             if not 1 <= position <= len(target) + 1:
                 raise InvalidEdit(f"Position {position} is outside day {day_number}.")
             if position <= len(target):
