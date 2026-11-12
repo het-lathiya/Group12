@@ -11,6 +11,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import NotFound
 from app.db.models import Place
 from app.places import repository
 from app.places.schemas import Destination, PlaceSummary
@@ -37,8 +38,12 @@ async def search_places(
 ) -> Page[PlaceSummary]:
     """API-16 basic: active places of an active destination by name, category and page.
 
-    An inactive or unknown destination gives an empty page (PD-IMP-205-7).
+    An inactive or unknown destination is 404 NOT_FOUND: §6.2 makes inactive destinations
+    invisible, so they answer like a missing one (IMD-127).
     """
+    destination = await repository.destination_by_id(session, destination_id)
+    if destination is None or not destination.is_active:
+        raise NotFound()
     rows, total = await repository.search_places(
         session,
         destination_id,
