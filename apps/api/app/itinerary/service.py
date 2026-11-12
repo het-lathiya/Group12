@@ -5,7 +5,8 @@ which also completes the generation record, so the plan, the version and the rec
 together or not at all (NFR-008). ``get_itinerary`` (API-24) and ``latest_itinerary`` (API-09)
 read the saved plan for its owner (IMP-211). ``revalidate`` (API-32) re-runs the validator on the
 current plan and replaces that revision's warnings; ``version_findings`` reads a stored version's
-warnings and summary (FR-058, IMP-405).
+warnings and summary (FR-058, IMP-405). ``plan_out`` builds the days and totals that API-24 and
+the edit core (``edits.apply_edit``, IMP-407) return.
 """
 
 from collections.abc import Mapping, Sequence
@@ -24,7 +25,7 @@ from app.budget.schemas import AmountRange
 from app.core.config import get_settings
 from app.core.errors import EndpointNotImplemented, NotFound, StalePlan
 from app.core.flags import is_enabled
-from app.db.models import ItineraryDay, ItineraryItem, Place
+from app.db.models import AiGeneration, ItineraryDay, ItineraryItem, Place
 from app.itinerary import repository
 from app.itinerary.schemas import (
     Day,
@@ -177,10 +178,41 @@ async def get_itinerary(
     if not days:
         raise NotFound(NO_ITINERARY)
     rows = await repository.plan_items(session, trip_id)
+    generation = await repository.latest_completed_generation(session, trip_id)
+    out_days, totals = await plan_out(session, trip, days, rows, generation)
+    return ItineraryOut(
+        trip_id=trip.id,
+        plan_revision=trip.plan_revision,
+        version_id=await repository.latest_version_id(session, trip_id, trip.plan_revision),
+        is_current=True,
+        plan_stale=trip.plan_stale,
+        source=None
+        if generation is None
+        else ItinerarySource.model_validate(
+            {
+                "generation_id": generation.id,
+                "provider": generation.provider,
+                "outcome": generation.outcome,
+            }
+        ),
+        days=out_days,
+        findings=await stored_findings(session, trip_id, trip.plan_revision),
+        totals=totals,
+    )
+
+
+async def plan_out(
+    session: AsyncSession,
+    trip: TripOut,
+    days: Sequence[ItineraryDay],
+    rows: Sequence[tuple[ItineraryItem, Place, bool]],
+    generation: AiGeneration | None,
+) -> tuple[list[Day], Totals]:
+    """The response days and the engine's totals for the stored plan (API-24, EditResultOut);
+    ``generation`` is the trip's latest completed one, which decides the AI-text labels."""
     sources = await rag_service.resolve_sources(
         session, [chunk_id for item, _, _ in rows for chunk_id in item.source_chunk_ids]
     )
-    generation = await repository.latest_completed_generation(session, trip_id)
     ai_text = generation is not None and generation.outcome in AI_OUTCOMES
     currency = trip_currency(trip)
 
@@ -202,35 +234,18 @@ async def get_itinerary(
             )
         )
 
-    summary, _ = await _summary(session, trip, days, rows)
-    return ItineraryOut(
-        trip_id=trip.id,
-        plan_revision=trip.plan_revision,
-        version_id=await repository.latest_version_id(session, trip_id, trip.plan_revision),
-        is_current=True,
-        plan_stale=trip.plan_stale,
-        source=None
-        if generation is None
-        else ItinerarySource.model_validate(
-            {
-                "generation_id": generation.id,
-                "provider": generation.provider,
-                "outcome": generation.outcome,
-            }
+    summary, _ = await _summary(session, trip, list(days), list(rows))
+    totals = Totals(
+        currency=currency,
+        estimate=AmountRange(
+            min=engine.from_minor(summary.estimate_lo),
+            max=engine.from_minor(summary.estimate_hi),
         ),
-        days=out_days,
-        findings=await stored_findings(session, trip_id, trip.plan_revision),
-        totals=Totals(
-            currency=currency,
-            estimate=AmountRange(
-                min=engine.from_minor(summary.estimate_lo),
-                max=engine.from_minor(summary.estimate_hi),
-            ),
-            planning_total=engine.from_minor(summary.planning_total),
-            complete=summary.complete,
-            incomplete_count=len(summary.incomplete_items),
-        ),
+        planning_total=engine.from_minor(summary.planning_total),
+        complete=summary.complete,
+        incomplete_count=len(summary.incomplete_items),
     )
+    return out_days, totals
 
 
 def _cost_sum(items: list[ItineraryItem]) -> dict[str, Any]:

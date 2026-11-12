@@ -187,6 +187,28 @@ async def mark_plan_saved(session: AsyncSession, trip_id: UUID) -> int:
     return int((await session.execute(statement)).scalar_one())
 
 
+async def bump_revision(session: AsyncSession, trip_id: UUID) -> int:
+    """An edit's plan_revision + 1; status and plan_stale stay as they are."""
+    statement = (
+        update(Trip)
+        .where(Trip.id == trip_id)
+        .values(plan_revision=Trip.plan_revision + 1, updated_at=func.now())
+        .returning(Trip.plan_revision)
+    )
+    return int((await session.execute(statement)).scalar_one())
+
+
+async def generation_active(session: AsyncSession, trip_id: UUID) -> bool:
+    """IMD-23: a generation of the trip is queued, running, validating or repairing."""
+    query = select(
+        exists().where(
+            AiGeneration.trip_id == trip_id,
+            AiGeneration.status.in_(("queued", "running", "validating", "repairing")),
+        )
+    )
+    return bool(await session.scalar(query))
+
+
 async def insert_version(
     session: AsyncSession,
     trip_id: UUID,
