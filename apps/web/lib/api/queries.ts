@@ -384,3 +384,25 @@ export function useAddItem(tripId: string) {
     ),
   );
 }
+
+/** API-26 move: to `day_number` (default its own day) at `position` (default the end) (FR-060). */
+export function useMoveItem(tripId: string) {
+  return useItemEdit(
+    tripId,
+    async ({
+      itemId,
+      ...body
+    }: {
+      itemId: string;
+      plan_revision: number;
+      day_number?: number;
+      position?: number;
+    }) =>
+      unwrap(
+        await api().PATCH("/api/v1/itinerary/items/{item_id}", {
+          params: { path: { item_id: itemId } },
+          body,
+        }),
+      ),
+  );
+}

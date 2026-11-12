@@ -1,5 +1,6 @@
 import { ItemEditor } from "@/components/itinerary/ItemEditor";
 import { ItemSources } from "@/components/itinerary/ItemSources";
+import { MoveControls } from "@/components/itinerary/MoveControls";
 import { AiBadge } from "@/components/labels/AiBadge";
 import { SourceBadge } from "@/components/labels/SourceBadge";
 import type { components } from "@/lib/api/schema";
@@ -61,12 +62,15 @@ export type ItemEditContext = {
   tripId: string;
   planRevision: number;
   dayNumber: number;
+  /** For MoveControls (IMP-409): the day's item count and the trip's day numbers. */
+  itemCount: number;
+  dayNumbers: number[];
 };
 
 /**
  * One stop of a day's timeline (§7.5.7; guide §14): the leg from the previous stop, then the place
  * with its times, cost and note exactly as API-24 returns them. No time or amount is computed here.
- * With `edit`, the card also offers ItemEditor (IMP-408).
+ * With `edit`, the card also offers ItemEditor (IMP-408) and MoveControls (IMP-409).
  */
 export function ItineraryItemCard({
   item,
@@ -127,7 +131,17 @@ export function ItineraryItemCard({
             </p>
           )}
           {item.note_origin === "ai" && <ItemSources sources={item.sources} />}
-          {edit && <ItemEditor item={item} {...edit} />}
+          {edit && (
+            <>
+              <ItemEditor
+                item={item}
+                tripId={edit.tripId}
+                planRevision={edit.planRevision}
+                dayNumber={edit.dayNumber}
+              />
+              <MoveControls item={item} {...edit} />
+            </>
+          )}
         </div>
       </div>
     </div>
