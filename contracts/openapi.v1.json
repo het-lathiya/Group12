@@ -1678,6 +1678,7 @@
           },
           "currency": {
             "description": "ISO 4217 code, three upper-case letters",
+            "pattern": "^[A-Z]{3}$",
             "title": "Currency",
             "type": "string"
           }
@@ -1699,6 +1700,7 @@
           },
           "currency": {
             "description": "ISO 4217 code, three upper-case letters",
+            "pattern": "^[A-Z]{3}$",
             "title": "Currency",
             "type": "string"
           }

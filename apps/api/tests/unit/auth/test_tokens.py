@@ -1,15 +1,17 @@
 """Token verification (§6.2, IMD-04; IMP-108: TC-057, TC-347). No database and no network."""
 
 import asyncio
+import logging
 import time
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
+from fastapi import Depends, FastAPI
 from fixtures.auth import (
     TEST_JWT_SECRET,
     auth_test_settings,
@@ -21,6 +23,7 @@ from fixtures.auth import (
 from app.auth import deps
 from app.auth.tokens import TokenClaims, TokenVerifier, jwks_client, verifier_for
 from app.core.errors import ServiceUnavailable, Unauthenticated
+from app.core.request_id import RequestIdMiddleware, user_hash
 from app.main import create_app
 
 USER_ID = uuid.UUID("00000000-0000-4000-8000-000000000108")
@@ -191,3 +194,31 @@ def test_bad_or_missing_tokens_get_the_401_envelope(headers: dict[str, str]) -> 
     assert error["code"] == "UNAUTHENTICATED"
     assert error["message"] == Unauthenticated.default_message
     assert error["details"] == []
+
+
+# ---------- Access log: user_hash from the verified token (SG-3 open item) ----------
+
+
+def test_a_verified_token_fills_user_hash_in_the_access_line_without_the_raw_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    app = FastAPI()
+    app.add_middleware(RequestIdMiddleware)
+    app.state.settings = auth_test_settings()
+
+    @app.get("/whoami")
+    async def whoami(
+        claims: Annotated[TokenClaims, Depends(deps.verified_claims)],
+    ) -> dict[str, str]:
+        return {"ok": "yes"}
+
+    async def call() -> httpx.Response:
+        async with client_for(app) as client:
+            return await client.get("/whoami", headers=bearer(make_token(USER_ID)))
+
+    with caplog.at_level(logging.INFO, logger="app.access"):
+        assert asyncio.run(call()).status_code == 200
+    (record,) = [r for r in caplog.records if r.name == "app.access"]
+    assert record.__dict__["user_hash"] == user_hash(USER_ID)  # a logging extra
+    assert str(USER_ID) not in caplog.text
+    assert all(str(USER_ID) not in str(vars(r).values()) for r in caplog.records)
