@@ -3,7 +3,9 @@
 ``save_generated_plan`` is step 11 of the pipeline (§8.2): it runs in the caller's transaction,
 which also completes the generation record, so the plan, the version and the record are saved
 together or not at all (NFR-008). ``get_itinerary`` (API-24) and ``latest_itinerary`` (API-09)
-read the saved plan for its owner (IMP-211).
+read the saved plan for its owner (IMP-211). ``revalidate`` (API-32) re-runs the validator on the
+current plan and replaces that revision's warnings; ``version_findings`` reads a stored version's
+warnings and summary (FR-058, IMP-405).
 """
 
 from collections.abc import Mapping, Sequence
@@ -20,7 +22,7 @@ from app.budget import engine
 from app.budget import repository as budget_repository
 from app.budget.schemas import AmountRange
 from app.core.config import get_settings
-from app.core.errors import EndpointNotImplemented, NotFound
+from app.core.errors import EndpointNotImplemented, NotFound, StalePlan
 from app.core.flags import is_enabled
 from app.db.models import ItineraryDay, ItineraryItem, Place
 from app.itinerary import repository
@@ -32,14 +34,20 @@ from app.itinerary.schemas import (
     ItinerarySource,
     LatestItineraryOut,
     PlannedDay,
+    PlannedItem,
     SourceRef,
     Totals,
+    ValidateOut,
 )
+from app.places import service as places_service
 from app.rag import service as rag_service
 from app.schemas.ai import PlanFinding
+from app.trips import preference_mapping
 from app.trips import service as trips_service
 from app.trips.schemas import TripOut
-from app.validation.schemas import Finding
+from app.validation import validator
+from app.validation.rules import ValidationContext
+from app.validation.schemas import Finding, ValidationSummary
 
 SNAPSHOT_SCHEMA = "snap-1"
 
@@ -211,10 +219,7 @@ async def get_itinerary(
             }
         ),
         days=out_days,
-        findings=[
-            Finding.model_validate(warning, from_attributes=True)
-            for warning in await repository.current_warnings(session, trip_id, trip.plan_revision)
-        ],
+        findings=await stored_findings(session, trip_id, trip.plan_revision),
         totals=Totals(
             currency=currency,
             estimate=AmountRange(
@@ -298,3 +303,97 @@ async def latest_itinerary(session: AsyncSession, user_id: UUID) -> LatestItiner
         return LatestItineraryOut(trip_id=None, plan_revision=None, updated_at=None)
     trip_id, plan_revision, updated_at = found
     return LatestItineraryOut(trip_id=trip_id, plan_revision=plan_revision, updated_at=updated_at)
+
+
+def planned_days(
+    days: Sequence[ItineraryDay], rows: Sequence[tuple[ItineraryItem, Place, bool]]
+) -> list[PlannedDay]:
+    """The stored plan in the shape the validator and the edit pipeline read."""
+    numbers = {day.id: day.day_number for day in days}
+    items: dict[int, list[PlannedItem]] = {day.day_number: [] for day in days}
+    for item, _, _ in rows:
+        items[numbers[item.day_id]].append(
+            PlannedItem(
+                place_id=str(item.place_id),
+                slot_type=item.slot_type,
+                start_time=item.start_time.strftime("%H:%M"),
+                duration_min=item.duration_min,
+                note=item.note or "",
+                travel_from_prev_min=item.travel_from_prev_min,
+                travel_from_prev_m=item.travel_from_prev_m,
+                travel_mode=item.travel_mode,
+                travel_source=item.travel_source,
+                cost_min=item.cost_min,
+                cost_max=item.cost_max,
+                cost_currency=item.cost_currency,
+                cost_label=item.cost_label,
+                source_chunk_ids=[str(chunk_id) for chunk_id in item.source_chunk_ids],
+            )
+        )
+    return [PlannedDay(day.day_number, day.theme or "", items[day.day_number]) for day in days]
+
+
+async def validation_context(
+    session: AsyncSession, user_id: UUID, trip: TripOut, place_ids: Sequence[str]
+) -> ValidationContext:
+    """What the validator needs outside generation: no shortlist, the trip's must-visit places."""
+    prefs = await trips_service.get_preferences(session, user_id, trip.id)
+    ids = {UUID(place_id) for place_id in place_ids} | set(prefs.must_visit_place_ids)
+    names = await places_service.active_place_names(session, trip.destination_id, sorted(ids))
+    return ValidationContext(
+        start_date=trip.start_date,
+        end_date=trip.end_date,
+        places={str(place_id): name for place_id, name in names.items()},
+        must_visit_ids=frozenset(str(place_id) for place_id in prefs.must_visit_place_ids),
+        pace_limits=preference_mapping.PACE_LIMITS[preference_mapping.Pace(prefs.pace)],
+    )
+
+
+async def revalidate(
+    session: AsyncSession, user_id: UUID, trip_id: UUID, plan_revision: int
+) -> ValidateOut:
+    """API-32: validate the current plan again and replace the warnings of its revision; the
+    plan and plan_revision do not change. A foreign trip or no plan is 404 (owner only)."""
+    trip_row = await repository.lock_trip(session, trip_id, user_id)
+    if trip_row is None:
+        raise NotFound()
+    days = await repository.plan_days(session, trip_id)
+    if not days:
+        raise NotFound(NO_ITINERARY)
+    if plan_revision != trip_row.plan_revision:
+        raise StalePlan()
+    trip = await trips_service.get_trip(session, user_id, trip_id)
+    plan = planned_days(days, await repository.plan_items(session, trip_id))
+    ctx = await validation_context(
+        session, user_id, trip, [item.place_id for day in plan for item in day.items]
+    )
+    findings = validator.validate(plan, ctx)
+    await repository.delete_warnings(session, trip_id, plan_revision)
+    await repository.insert_warnings(session, trip_id, plan_revision, findings)
+    return ValidateOut(
+        plan_revision=plan_revision,
+        findings=await stored_findings(session, trip_id, plan_revision),
+        validation_summary=ValidationSummary(**validator.summary(findings)),
+    )
+
+
+async def stored_findings(
+    session: AsyncSession, trip_id: UUID, plan_revision: int
+) -> list[Finding]:
+    return [
+        Finding.model_validate(warning, from_attributes=True)
+        for warning in await repository.current_warnings(session, trip_id, plan_revision)
+    ]
+
+
+async def version_findings(
+    session: AsyncSession, user_id: UUID, trip_id: UUID, version_id: UUID
+) -> tuple[list[Finding], dict[str, Any]]:
+    """FR-058 AC1: a stored version's warnings (those of its plan_revision) and its
+    validation_summary with the repair counts. API-24 with version_id reads it in IMP-610."""
+    await trips_service.get_trip(session, user_id, trip_id)
+    version = await repository.version_for_trip(session, trip_id, version_id)
+    if version is None:
+        raise NotFound()
+    findings = await stored_findings(session, trip_id, version.plan_revision)
+    return findings, dict(version.validation_summary)

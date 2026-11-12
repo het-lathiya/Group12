@@ -121,8 +121,9 @@ async def replace_plan(
 async def insert_warnings(
     session: AsyncSession, trip_id: UUID, plan_revision: int, findings: Sequence[PlanFinding]
 ) -> None:
-    """Step 11's warnings (§8.12): item_ref becomes item_id; MUST_VISIT_MISSING has no item and
-    keeps its place_id (IMD-42). Call after ``replace_plan``, which removed the old warnings."""
+    """The warnings of one plan_revision (§8.12): item_ref becomes item_id; MUST_VISIT_MISSING has
+    no item and keeps its place_id (IMD-42). Call after ``replace_plan`` or ``delete_warnings``,
+    which removed what this replaces; other revisions keep theirs, for their versions (FR-058)."""
     if not findings:
         return
     numbers = {day.id: day.day_number for day in await plan_days(session, trip_id)}
@@ -145,6 +146,14 @@ async def insert_warnings(
             )
         )
     await session.flush()
+
+
+async def delete_warnings(session: AsyncSession, trip_id: UUID, plan_revision: int) -> None:
+    await session.execute(
+        delete(ItineraryWarning).where(
+            ItineraryWarning.trip_id == trip_id, ItineraryWarning.plan_revision == plan_revision
+        )
+    )
 
 
 async def budget_settings_snapshot(session: AsyncSession, trip_id: UUID) -> dict[str, Any]:
@@ -189,7 +198,9 @@ async def insert_version(
     generation_id: UUID | None,
     created_by: UUID | None,
 ) -> UUID:
-    """A version with version_no = the trip's highest + 1 (the trip row is locked by the caller)."""
+    """A version with version_no = the trip's highest + 1 (the trip row is locked by the caller).
+
+    Its validation_summary always carries the repair counts (IMP-405), 0 when none were made."""
     highest = await session.scalar(
         select(func.max(ItineraryVersion.version_no)).where(ItineraryVersion.trip_id == trip_id)
     )
@@ -199,7 +210,7 @@ async def insert_version(
         reason=reason,
         plan_revision=plan_revision,
         snapshot=snapshot,
-        validation_summary=validation_summary,
+        validation_summary={"deterministic_repairs": 0, "repair_attempts": 0, **validation_summary},
         generation_id=generation_id,
         created_by=created_by,
     )
@@ -276,6 +287,15 @@ async def current_warnings(
         .order_by(ItineraryWarning.day_number.nulls_first(), ItineraryWarning.created_at)
     )
     return list(await session.scalars(query))
+
+
+async def version_for_trip(
+    session: AsyncSession, trip_id: UUID, version_id: UUID
+) -> ItineraryVersion | None:
+    query = select(ItineraryVersion).where(
+        ItineraryVersion.id == version_id, ItineraryVersion.trip_id == trip_id
+    )
+    return await session.scalar(query)
 
 
 async def latest_completed_generation(session: AsyncSession, trip_id: UUID) -> AiGeneration | None:
