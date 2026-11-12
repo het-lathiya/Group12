@@ -9,13 +9,15 @@ export type DayColumnProps = {
   day: Day;
   /** Set where the day index links to the card, which then takes focus. */
   id?: string;
+  /** Set where the plan can be edited (IMP-408); without it the day is read-only. */
+  edit?: { tripId: string; planRevision: number };
 };
 
 /**
  * One day of the itinerary (§7.5.7; guide §14): the day number, its date, its theme and its items
- * in the order API-24 returns them. Edits arrive with IMP-408 and later.
+ * in the order API-24 returns them, with each item's edit controls when `edit` is set.
  */
-export function DayColumn({ day, id }: DayColumnProps) {
+export function DayColumn({ day, id, edit }: DayColumnProps) {
   return (
     <section
       id={id}
@@ -45,7 +47,10 @@ export function DayColumn({ day, id }: DayColumnProps) {
         <ol className="mt-4">
           {day.items.map((item) => (
             <li key={item.id}>
-              <ItineraryItemCard item={item} />
+              <ItineraryItemCard
+                item={item}
+                edit={edit && { ...edit, dayNumber: day.day_number }}
+              />
             </li>
           ))}
         </ol>

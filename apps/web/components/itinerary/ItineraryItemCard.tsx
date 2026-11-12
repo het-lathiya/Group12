@@ -1,3 +1,4 @@
+import { ItemEditor } from "@/components/itinerary/ItemEditor";
 import { ItemSources } from "@/components/itinerary/ItemSources";
 import { AiBadge } from "@/components/labels/AiBadge";
 import { SourceBadge } from "@/components/labels/SourceBadge";
@@ -55,11 +56,25 @@ function Cost({ cost }: { cost: Item["cost"] }) {
 /** The id of an item's card, which "Go to item" scrolls to and focuses. */
 export const itemCardId = (itemId: string) => `item-${itemId}`;
 
+/** What a card needs to offer edits; without it the card is read-only. */
+export type ItemEditContext = {
+  tripId: string;
+  planRevision: number;
+  dayNumber: number;
+};
+
 /**
  * One stop of a day's timeline (§7.5.7; guide §14): the leg from the previous stop, then the place
  * with its times, cost and note exactly as API-24 returns them. No time or amount is computed here.
+ * With `edit`, the card also offers ItemEditor (IMP-408).
  */
-export function ItineraryItemCard({ item }: { item: Item }) {
+export function ItineraryItemCard({
+  item,
+  edit,
+}: {
+  item: Item;
+  edit?: ItemEditContext;
+}) {
   const leg = item.travel_from_previous;
   return (
     <div className="grid grid-cols-[56px_minmax(0,1fr)]">
@@ -112,6 +127,7 @@ export function ItineraryItemCard({ item }: { item: Item }) {
             </p>
           )}
           {item.note_origin === "ai" && <ItemSources sources={item.sources} />}
+          {edit && <ItemEditor item={item} {...edit} />}
         </div>
       </div>
     </div>

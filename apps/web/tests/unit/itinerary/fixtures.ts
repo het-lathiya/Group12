@@ -32,3 +32,52 @@ export const ITEM: Item = {
   },
   sources: [],
 };
+
+type Itinerary = components["schemas"]["ItineraryOut"];
+export const TRIP_ID = "00000000-0000-4000-8000-000000000002";
+
+/** A SAMPLE API-24 plan whose days hold the given items, numbered from day 1. */
+export function planWith(days: Item[][], planRevision = 1): Itinerary {
+  return {
+    trip_id: TRIP_ID,
+    plan_revision: planRevision,
+    version_id: null,
+    is_current: true,
+    plan_stale: false,
+    source: null,
+    days: days.map((items, index) => ({
+      day_number: index + 1,
+      date: `2026-11-${String(14 + index).padStart(2, "0")}`,
+      theme: null,
+      theme_origin: "none",
+      day_cost: { min: "0.00", max: "0.00", currency: "INR", complete: true },
+      items,
+    })),
+    findings: [],
+    totals: {
+      currency: "INR",
+      estimate: { min: "0.00", max: "0.00" },
+      planning_total: "0.00",
+      complete: true,
+      incomplete_count: 0,
+    },
+  };
+}
+
+/** A second SAMPLE item for ordering cases. */
+export const ITEM_B: Item = {
+  ...ITEM,
+  id: "00000000-0000-4000-8000-0000000000c2",
+  position: 2,
+  place: {
+    ...ITEM.place,
+    id: "00000000-0000-4000-8000-000000000004",
+    name: "River Walk (sample)",
+  },
+  start_time: "11:30",
+  end_time: "12:30",
+  duration_min: 60,
+  note: null,
+  note_origin: "none",
+  travel_from_previous: null,
+};
