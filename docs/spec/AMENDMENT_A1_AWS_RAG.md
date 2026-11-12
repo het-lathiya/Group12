@@ -155,7 +155,7 @@ Infrastructure is created by idempotent shell scripts in `infra/aws/` that call 
 ### 4.4 GitHub Actions on AWS (replaces IMD-96)
 
 - **Authentication.** The deploy workflows authenticate with `aws-actions/configure-aws-credentials` through OIDC. No AWS access key is stored anywhere.
-- **Deploy role trust.** The role `group12-github-deploy` trusts only three OIDC subjects: `repo:het-lathiya/Group12:ref:refs/heads/main` (staging deploys), `repo:het-lathiya/Group12:ref:refs/tags/v*` and `repo:het-lathiya/Group12:environment:production`. The last is needed because a job that uses a GitHub environment presents an environment subject; `deploy-production.yml` uses the protected environment `production` for manual approval.
+- **Deploy role trust.** The role `group12-github-deploy` trusts only these OIDC subjects, with audience `sts.amazonaws.com`: `repo:het-lathiya/Group12:ref:refs/heads/main` (staging deploys), `repo:het-lathiya/Group12:ref:refs/tags/v*` and `repo:het-lathiya/Group12:environment:production`, and the same three in the immutable form GitHub also presents, `repo:het-lathiya@185104529/Group12@1436091116:ref:refs/heads/main`, `repo:het-lathiya@185104529/Group12@1436091116:ref:refs/tags/v*` and `repo:het-lathiya@185104529/Group12@1436091116:environment:production` (IMD-138). The environment subject is needed because a job that uses a GitHub environment presents an environment subject; `deploy-production.yml` uses the protected environment `production` for manual approval.
 - **Deploy role permissions:**
   - push and pull on the two ECR repositories;
   - `ecs:DescribeExpressGatewayService`, `ecs:UpdateExpressGatewayService`, `ecs:DescribeServices`, `ecs:DescribeTaskDefinition`, `ecs:RegisterTaskDefinition`, `ecs:RunTask`, `ecs:DescribeTasks`, `ecs:CreateGateway`, `ecs:AssociateGatewayWithCluster`, `ecs:TagResource` (names checked against the AWS CLI reference in IMP-217; the last three by IMD-123);
@@ -183,6 +183,8 @@ Infrastructure is created by idempotent shell scripts in `infra/aws/` that call 
 3. Update `group12-api-<env>` with `aws ecs update-express-gateway-service`, sending the full configuration rendered from its template with the new image, and wait until the deployment is complete.
 4. Build the web image with the environment's `NEXT_PUBLIC_*` build arguments and `BUILD_VERSION`, push it and update `group12-web-<env>` the same way.
 5. Run `make smoke URL=<API URL>` and the CORS check against the web origin.
+
+**Express Mode notes.** `describe-services` leaves `services[0].taskDefinition` and `networkConfiguration` null for an Express Mode service, so the current task definition is read from `services[0].deployments[?status=='PRIMARY'].taskDefinition`; the families are `default-group12-<service>-<env>`. AWS CLI v2 does not read `--cli-input-json file:///dev/stdin`, so task definitions and service configurations are written to a file and passed as `file://<path>` (FIX-IMP-218).
 
 The container never migrates on start (IMD-38 stays). Production migrations are forward only: the `down` files exist for tests, and a rollback deploys the previous tag's images.
 
