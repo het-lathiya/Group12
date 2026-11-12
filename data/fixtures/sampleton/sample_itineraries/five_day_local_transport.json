@@ -1,0 +1,299 @@
+{
+  "label": "SAMPLE",
+  "origin": "fallback_rule_based",
+  "model_id": "rule_based_planner_v1",
+  "destination_slug": "sampleton",
+  "trip": {
+    "case_id": "trips-v1-003",
+    "start_date": "2027-03-01",
+    "end_date": "2027-03-05",
+    "pace": "balanced",
+    "transport_pref": "local_transport"
+  },
+  "itinerary": {
+    "days": [
+      {
+        "day_number": 1,
+        "theme": "Day 1 around Sample Arcade by the Sea (sample)",
+        "items": [
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-024"
+            },
+            "start_time": "09:00",
+            "duration_min": 60,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-023"
+            },
+            "start_time": "10:19",
+            "duration_min": 120,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-013"
+            },
+            "start_time": "12:43",
+            "duration_min": 30,
+            "slot_type": "meal",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-012"
+            },
+            "start_time": "13:32",
+            "duration_min": 75,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-011"
+            },
+            "start_time": "15:06",
+            "duration_min": 90,
+            "slot_type": "activity",
+            "note": ""
+          }
+        ]
+      },
+      {
+        "day_number": 2,
+        "theme": "Day 2 around Fixture Playhouse (sample)",
+        "items": [
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-022"
+            },
+            "start_time": "09:00",
+            "duration_min": 120,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-021"
+            },
+            "start_time": "11:19",
+            "duration_min": 30,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-020"
+            },
+            "start_time": "12:12",
+            "duration_min": 30,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-014"
+            },
+            "start_time": "13:20",
+            "duration_min": 60,
+            "slot_type": "meal",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-005"
+            },
+            "start_time": "14:43",
+            "duration_min": 90,
+            "slot_type": "activity",
+            "note": ""
+          }
+        ]
+      },
+      {
+        "day_number": 3,
+        "theme": "Day 3 around Sample Maritime Museum (sample)",
+        "items": [
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-006"
+            },
+            "start_time": "09:00",
+            "duration_min": 120,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-004"
+            },
+            "start_time": "11:22",
+            "duration_min": 30,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-003"
+            },
+            "start_time": "12:11",
+            "duration_min": 30,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-015"
+            },
+            "start_time": "13:09",
+            "duration_min": 45,
+            "slot_type": "meal",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-019"
+            },
+            "start_time": "14:22",
+            "duration_min": 60,
+            "slot_type": "activity",
+            "note": ""
+          }
+        ]
+      },
+      {
+        "day_number": 4,
+        "theme": "Day 4 around Fixture History House (sample)",
+        "items": [
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-008"
+            },
+            "start_time": "09:00",
+            "duration_min": 75,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-007"
+            },
+            "start_time": "10:34",
+            "duration_min": 60,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-009"
+            },
+            "start_time": "11:56",
+            "duration_min": 120,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-002"
+            },
+            "start_time": "14:32",
+            "duration_min": 45,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-001"
+            },
+            "start_time": "15:36",
+            "duration_min": 60,
+            "slot_type": "activity",
+            "note": ""
+          }
+        ]
+      },
+      {
+        "day_number": 5,
+        "theme": "Day 5 around Sample Chapel on the Hill (sample)",
+        "items": [
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-025"
+            },
+            "start_time": "09:00",
+            "duration_min": 30,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-026"
+            },
+            "start_time": "09:49",
+            "duration_min": 45,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-027"
+            },
+            "start_time": "10:53",
+            "duration_min": 40,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-029"
+            },
+            "start_time": "11:56",
+            "duration_min": 180,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-010"
+            },
+            "start_time": "15:40",
+            "duration_min": 60,
+            "slot_type": "activity",
+            "note": ""
+          }
+        ]
+      }
+    ],
+    "summary": "Plan built by rules, without AI.",
+    "assumptions": []
+  }
+}

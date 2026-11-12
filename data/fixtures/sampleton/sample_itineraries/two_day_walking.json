@@ -1,0 +1,121 @@
+{
+  "label": "SAMPLE",
+  "origin": "fallback_rule_based",
+  "model_id": "rule_based_planner_v1",
+  "destination_slug": "sampleton",
+  "trip": {
+    "case_id": "trips-v1-001",
+    "start_date": "2027-03-01",
+    "end_date": "2027-03-02",
+    "pace": "balanced",
+    "transport_pref": "walking"
+  },
+  "itinerary": {
+    "days": [
+      {
+        "day_number": 1,
+        "theme": "Day 1 around Sample Maritime Museum (sample)",
+        "items": [
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-006"
+            },
+            "start_time": "09:00",
+            "duration_min": 120,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-005"
+            },
+            "start_time": "11:32",
+            "duration_min": 90,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-014"
+            },
+            "start_time": "14:00",
+            "duration_min": 60,
+            "slot_type": "meal",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-004"
+            },
+            "start_time": "16:01",
+            "duration_min": 30,
+            "slot_type": "activity",
+            "note": ""
+          }
+        ]
+      },
+      {
+        "day_number": 2,
+        "theme": "Day 2 around Sample Clock Square (sample)",
+        "items": [
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-003"
+            },
+            "start_time": "09:00",
+            "duration_min": 30,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-002"
+            },
+            "start_time": "10:02",
+            "duration_min": 45,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-001"
+            },
+            "start_time": "11:19",
+            "duration_min": 60,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-007"
+            },
+            "start_time": "14:07",
+            "duration_min": 60,
+            "slot_type": "activity",
+            "note": ""
+          },
+          {
+            "place_ref": {
+              "source_name": "SAMPLE fixture (synthetic)",
+              "external_ref": "sample-008"
+            },
+            "start_time": "15:39",
+            "duration_min": 75,
+            "slot_type": "activity",
+            "note": ""
+          }
+        ]
+      }
+    ],
+    "summary": "Plan built by rules, without AI.",
+    "assumptions": []
+  }
+}
