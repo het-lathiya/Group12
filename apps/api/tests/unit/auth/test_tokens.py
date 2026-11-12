@@ -10,7 +10,7 @@ from typing import Annotated, Any
 import httpx
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from fastapi import Depends, FastAPI
 from fixtures.auth import (
     TEST_JWT_SECRET,
@@ -222,3 +222,47 @@ def test_a_verified_token_fills_user_hash_in_the_access_line_without_the_raw_id(
     assert record.__dict__["user_hash"] == user_hash(USER_ID)  # a logging extra
     assert str(USER_ID) not in caplog.text
     assert all(str(USER_ID) not in str(vars(r).values()) for r in caplog.records)
+
+
+# ---------- ES256 through a JWKS key set, and the clock leeway (IMD-140, SG-3 open item) ----------
+
+ES256_KEY = ec.generate_private_key(ec.SECP256R1())
+ES256_KID = "es256-test-key"
+
+
+class LocalJwksClient(jwt.PyJWKClient):
+    """The real PyJWKClient key lookup, fed a local key set instead of an HTTP fetch."""
+
+    def fetch_data(self) -> Any:
+        public = jwt.algorithms.ECAlgorithm.to_jwk(ES256_KEY.public_key(), as_dict=True)
+        return {"keys": [{**public, "kid": ES256_KID, "alg": "ES256", "use": "sig"}]}
+
+
+def es256_token(**overrides: Any) -> str:
+    now = int(time.time())
+    payload = {"sub": str(USER_ID), "aud": "authenticated", "iat": now, "exp": now + 600}
+    return jwt.encode({**payload, **overrides}, ES256_KEY, "ES256", headers={"kid": ES256_KID})
+
+
+def es256_verify(token: str) -> TokenClaims:
+    verifier = TokenVerifier(
+        key_source=LocalJwksClient("https://jwks.invalid/.well-known/jwks.json")
+    )
+    return verify(token, verifier)
+
+
+def test_an_es256_token_from_the_jwks_key_set_is_accepted() -> None:
+    assert es256_verify(es256_token()).user_id == USER_ID
+
+
+def test_iat_20_s_ahead_is_accepted_and_40_s_ahead_is_refused() -> None:
+    now = int(time.time())
+    assert es256_verify(es256_token(iat=now + 20)).user_id == USER_ID
+    with pytest.raises(Unauthenticated):
+        es256_verify(es256_token(iat=now + 40))
+
+
+def test_an_expired_es256_token_is_refused() -> None:
+    now = int(time.time())
+    with pytest.raises(Unauthenticated):
+        es256_verify(es256_token(iat=now - 700, exp=now - 60))
