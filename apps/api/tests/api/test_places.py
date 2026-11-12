@@ -291,7 +291,7 @@ async def test_places_hides_inactive_places_and_other_destinations(
 
 
 @pytest.mark.asyncio
-async def test_places_of_an_inactive_or_unknown_destination_are_an_empty_page(
+async def test_places_of_an_inactive_or_unknown_destination_are_404(
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
     auth_user: AuthUser,
@@ -300,13 +300,16 @@ async def test_places_of_an_inactive_or_unknown_destination_are_an_empty_page(
     hidden = await add_destination_with_place(
         db_session, sampleton, active=False, place_name="Hidden Tower"
     )
-    page = (await search(api_client, auth_user, hidden)).json()
-    assert page == {"items": [], "total": 0, "limit": 20, "offset": 0}
-
+    inactive = await search(api_client, auth_user, hidden)
     unknown = await api_client.get(
         "/api/v1/places", params={"destination_id": str(uuid.uuid4())}, headers=auth_user.headers
     )
-    assert unknown.json()["total"] == 0
+    # IMD-127, §6.2: an inactive destination is invisible, identical to an unknown one.
+    for response in (inactive, unknown):
+        assert response.status_code == 404
+        error = response.json()["error"]
+        assert (error["code"], error["message"]) == ("NOT_FOUND", "Not found.")
+    assert inactive.json()["error"]["details"] == unknown.json()["error"]["details"]
 
 
 @pytest.mark.asyncio
