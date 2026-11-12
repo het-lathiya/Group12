@@ -273,3 +273,114 @@ export function useSavePreferences(tripId: string) {
     },
   });
 }
+
+/**
+ * API-25 undo of a removal (PD-IMP-408-1). Stays false until IMP-504 builds API-25; while false
+ * the "Removed" toast offers no Undo.
+ */
+export const EDIT_UNDO_ENABLED = false;
+
+/** The mutation key every itinerary edit shares, so all edit controls wait while one is saving. */
+export const editKey = (tripId: string) => ["edit", tripId] as const;
+
+type EditResult = Schemas["EditResultOut"];
+
+/**
+ * §7.4 "Edit item": the server's answer replaces the changed days, totals, findings and revision
+ * in `itinerary`, then `itinerary` and `costs` are refetched together. Nothing is worked out here.
+ * On 409 STALE_PLAN the plan is refetched.
+ */
+function useItemEdit<V>(
+  tripId: string,
+  request: (variables: V) => Promise<EditResult>,
+) {
+  const queryClient = useQueryClient();
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.itinerary(tripId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.costs(tripId) }),
+    ]);
+  return useMutation({
+    mutationKey: editKey(tripId),
+    mutationFn: request,
+    onSuccess: async (result) => {
+      queryClient.setQueryData<Schemas["ItineraryOut"]>(
+        queryKeys.itinerary(tripId, CURRENT_VERSION),
+        (current) =>
+          current && {
+            ...current,
+            plan_revision: result.plan_revision,
+            totals: result.totals,
+            findings: result.findings,
+            days: current.days.map(
+              (day) =>
+                result.changed_days.find(
+                  (changed) => changed.day_number === day.day_number,
+                ) ?? day,
+            ),
+          },
+      );
+      await refresh();
+    },
+    onError: async (error) => {
+      if (error instanceof ApiError && error.code === "STALE_PLAN")
+        await refresh();
+    },
+  });
+}
+
+/** API-26 retime: a new start time and/or duration (FR-063). */
+export function useRetimeItem(tripId: string) {
+  return useItemEdit(
+    tripId,
+    async ({
+      itemId,
+      ...body
+    }: {
+      itemId: string;
+      plan_revision: number;
+      start_time?: string;
+      duration_min?: number;
+    }) =>
+      unwrap(
+        await api().PATCH("/api/v1/itinerary/items/{item_id}", {
+          params: { path: { item_id: itemId } },
+          body,
+        }),
+      ),
+  );
+}
+
+/** API-27 remove (FR-061); plan_revision travels as a query parameter (IMD-26). */
+export function useRemoveItem(tripId: string) {
+  return useItemEdit(
+    tripId,
+    async ({
+      itemId,
+      planRevision,
+    }: {
+      itemId: string;
+      planRevision: number;
+    }) =>
+      unwrap(
+        await api().DELETE("/api/v1/itinerary/items/{item_id}", {
+          params: {
+            path: { item_id: itemId },
+            query: { plan_revision: planRevision },
+          },
+        }),
+      ),
+  );
+}
+
+/** API-25 add, used only by the removal undo while EDIT_UNDO_ENABLED is false (IMP-504). */
+export function useAddItem(tripId: string) {
+  return useItemEdit(tripId, async (body: Schemas["ItemAddIn"]) =>
+    unwrap(
+      await api().POST("/api/v1/trips/{trip_id}/itinerary/items", {
+        params: { path: { trip_id: tripId } },
+        body,
+      }),
+    ),
+  );
+}
