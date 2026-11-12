@@ -258,6 +258,9 @@ const next = () => screen.getByRole("button", { name: /Next/ });
 const posts = () => server.calls.filter((call) => call.method !== "GET");
 
 describe("TripWizard (FR-007 to FR-009)", () => {
+  // About 1.5 s alone; it types about 70 characters across three steps. In full runs on a starved
+  // machine (RUN-059: unrelated tests took 9 to 35 s in the same run) it passed 5 s, so it gets its
+  // own limit. Environment speed, not a test fault (record RUN-059-fallback-wording).
   it("TC-068: saves each step and links the review to the generate page", async () => {
     const user = renderWizard();
     await fillDetails(user);
@@ -329,7 +332,7 @@ describe("TripWizard (FR-007 to FR-009)", () => {
     expect(
       screen.getByRole("link", { name: "Generate itinerary" }),
     ).toHaveAttribute("href", `/trips/${TRIP_ID}/generate`);
-  });
+  }, 15_000);
 
   it("TC-076: after a save, each field shows its effect as read back from API-15", async () => {
     const user = renderWizard();

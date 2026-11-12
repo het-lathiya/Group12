@@ -136,7 +136,7 @@ describe("FallbackNotice", () => {
 
     const notice = screen.getByText(FALLBACK_TEXT);
     expect(FALLBACK_TEXT).toBe(
-      "Built by rules because the AI service was unavailable or failed checks",
+      "Built by rules because the AI service was unavailable or its answer failed checks",
     );
     expect(notice).toHaveClass("bg-info-soft", "text-info");
     expect(notice).not.toHaveClass("text-destructive");
