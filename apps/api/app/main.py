@@ -31,6 +31,7 @@ from app.itinerary.router import router as itinerary_router
 from app.places.router import router as places_router
 from app.schemas.common import ErrorEnvelope
 from app.trips.router import router as trips_router
+from app.validation.router import router as validation_router
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api_v1.include_router(places_router)
     api_v1.include_router(generation_router)
     api_v1.include_router(itinerary_router)
+    api_v1.include_router(validation_router)
     api_v1.include_router(budget_router)
     app.include_router(api_v1)
     return app
