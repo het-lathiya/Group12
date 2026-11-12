@@ -7,6 +7,7 @@ import { useState, useSyncExternalStore } from "react";
 import { FallbackNotice } from "@/components/generation/FallbackNotice";
 import { DayColumn } from "@/components/itinerary/DayColumn";
 import { itemCardId } from "@/components/itinerary/ItineraryItemCard";
+import { MoveDndContext } from "@/components/itinerary/MoveControls";
 import { WarningsPanel } from "@/components/itinerary/WarningsPanel";
 import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
@@ -67,13 +68,24 @@ function DaySkeleton() {
 
 type DaysProps = {
   days: Day[];
-  edit: { tripId: string; planRevision: number };
+  edit: { tripId: string; planRevision: number; dayNumbers: number[] };
   /** The open day tab below 768 px; null opens the first day. */
   tab: string | null;
   onTab: (tab: string) => void;
 };
 
-function Days({ days, edit, tab, onTab }: DaysProps) {
+function Days(props: DaysProps) {
+  return (
+    <MoveDndContext
+      tripId={props.edit.tripId}
+      planRevision={props.edit.planRevision}
+    >
+      <DayLayout {...props} />
+    </MoveDndContext>
+  );
+}
+
+function DayLayout({ days, edit, tab, onTab }: DaysProps) {
   const tabletUp = useTabletUp();
 
   if (!tabletUp) {
@@ -131,7 +143,7 @@ function Days({ days, edit, tab, onTab }: DaysProps) {
 
 /**
  * /trips/[tripId]/itinerary (§7.5.7): the saved days and items of API-24, shown as the server sent
- * them, with retime and remove on each item (IMP-408), with the plan checks (WarningsPanel, IMP-405) beside or above. API-24 answers 404 for a trip with no plan and for a foreign or
+ * them, with retime, remove and move on each item (IMP-408, IMP-409), with the plan checks (WarningsPanel, IMP-405) beside or above. API-24 answers 404 for a trip with no plan and for a foreign or
  * missing trip alike, so API-10 tells the two apart (§7.5: not-found screen for the second).
  */
 export default function ItineraryPage() {
@@ -222,6 +234,7 @@ export default function ItineraryPage() {
                   edit={{
                     tripId,
                     planRevision: itinerary.data.plan_revision,
+                    dayNumbers: itinerary.data.days.map((d) => d.day_number),
                   }}
                   tab={tab}
                   onTab={setTab}

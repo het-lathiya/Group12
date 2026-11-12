@@ -1,16 +1,19 @@
 import { ItineraryItemCard } from "@/components/itinerary/ItineraryItemCard";
+import { SortableDay, SortableItem } from "@/components/itinerary/MoveControls";
 import { AiBadge } from "@/components/labels/AiBadge";
 import type { components } from "@/lib/api/schema";
 import { formatDayDate } from "@/lib/format";
 
 type Day = components["schemas"]["Day"];
 
+const EMPTY = "Nothing planned for this day.";
+
 export type DayColumnProps = {
   day: Day;
   /** Set where the day index links to the card, which then takes focus. */
   id?: string;
-  /** Set where the plan can be edited (IMP-408); without it the day is read-only. */
-  edit?: { tripId: string; planRevision: number };
+  /** Set where the plan can be edited (IMP-408, IMP-409); without it the day is read-only. */
+  edit?: { tripId: string; planRevision: number; dayNumbers: number[] };
 };
 
 /**
@@ -39,18 +42,35 @@ export function DayColumn({ day, id, edit }: DayColumnProps) {
           {day.theme_origin === "ai" && <AiBadge />}
         </p>
       )}
-      {day.items.length === 0 ? (
-        <p className="mt-4 text-sm text-muted-foreground">
-          Nothing planned for this day.
-        </p>
+      {edit ? (
+        // Editable: the list is a drop area even when empty (IMP-409).
+        <SortableDay
+          dayNumber={day.day_number}
+          itemIds={day.items.map(({ id }) => id)}
+        >
+          {day.items.length === 0 && (
+            <li className="text-sm text-muted-foreground">{EMPTY}</li>
+          )}
+          {day.items.map((item) => (
+            <SortableItem key={item.id} item={item} dayNumber={day.day_number}>
+              <ItineraryItemCard
+                item={item}
+                edit={{
+                  ...edit,
+                  dayNumber: day.day_number,
+                  itemCount: day.items.length,
+                }}
+              />
+            </SortableItem>
+          ))}
+        </SortableDay>
+      ) : day.items.length === 0 ? (
+        <p className="mt-4 text-sm text-muted-foreground">{EMPTY}</p>
       ) : (
         <ol className="mt-4">
           {day.items.map((item) => (
             <li key={item.id}>
-              <ItineraryItemCard
-                item={item}
-                edit={edit && { ...edit, dayNumber: day.day_number }}
-              />
+              <ItineraryItemCard item={item} />
             </li>
           ))}
         </ol>

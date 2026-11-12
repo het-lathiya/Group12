@@ -67,7 +67,13 @@ function setup(item = ITEM) {
           <li key={i.id}>
             <ItineraryItemCard
               item={i}
-              edit={{ tripId: TRIP_ID, planRevision: 7, dayNumber: 1 }}
+              edit={{
+                tripId: TRIP_ID,
+                planRevision: 7,
+                dayNumber: 1,
+                itemCount: 2,
+                dayNumbers: [1],
+              }}
             />
           </li>
         ))}
