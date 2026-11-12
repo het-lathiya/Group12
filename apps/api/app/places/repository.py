@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DataSource, Destination, Place, PlaceOpeningHours
@@ -82,6 +82,27 @@ async def active_places_by_ids(
         .order_by(Place.name, Place.id)
     )
     return list((await session.scalars(query)).all())
+
+
+async def active_places_by_refs(
+    session: AsyncSession, destination_slug: str, refs: Sequence[tuple[str, str]]
+) -> list[tuple[str, Place]]:
+    """(source name, place) of the active places of an active destination named by
+    ``(source_name, external_ref)``; the stable reference of a seeded place (IMD-145)."""
+    if not refs:
+        return []
+    query = (
+        select(DataSource.name, Place)
+        .join(DataSource, DataSource.id == Place.source_id)
+        .join(Destination, Destination.id == Place.destination_id)
+        .where(
+            Destination.slug == destination_slug,
+            Destination.is_active.is_(True),
+            Place.is_active.is_(True),
+            tuple_(DataSource.name, Place.external_ref).in_(list(refs)),
+        )
+    )
+    return [(row[0], row[1]) for row in await session.execute(query)]
 
 
 async def active_places_with_source_date(
