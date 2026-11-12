@@ -76,6 +76,16 @@ async def active_places_with_source_date(
     return await repository.active_places_with_source_date(session, destination_id)
 
 
+async def active_places_by_refs(
+    session: AsyncSession, destination_slug: str, refs: Sequence[tuple[str, str]]
+) -> dict[tuple[str, str], PlaceSummary]:
+    """Active places by ``(source_name, external_ref)``; a missing or inactive one is absent."""
+    rows = await repository.active_places_by_refs(session, destination_slug, refs)
+    return {
+        (source, place.external_ref or ""): PlaceSummary.from_row(place) for source, place in rows
+    }
+
+
 async def data_source_terms(
     session: AsyncSession, names: Sequence[str]
 ) -> dict[str, tuple[str, str | None]]:
