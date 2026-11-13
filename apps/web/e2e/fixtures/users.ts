@@ -43,10 +43,28 @@ export function randomPassword(): string {
   return `pw-${randomUUID()}`;
 }
 
+/**
+ * The pre-created staging account (IMP-414): its e-mail and password come only from the CI secrets
+ * E2E_STAGING_EMAIL and E2E_STAGING_PASSWORD. Null when neither is set (a local-stack run).
+ */
+export function stagingAccount(): { email: string; password: string } | null {
+  const email = process.env.E2E_STAGING_EMAIL;
+  const password = process.env.E2E_STAGING_PASSWORD;
+  if (!email && !password) return null;
+  if (!email || !password) {
+    throw new Error("Set both E2E_STAGING_EMAIL and E2E_STAGING_PASSWORD.");
+  }
+  return { email, password };
+}
+
 export class TestUsers {
   private readonly emails = new Set<string>();
+  private client?: SupabaseClient;
 
-  constructor(private readonly admin: SupabaseClient) {}
+  // Built on first use, so a staging run, which creates no user, needs no service-role key.
+  private get admin(): SupabaseClient {
+    return (this.client ??= adminClient());
+  }
 
   /** A confirmed user who can sign in at once. */
   async create(tag: string): Promise<TestUser> {
@@ -104,7 +122,7 @@ export class TestUsers {
 export const test = base.extend<{ users: TestUsers }>({
   // Playwright reads the fixtures a fixture needs from the first argument; this one needs none.
   users: async ({}, provide) => {
-    const users = new TestUsers(adminClient());
+    const users = new TestUsers();
     await provide(users);
     await users.cleanup();
   },
