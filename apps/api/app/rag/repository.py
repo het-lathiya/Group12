@@ -218,3 +218,13 @@ async def source_rows(session: AsyncSession, chunk_ids: Collection[UUID]) -> lis
         .where(RagChunk.id.in_(list(chunk_ids)))
     )
     return list(await session.execute(query))
+
+
+async def document_keys(session: AsyncSession, document_ids: Collection[UUID]) -> dict[UUID, str]:
+    """``doc_key`` by document ID, for the retrieval evaluation (IMP-318); read only."""
+    if not document_ids:
+        return {}
+    query = select(RagDocument.id, RagDocument.doc_key).where(
+        RagDocument.id.in_(list(document_ids))
+    )
+    return {row.id: row.doc_key for row in await session.execute(query)}
