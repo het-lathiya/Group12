@@ -13,7 +13,7 @@ import { useLatestItinerary, useTrips } from "@/lib/api/queries";
 import { formatDayDate } from "@/lib/format";
 
 /**
- * /dashboard (§7.5.3; FR-013, FR-014): Open latest (API-09) and the traveller's drafts (API-08)
+ * /dashboard (§7.5.3; FR-013, FR-014): New trip, Open latest (API-09) and the traveller's drafts (API-08)
  * with Continue draft. The full trip list and its actions are IMP-602.
  */
 export default function DashboardPage() {
@@ -37,14 +37,24 @@ export default function DashboardPage() {
         <h1 className="font-heading text-2xl font-semibold text-foreground">
           Your trips
         </h1>
-        <Button
-          variant={latestTripId ? "default" : "outline"}
-          onClick={openLatest}
-          disabled={latest.isPending}
-        >
-          Open latest
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          <Button asChild>
+            <Link href="/trips/new">New trip</Link>
+          </Button>
+          <Button
+            variant={latestTripId ? "default" : "outline"}
+            onClick={openLatest}
+            disabled={latest.isPending}
+          >
+            Open latest
+          </Button>
+        </div>
       </div>
+      {!!trips.data?.total && drafts.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No drafts in progress. Open latest shows your newest itinerary.
+        </p>
+      )}
 
       {latest.isError && (
         <ErrorState
