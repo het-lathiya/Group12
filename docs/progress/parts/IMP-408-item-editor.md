@@ -54,3 +54,37 @@ none
 ## Open issues
 
 - The itinerary page has no totals display yet. The totals check is on the itinerary cache the page reads, which holds the response values.
+
+## Fix RUN-063b
+
+| Field | Value |
+| --- | --- |
+| Run | RUN-063b (fix on PR #272, branch `feat/IMP-414-journey`) |
+| Owner | Manasvi Rathore |
+| Status | PR_OPEN |
+| Base commit | ee905c7 |
+
+**Defect.** Found by the IMP-414 journey in CI (RUN-063). After a confirmed removal, API-27 answered 200, but the toast `Removed <place>` never appeared and focus did not move. `useItemEdit`'s own `onSuccess` writes the changed day into the cache, so the removed card and its `ItemEditor` unmount while the hook awaits the refetch. TanStack Query v5 then skips the per-call `onSuccess` passed to `remove.mutate(...)`, because its observer has unmounted.
+
+**Fix.**
+
+- `apps/web/lib/api/queries.ts`: `useItemEdit` takes an optional `after(result, variables)`, which runs in the hook-level success path right after the cache write. That path runs even when the caller has unmounted. `useRemoveItem` accepts an `onRemoved` callback in its variables and calls it from there. The cache write is not delayed, and nothing is hidden before the server answers (IMD-157).
+- `apps/web/components/itinerary/ItemEditor.tsx`: the toast and the focus move are passed as `onRemoved`. Before the request, the card records the next card's id, else the previous card's, else the day heading. After the re-render, focus goes to the first of these that exists. The error toast stays a per-call `onError`, because the card stays mounted when a removal fails. Undo stays off (`EDIT_UNDO_ENABLED = false`, IMD-157).
+- `apps/web/components/itinerary/DayColumn.tsx`: the day heading `h2` gets `tabIndex={-1}`, so it can take focus when a removal empties the day.
+- `apps/web/tests/unit/itinerary/ItemEditor.test.tsx`: a new case, "after a removal unmounts the card, says so and moves focus to the next card (FR-061)". It renders the day through `useItinerary`, `MoveDndContext` and `DayColumn`, as the page does. The fake refetch after the edit takes 100 ms, as a network would. The test checks that the card is gone, the toast text is shown, no Undo button exists and the next card has focus. The other eight cases, including retime save and cancel focus, are unchanged.
+
+**Commands**
+
+| Command | Result |
+| --- | --- |
+| New test on the old `queries.ts`, `ItemEditor.tsx` and `DayColumn.tsx` (`npx vitest run tests/unit/itinerary/ItemEditor.test.tsx`) | `Tests  1 failed \| 8 passed (9)`: `Unable to find an element with the text: Removed Old Mill Museum (sample)` |
+| `make test-web ARGS='ItemEditor'` (with the fix) | `Tests  9 passed (9)` |
+| `make test-web` | `Tests  187 passed (187)` |
+
+**Acceptance**
+
+| Criterion | Status | How |
+| --- | --- | --- |
+| FR-061 UI: after a removal, the toast shows and focus moves to the next card although the card unmounts | verified | the new unit case, which fails on the old code; the IMP-414 journey in CI (see `IMP-414-journey-staging.md`, Fix RUN-063b) |
+| Focus falls back to the previous card, then to the day heading | not verified by a test | the code path is in place; only the next-card case is tested |
+| Retime toast and focus unchanged | verified | the existing retime save and cancel cases pass |

@@ -293,6 +293,7 @@ type EditResult = Schemas["EditResultOut"];
 function useItemEdit<V>(
   tripId: string,
   request: (variables: V) => Promise<EditResult>,
+  after?: (result: EditResult, variables: V) => void,
 ) {
   const queryClient = useQueryClient();
   const refresh = () =>
@@ -303,7 +304,7 @@ function useItemEdit<V>(
   return useMutation({
     mutationKey: editKey(tripId),
     mutationFn: request,
-    onSuccess: async (result) => {
+    onSuccess: async (result, variables) => {
       queryClient.setQueryData<Schemas["ItineraryOut"]>(
         queryKeys.itinerary(tripId, CURRENT_VERSION),
         (current) =>
@@ -320,6 +321,7 @@ function useItemEdit<V>(
             ),
           },
       );
+      after?.(result, variables);
       await refresh();
     },
     onError: async (error) => {
@@ -351,7 +353,11 @@ export function useRetimeItem(tripId: string) {
   );
 }
 
-/** API-27 remove (FR-061); plan_revision travels as a query parameter (IMD-26). */
+/**
+ * API-27 remove (FR-061); plan_revision travels as a query parameter (IMD-26). `onRemoved` runs
+ * from the hook's own success path: the removed card, which calls `mutate`, unmounts when the
+ * changed day is written, and TanStack Query skips a per-call `onSuccess` after that.
+ */
 export function useRemoveItem(tripId: string) {
   return useItemEdit(
     tripId,
@@ -361,6 +367,7 @@ export function useRemoveItem(tripId: string) {
     }: {
       itemId: string;
       planRevision: number;
+      onRemoved?: (result: EditResult) => void;
     }) =>
       unwrap(
         await api().DELETE("/api/v1/itinerary/items/{item_id}", {
@@ -370,6 +377,7 @@ export function useRemoveItem(tripId: string) {
           },
         }),
       ),
+    (result, { onRemoved }) => onRemoved?.(result),
   );
 }
 

@@ -91,16 +91,25 @@ export function ItemEditor({
   const name = item.place.name;
 
   function confirmRemove() {
-    // The next card takes focus once this one is gone.
+    // Focus goes to the next card, else the previous one, else the day heading once the day is
+    // empty. Ids are kept, not nodes, so the target is looked up after the re-render.
     const row = document.getElementById(itemCardId(item.id))?.closest("li");
-    const neighbour = (
+    const neighbourId = (
       row?.nextElementSibling ?? row?.previousElementSibling
-    )?.querySelector<HTMLElement>("[id^='item-']");
+    )?.querySelector<HTMLElement>("[id^='item-']")?.id;
+    const heading = row?.closest("section")?.querySelector<HTMLElement>("h2");
     remove.mutate(
-      { itemId: item.id, planRevision },
       {
-        onSuccess: (result) => {
-          requestAnimationFrame(() => neighbour?.focus());
+        itemId: item.id,
+        planRevision,
+        // Runs from the hook, after this card has unmounted (see useRemoveItem).
+        onRemoved: (result) => {
+          requestAnimationFrame(() =>
+            (
+              (neighbourId && document.getElementById(neighbourId)) ||
+              heading
+            )?.focus(),
+          );
           toast.success(`Removed ${name}`, {
             action: EDIT_UNDO_ENABLED
               ? {
@@ -116,6 +125,9 @@ export function ItemEditor({
               : undefined,
           });
         },
+      },
+      {
+        // The card stays mounted when the removal fails, so this per-call callback runs.
         onError: (error) => {
           const { what, next } = describeError(error);
           toast.error(what, { description: next });
