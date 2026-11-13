@@ -6,7 +6,7 @@
 | Card | IMP-414 End-to-end journey test on staging |
 | Part | E2E journey test on staging (3 points) |
 | Owner | Krrish Kamani |
-| Status | TESTS_FAILING (the journey fails on one product bug in IMP-408 item-editor; TC-370 and the Gemini run follow in a staging window) |
+| Status | PR_OPEN (TC-369 passes after the IMP-408 fix of RUN-063b; TC-370 and the Gemini run follow in a staging window) |
 | Base commit | ee905c7 |
 | Branch | feat/IMP-414-journey |
 
@@ -50,3 +50,33 @@ Not run: `make e2e ARGS='journey'` locally, because this machine has no Docker f
 ## Open issues
 
 - The staging job's first run, in the next staging window, records its result in `docs/test-reports/journey-sprint4.md`.
+
+## Fix RUN-063b
+
+| Field | Value |
+| --- | --- |
+| Run | RUN-063b |
+| Owner | Krrish Kamani |
+| Status | PR_OPEN |
+| Base commit | ee905c7 |
+
+The IMP-408 blocker above is fixed in this PR by Manasvi's commit `fix(web): IMP-408 removal toast and focus survive the card unmount` (see the "Fix RUN-063b" section of `IMP-408-item-editor.md`).
+
+**Change.** `apps/web/e2e/journey.spec.ts`: the toast check `Removed <place>` is a hard `expect` again, and a new check confirms that focus is on the day's next card (`#item-<id>`) after the removal. Nothing else in the journey changed.
+
+**Commands**
+
+| Command | Result |
+| --- | --- |
+| `make lint` | `All checks passed!`; ESLint `✖ 1 problem (0 errors, 1 warning)` (a warning from before this run); `All matched files use Prettier code style!` |
+| `make typecheck` | `Success: no issues found in 118 source files` |
+| `make imports` | `Contracts: 6 kept, 0 broken.` |
+| `make test` (API suites against a throwaway local PostgreSQL 16 with pgvector) | `1040 passed, 1 warning`; `87 passed, 2 deselected, 1 warning`; `425 passed, 1 warning`; `41 passed`; web `Tests  187 passed (187)` |
+| E2E workflow on the branch, [https://github.com/het-lathiya/Group12/actions/runs/43431854989](https://github.com/het-lathiya/Group12/actions/runs/43431854989) (head `f741fd6`) | `Running 4 tests using 1 worker` … `4 passed (36.7s)`; no retry; `generation: provider MOCK, outcome model, 2097 to 2135 ms to completed` |
+
+**Acceptance (replaces the TC-369 row above)**
+
+| Criterion | Status | How |
+| --- | --- | --- |
+| TC-369: the journey passes with MOCK on the local stack in CI | verified | E2E run above: all four widths pass, with the hard toast and focus checks |
+| TC-370: the journey on staging with MOCK; the Gemini run recorded | not verified: staging window | unchanged; the job needs a fresh staging account with no trips and the secrets `E2E_STAGING_EMAIL` and `E2E_STAGING_PASSWORD` (IMD-163, IMD-164) |

@@ -203,10 +203,9 @@ test(
     );
     await dialog.getByRole("button", { name: "Remove" }).click();
     expect((await removal).status()).toBe(200);
-    // Soft: the test still fails without the toast, but the rest of the journey keeps running.
-    await expect
-      .soft(page.getByText(`Removed ${removed.place.name}`))
-      .toBeVisible();
+    await expect(page.getByText(`Removed ${removed.place.name}`)).toBeVisible();
+    // Focus moves to the next card of the day (IMP-408).
+    await expect(page.locator(`[id="item-${items[1].id}"]`)).toBeFocused();
     await expect(goneHeading(column)).toHaveCount(0);
 
     const newDuration =

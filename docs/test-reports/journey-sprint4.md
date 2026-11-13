@@ -9,14 +9,14 @@ Test data is created through the app only. Before the run the account's trips ar
 | Field | Value |
 | --- | --- |
 | Date | 2026-11-13 |
-| Commit | `5edbcd9` (the spec as committed in this PR; the later amend changed only the part records) (branch `feat/IMP-414-journey`) |
+| Commit | `f741fd6` (branch `feat/IMP-414-journey`, with the IMP-408 removal fix) |
 | Base URL | `http://localhost:3000` (Supabase CLI local stack, API with `AI_PROVIDER=MOCK`) |
-| CI run | [43427715979](https://github.com/het-lathiya/Group12/actions/runs/43427715979) (manual run on the branch, attempt 2; attempt 1 failed to start the stack: port 54324 already in use on the runner) |
-| Duration | job 6 min 21 s; journey step 1 min 58 s (`Running 4 tests using 1 worker`), about 12 to 15 s per test |
-| Outcome | **Failed**: `4 failed` (each width failed, then failed its retry), all on one check. After API-27 answers 200, the toast `Removed <place>` never appears (product bug in IMP-408 item-editor, see notes). Every other step passed at every width: sign-up, trip reset, wizard, generation, removal saved, retime saved, reload, Open latest, the edits, `plan_revision` and the totals of the last edit's answer, axe, and no horizontal scroll. The check is soft, so these later steps ran |
-| Generation latency | 2138 to 2253 ms from the first-generation notice to `completed` (provider `MOCK`, outcome `model`) |
+| CI run | [43431854989](https://github.com/het-lathiya/Group12/actions/runs/43431854989) (manual run on the branch) |
+| Duration | job 6 min 18 s; journey step `4 passed (36.7s)`, 6.9 to 7.6 s per test |
+| Outcome | **Passed** at all four widths with no retry: sign-up, trip reset, wizard, generation, removal with the toast `Removed <place>` and focus on the next card, retime, reload, Open latest, the edits, `plan_revision` and the totals of the last edit's answer, axe, and no horizontal scroll |
+| Generation latency | 2097 to 2135 ms from the first-generation notice to `completed` (provider `MOCK`, outcome `model`) |
 | Warnings | none printed; no critical axe violation |
-| Notes | Four widths (360, 768, 1280, 1920 px), one new account each; each account was deleted in teardown without error. The removal toast is missing because `ItemEditor` calls `remove.mutate(vars, { onSuccess })`, and the hook's own `onSuccess` first writes the changed day into the cache. That unmounts the removed card's `ItemEditor`, and TanStack Query does not run per-call callbacks after the calling component unmounts, so the toast, its Undo and the focus move never run. Earlier runs on the branch: [43423666996](https://github.com/het-lathiya/Group12/actions/runs/43423666996) and [43426753451](https://github.com/het-lathiya/Group12/actions/runs/43426753451) failed on test bugs fixed before this run (the DELETE URL carries `?plan_revision=`) and on the same toast. |
+| Notes | Four widths (360, 768, 1280, 1920 px), one new account each, each deleted in teardown. Earlier runs on the branch failed: [43423666996](https://github.com/het-lathiya/Group12/actions/runs/43423666996) on a test bug (the DELETE URL carries `?plan_revision=`); [43426753451](https://github.com/het-lathiya/Group12/actions/runs/43426753451) and [43427715979](https://github.com/het-lathiya/Group12/actions/runs/43427715979) on the missing removal toast, an IMP-408 bug fixed in RUN-063b. |
 
 ## Staging with MOCK
 
