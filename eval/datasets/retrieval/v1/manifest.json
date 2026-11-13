@@ -1,0 +1,28 @@
+{
+  "dataset_id": "retrieval",
+  "version": "v1",
+  "dataset_version": "retrieval/v1",
+  "created": "2026-11-13",
+  "query_count": 12,
+  "destination_counts": {
+    "sampleton": 6,
+    "ahmedabad": 6
+  },
+  "author": "Junaid",
+  "reviewers": [
+    {"name": "Malhar Mer", "status": "reviewed OK", "date": "2026-11-12", "via": "operator het-lathiya"},
+    {"name": "Krrish Kamani", "status": "reviewed OK", "date": "2026-11-12", "via": "operator het-lathiya"}
+  ],
+  "source": {
+    "file": "queries.jsonl as handed over for IMP-318",
+    "sha256": "c7c17f94fdbc2062d41c8c7e406af64cc72a0e4f978585301a5eaf40e3bb0abc",
+    "line_count": 12
+  },
+  "normalisations": [
+    "relevant_guide_doc_keys: each bare guide file stem <stem> written as the repository doc_key guide:<destination>/<stem> (23 labels); every stem names an existing file in data/fixtures/sampleton/guides/ or data/guides/<destination>/",
+    "no label added, removed or changed; every other field, including the hard filter step_free_required, is copied as given and in the same order"
+  ],
+  "files": {
+    "queries.jsonl": "696b02f9310b30148edb611743cc416a4e8db100e9283e2f43ffc45e6f2ff589"
+  }
+}
