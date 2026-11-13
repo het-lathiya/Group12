@@ -1,0 +1,206 @@
+{
+  "dataset_sha256": "696b02f9310b30148edb611743cc416a4e8db100e9283e2f43ffc45e6f2ff589",
+  "dataset_version": "retrieval/v1",
+  "embedding_model_id": "mock-embed-v1",
+  "ended_at": "2026-11-13T11:47:57.042692+00:00",
+  "git_commit": "1b8d753ae7bd58819c51241cac070f4d9dfb04c9",
+  "k": {
+    "guide_recall": 6,
+    "place_top": 12
+  },
+  "metrics": {
+    "by_destination": {
+      "ahmedabad": {
+        "citation_validity": 1.0,
+        "citations_saved": 36,
+        "grounding_rate": 0.7714,
+        "place_hit_rate_lexical": 0.4167,
+        "place_hit_rate_vector": 0.3333,
+        "queries": 6,
+        "recall_at_6": 0.4167,
+        "vector_mode_queries": 6
+      },
+      "sampleton": {
+        "citation_validity": 1.0,
+        "citations_saved": 32,
+        "grounding_rate": 0.7429,
+        "place_hit_rate_lexical": 1.0,
+        "place_hit_rate_vector": 1.0,
+        "queries": 6,
+        "recall_at_6": 1.0,
+        "vector_mode_queries": 6
+      }
+    },
+    "overall": {
+      "citation_validity": 1.0,
+      "citations_saved": 68,
+      "grounding_rate": 0.7571,
+      "place_hit_rate_lexical": 0.7083,
+      "place_hit_rate_vector": 0.6667,
+      "queries": 12,
+      "recall_at_6": 0.7083,
+      "vector_mode_queries": 12
+    },
+    "per_query": [
+      {
+        "citation_validity": 1.0,
+        "citations_saved": 6,
+        "destination": "sampleton",
+        "grounding_rate": 0.6,
+        "notes": 10,
+        "place_hit_rate_lexical": 1.0,
+        "place_hit_rate_vector": 1.0,
+        "query": 1,
+        "recall_at_6": 1.0,
+        "retrieval_mode": "vector"
+      },
+      {
+        "citation_validity": 1.0,
+        "citations_saved": 6,
+        "destination": "sampleton",
+        "grounding_rate": 1.0,
+        "notes": 6,
+        "place_hit_rate_lexical": 1.0,
+        "place_hit_rate_vector": 1.0,
+        "query": 2,
+        "recall_at_6": 1.0,
+        "retrieval_mode": "vector"
+      },
+      {
+        "citation_validity": 1.0,
+        "citations_saved": 2,
+        "destination": "sampleton",
+        "grounding_rate": 1.0,
+        "notes": 2,
+        "place_hit_rate_lexical": 1.0,
+        "place_hit_rate_vector": 1.0,
+        "query": 3,
+        "recall_at_6": 1.0,
+        "retrieval_mode": "vector"
+      },
+      {
+        "citation_validity": 1.0,
+        "citations_saved": 6,
+        "destination": "sampleton",
+        "grounding_rate": 0.4286,
+        "notes": 14,
+        "place_hit_rate_lexical": 1.0,
+        "place_hit_rate_vector": 1.0,
+        "query": 4,
+        "recall_at_6": 1.0,
+        "retrieval_mode": "vector"
+      },
+      {
+        "citation_validity": 1.0,
+        "citations_saved": 6,
+        "destination": "sampleton",
+        "grounding_rate": 1.0,
+        "notes": 6,
+        "place_hit_rate_lexical": 1.0,
+        "place_hit_rate_vector": 1.0,
+        "query": 5,
+        "recall_at_6": 1.0,
+        "retrieval_mode": "vector"
+      },
+      {
+        "citation_validity": 1.0,
+        "citations_saved": 6,
+        "destination": "sampleton",
+        "grounding_rate": 0.4286,
+        "notes": 14,
+        "place_hit_rate_lexical": 1.0,
+        "place_hit_rate_vector": 1.0,
+        "query": 6,
+        "recall_at_6": 1.0,
+        "retrieval_mode": "vector"
+      },
+      {
+        "citation_validity": 1.0,
+        "citations_saved": 6,
+        "destination": "ahmedabad",
+        "grounding_rate": 0.6,
+        "notes": 10,
+        "place_hit_rate_lexical": 0.5,
+        "place_hit_rate_vector": 0.5,
+        "query": 7,
+        "recall_at_6": 0.0,
+        "retrieval_mode": "vector"
+      },
+      {
+        "citation_validity": 1.0,
+        "citations_saved": 6,
+        "destination": "ahmedabad",
+        "grounding_rate": 1.0,
+        "notes": 6,
+        "place_hit_rate_lexical": 0.5,
+        "place_hit_rate_vector": 0.5,
+        "query": 8,
+        "recall_at_6": 0.5,
+        "retrieval_mode": "vector"
+      },
+      {
+        "citation_validity": 1.0,
+        "citations_saved": 6,
+        "destination": "ahmedabad",
+        "grounding_rate": 0.4286,
+        "notes": 14,
+        "place_hit_rate_lexical": 1.0,
+        "place_hit_rate_vector": 1.0,
+        "query": 9,
+        "recall_at_6": 0.5,
+        "retrieval_mode": "vector"
+      },
+      {
+        "citation_validity": 1.0,
+        "citations_saved": 6,
+        "destination": "ahmedabad",
+        "grounding_rate": 0.6,
+        "notes": 10,
+        "place_hit_rate_lexical": 0.0,
+        "place_hit_rate_vector": 0.0,
+        "query": 10,
+        "recall_at_6": 0.0,
+        "retrieval_mode": "vector"
+      },
+      {
+        "citation_validity": 1.0,
+        "citations_saved": 6,
+        "destination": "ahmedabad",
+        "grounding_rate": 1.0,
+        "notes": 6,
+        "place_hit_rate_lexical": 0.5,
+        "place_hit_rate_vector": 0.0,
+        "query": 11,
+        "recall_at_6": 0.5,
+        "retrieval_mode": "vector"
+      },
+      {
+        "citation_validity": 1.0,
+        "citations_saved": 6,
+        "destination": "ahmedabad",
+        "grounding_rate": 1.0,
+        "notes": 6,
+        "place_hit_rate_lexical": 0.0,
+        "place_hit_rate_vector": 0.0,
+        "query": 12,
+        "recall_at_6": 1.0,
+        "retrieval_mode": "vector"
+      }
+    ]
+  },
+  "model_id": "mock-v1",
+  "prompt_template_id": "itinerary_generate",
+  "prompt_version": "v2",
+  "provider": "MOCK",
+  "run_id": "20261113T114756Z-retrieval-mock",
+  "started_at": "2026-11-13T11:47:56.034771+00:00",
+  "suite": "retrieval",
+  "trip_frame": {
+    "adults": 2,
+    "budget": null,
+    "children": 0,
+    "contingency_pct": 10.0,
+    "num_days": 2,
+    "start_date": "2027-03-01"
+  }
+}
