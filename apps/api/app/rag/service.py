@@ -337,3 +337,8 @@ async def resolve_sources(session: AsyncSession, chunk_ids: Sequence[UUID]) -> d
         return {}
     rows = await repository.source_rows(session, set(chunk_ids))
     return {row.chunk_id: row for row in rows}
+
+
+async def document_keys(session: AsyncSession, document_ids: Sequence[UUID]) -> dict[UUID, str]:
+    """``doc_key`` by document ID, so the retrieval evaluation can score guide passages (IMP-318)."""
+    return await repository.document_keys(session, set(document_ids))
