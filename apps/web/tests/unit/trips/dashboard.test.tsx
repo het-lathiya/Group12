@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import DashboardPage from "@/app/(app)/dashboard/page";
 
-// FR-013, FR-014 (TC-087, TC-088) web side: Open latest (API-09) and Continue draft (API-08).
+// FR-013, FR-014 (TC-087, TC-088) web side: New trip (§7.5.3), Open latest (API-09) and Continue draft (API-08).
 vi.mock("@/lib/auth/supabase", () => ({
   getSupabase: () => ({
     auth: {
@@ -125,5 +125,47 @@ describe("dashboard (FR-013, FR-014)", () => {
     expect(
       await screen.findByRole("heading", { name: "No trips yet" }),
     ).toBeInTheDocument();
+  });
+
+  const NO_DRAFTS =
+    "No drafts in progress. Open latest shows your newest itinerary.";
+
+  async function expectNewTrip() {
+    expect(
+      await screen.findByRole("link", { name: "New trip" }),
+    ).toHaveAttribute("href", "/trips/new");
+  }
+
+  it("§7.5.3: New trip shows with no trips, and the no-drafts line does not", async () => {
+    trips = [];
+    renderDashboard();
+
+    await expectNewTrip();
+    await screen.findByRole("heading", { name: "No trips yet" });
+    expect(screen.queryByText(NO_DRAFTS)).not.toBeInTheDocument();
+  });
+
+  it("§7.5.3: New trip shows next to drafts, and the no-drafts line does not", async () => {
+    renderDashboard();
+
+    await expectNewTrip();
+    expect(
+      await screen.findByRole("link", { name: /continue draft/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(NO_DRAFTS)).not.toBeInTheDocument();
+  });
+
+  it("§7.5.3: trips but no drafts show New trip and the no-drafts line", async () => {
+    trips = [{ ...TRIP, status: "ready" }];
+    renderDashboard();
+
+    await expectNewTrip();
+    expect(await screen.findByText(NO_DRAFTS)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Drafts" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "No trips yet" }),
+    ).not.toBeInTheDocument();
   });
 });

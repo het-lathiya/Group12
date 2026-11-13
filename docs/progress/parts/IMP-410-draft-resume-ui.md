@@ -52,3 +52,23 @@ Not run: screenshots at 375 px and 1280 px, because no local stack runs here (no
 ## Blockers and open issues
 
 None.
+
+## Fix RUN-067
+
+- Run id: RUN-067 (fix of RUN-058). Owner: Krrish. Base commit: `c90f3e4`. Branch: `fix/IMP-410-dashboard-new-trip`.
+- Bug: once a user had any trip, the dashboard offered no way to start a new one; `/trips/new` was linked only from the two EmptyStates (§7.5.3 asks for a header with "New trip").
+- Changed files: `apps/web/app/(app)/dashboard/page.tsx`, `apps/web/tests/unit/trips/dashboard.test.tsx`, this record.
+- What changed: the header has a "New trip" link button (primary, `/trips/new`) next to "Open latest", which keeps its rule (default when a latest itinerary exists, outline otherwise). Both use the default 44 px (`min-h-touch`) size in a `flex-wrap` group, so they wrap at 375 px. When `total > 0` and there are no drafts, one muted line reads "No drafts in progress. Open latest shows your newest itinerary." It uses data already loaded, with no extra API call. The "No trips yet" EmptyState and the Drafts section are unchanged. The trip list, TripCard and TripActionsMenu stay IMP-602.
+- Contract changed: no. Migration: no.
+
+| Command | Result |
+| --- | --- |
+| `make test-web ARGS='Dashboard'` | `Tests  7 passed (7)` |
+| `make test-web` | `Test Files  26 passed (26)`, `Tests  190 passed (190)` |
+| `make lint` | exit 0; `All matched files use Prettier code style!` |
+| `make typecheck` | exit 0; `Success: no issues found in 118 source files`, web `tsc --noEmit` clean |
+| `make imports` | `Contracts: 6 kept, 0 broken.` |
+
+Verified (unit): "New trip" (href `/trips/new`) renders with 0 trips, with a draft, and with trips but no drafts; the no-drafts line shows only in the last case; Continue draft still shows for a draft.
+Not run: E2E, because no journey asserts the changed dashboard text (the specs check only the "Your trips" heading and "Open latest"), so the manual `e2e.yml` run was not triggered.
+Screenshots: not verified — operator checks on the local stack or staging.
