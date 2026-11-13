@@ -1,5 +1,7 @@
-# End-to-end journey (IMP-216; specification §13, TC-369, US-153 AC1). Runs on a push to main,
+# End-to-end journey (IMP-216, IMP-414; specification §13, TC-369, TC-370). Runs on a push to main,
 # nightly and by hand; never on pull requests, so it is not one of the six required checks.
+# Run by hand with base_url, only the "staging" job runs, against that deployment (IMD-137: only
+# inside a staging window); it never runs automatically.
 #
 # It starts the Supabase CLI local stack, migrates and seeds it, builds and starts the API with
 # AI_PROVIDER=MOCK and the web app, and runs the journey. No provider key exists here. The local
@@ -13,6 +15,11 @@ on:
   schedule:
     - cron: "30 20 * * *"
   workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Staging web URL for the staging job; empty runs the local-stack job"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -41,6 +48,7 @@ env:
 jobs:
   e2e:
     name: e2e
+    if: ${{ !inputs.base_url }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -112,3 +120,33 @@ jobs:
             ${{ runner.temp }}/api.log
             ${{ runner.temp }}/web.log
           retention-days: 14
+
+  # TC-370: the same journey against a deployment. It signs in with the pre-created staging account
+  # (CI secrets E2E_STAGING_EMAIL and E2E_STAGING_PASSWORD) and deletes that account's trips through
+  # the API before and after the run. The deployment's AI_PROVIDER decides MOCK or Gemini.
+  staging:
+    name: staging
+    if: ${{ inputs.base_url }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci --prefix apps/web
+      - working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+
+      # No report upload here: a Playwright trace records typed values, the account password too.
+      # One width and one worker: every width would share the one staging account, and one run's
+      # trip reset would delete another's trip.
+      - name: Run the journey against staging
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          E2E_STAGING_EMAIL: ${{ secrets.E2E_STAGING_EMAIL }}
+          E2E_STAGING_PASSWORD: ${{ secrets.E2E_STAGING_PASSWORD }}
+        run: make e2e ARGS='journey --project=chromium-1280 --workers=1'
+
