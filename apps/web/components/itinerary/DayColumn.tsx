@@ -28,7 +28,8 @@ export function DayColumn({ day, id, edit }: DayColumnProps) {
       aria-label={`Day ${day.day_number}`}
       className="scroll-mt-24 rounded-xl border bg-card p-4 text-card-foreground shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:p-6"
     >
-      <h2 className="flex flex-col">
+      {/* tabIndex -1: focus lands here when a removal empties the day (IMP-408). */}
+      <h2 tabIndex={-1} className="flex flex-col outline-none">
         <span className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
           Day {day.day_number}
         </span>{" "}

@@ -1,12 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { DayColumn } from "@/components/itinerary/DayColumn";
 import { itemTimesSchema } from "@/components/itinerary/ItemEditor";
 import { ItineraryItemCard } from "@/components/itinerary/ItineraryItemCard";
+import { MoveDndContext } from "@/components/itinerary/MoveControls";
 import { Toaster } from "@/components/ui/sonner";
-import { CURRENT_VERSION, queryKeys } from "@/lib/api/queries";
+import { CURRENT_VERSION, queryKeys, useItinerary } from "@/lib/api/queries";
 import type { components } from "@/lib/api/schema";
 
 import { ITEM, ITEM_B, planWith, TRIP_ID } from "./fixtures";
@@ -42,6 +45,8 @@ const SERVER_TOTALS = {
 let requests: { method: string; url: URL; body: unknown }[];
 let answer: (() => Response) | null;
 let resolveEdit: (() => void) | null;
+// Network time of the refetch after an edit; in a browser the card unmounts during it.
+let getDelayMs: number;
 
 function editResult(items: Itinerary["days"][number]["items"]) {
   const day = planWith([items], 8).days[0];
@@ -92,11 +97,15 @@ beforeEach(() => {
   requests = [];
   answer = null;
   resolveEdit = null;
+  getDelayMs = 0;
   vi.stubGlobal("fetch", async (request: Request) => {
     const url = new URL(request.url);
     const body = request.method === "PATCH" ? await request.json() : undefined;
     requests.push({ method: request.method, url, body });
-    if (request.method === "GET") return json(planWith([[ITEM_B]], 8));
+    if (request.method === "GET") {
+      await new Promise((resolve) => setTimeout(resolve, getDelayMs));
+      return json(planWith([[ITEM_B]], 8));
+    }
     if (answer) return answer();
     if (request.method === "DELETE") {
       await new Promise<void>((resolve) => (resolveEdit = resolve));
@@ -277,5 +286,70 @@ describe("ItemEditor", () => {
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(edits()).toEqual([]);
+  });
+
+  // RUN-063b: the day is drawn from the itinerary query, as on the page, so the removed card and
+  // its ItemEditor unmount as soon as the server's day is written. The toast and focus must still
+  // follow.
+  it("after a removal unmounts the card, says so and moves focus to the next card (FR-061)", async () => {
+    getDelayMs = 100;
+    toast.dismiss(); // sonner keeps toasts of earlier tests in its store
+    // No refetch on mount: the fake GET already answers with the plan after the removal.
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    client.setQueryData(
+      queryKeys.itinerary(TRIP_ID, CURRENT_VERSION),
+      planWith([[ITEM, ITEM_B]], 7),
+    );
+    function Day() {
+      const { data } = useItinerary(TRIP_ID);
+      if (!data) return null;
+      return (
+        <MoveDndContext tripId={TRIP_ID} planRevision={data.plan_revision}>
+          <DayColumn
+            day={data.days[0]}
+            edit={{
+              tripId: TRIP_ID,
+              planRevision: data.plan_revision,
+              dayNumbers: [1],
+            }}
+          />
+        </MoveDndContext>
+      );
+    }
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={client}>
+        <Day />
+        <Toaster />
+      </QueryClientProvider>,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Remove Old Mill Museum (sample)" }),
+    );
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Remove",
+      }),
+    );
+    await waitFor(() => expect(resolveEdit).not.toBeNull());
+    resolveEdit?.();
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: "Old Mill Museum (sample)" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      await screen.findByText("Removed Old Mill Museum (sample)"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Undo" }),
+    ).not.toBeInTheDocument(); // IMD-157
+    await waitFor(() =>
+      expect(document.getElementById(`item-${ITEM_B.id}`)).toHaveFocus(),
+    );
   });
 });
