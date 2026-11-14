@@ -238,11 +238,13 @@ async def test_tc_134_tc_162_mock_generation_completes_with_no_network_call(
     assert (done["status"], done["outcome"], done["failure_reason"]) == ("completed", "model", None)
     assert done["plan_revision"] == 1
     assert done["latency_ms"] is not None
-    assert done["validation_summary"] == {"errors": 0, "warnings": 8, "infos": 0}
+    # PD-RUN-069-1: the MOCK answer fits the curated hours, so nothing is repaired; left are the
+    # unpriced places (COST_INCOMPLETE) and one place without stored hours (HOURS_UNVERIFIED).
+    assert (done["deterministic_repairs"], done["repair_attempts"]) == (0, 0)
+    assert done["validation_summary"] == {"errors": 0, "warnings": 1, "infos": 1}
     read = await api_client.get(f"/api/v1/trips/{trip}/itinerary", headers=auth_user.headers)
     assert Counter(f["code"] for f in read.json()["findings"]) == {
-        "OUTSIDE_HOURS": 5,
-        "DAY_TOO_LONG": 2,
+        "HOURS_UNVERIFIED": 1,
         "COST_INCOMPLETE": 1,
     }
     days, items = await plan_rows(db_session, trip)
