@@ -496,3 +496,25 @@ export function useReplaceItem(tripId: string) {
       ),
   );
 }
+
+// IMP-506
+/** API-26 lock state, with revision checks and the shared edit invalidation. */
+export function useLockItem(tripId: string) {
+  return useItemEdit(
+    tripId,
+    async ({
+      itemId,
+      ...body
+    }: {
+      itemId: string;
+      plan_revision: number;
+      is_locked: boolean;
+    }) =>
+      unwrap(
+        await api().PATCH("/api/v1/itinerary/items/{item_id}", {
+          params: { path: { item_id: itemId } },
+          body,
+        }),
+      ),
+  );
+}
