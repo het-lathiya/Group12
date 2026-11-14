@@ -23,7 +23,9 @@ import {
   createContext,
   type ReactNode,
   useContext,
+  useEffect,
   useId,
+  useRef,
   useState,
 } from "react";
 import { toast } from "sonner";
@@ -60,9 +62,26 @@ export function dropMove(
   return { day_number: to.dayNumber, position: to.position };
 }
 
+type FocusRequest = {
+  itemId: string;
+  action: Action;
+  dayNumber?: number;
+  revision: number;
+};
+
 /** One move through API-26; after the answer, announce it and keep focus on the item's controls. */
 function useMove(tripId: string, planRevision: number) {
   const mutation = useMoveItem(tripId);
+  const busy = useIsMutating({ mutationKey: editKey(tripId) }) > 0;
+  const focus = useRef<FocusRequest | null>(null);
+  // Focus once the answer's plan has committed and the edit controls are enabled again (busy turns
+  // false after onSuccess below): a fixed frame can come first, while they are missing or disabled.
+  useEffect(() => {
+    const request = focus.current;
+    if (!request || busy || planRevision < request.revision) return;
+    focus.current = null;
+    focusControls(request.itemId, request.action, request.dayNumber);
+  }, [busy, planRevision]);
   return (
     item: Item,
     target: { day_number?: number; position?: number },
@@ -79,9 +98,12 @@ function useMove(tripId: string, planRevision: number) {
           const region = document.getElementById(ANNOUNCER_ID);
           if (day && moved && region)
             region.textContent = `Moved ${item.place.name} to day ${day.day_number} position ${moved.position}`;
-          requestAnimationFrame(() =>
-            focusControls(item.id, action, day?.day_number),
-          );
+          focus.current = {
+            itemId: item.id,
+            action,
+            dayNumber: day?.day_number,
+            revision: result.plan_revision,
+          };
         },
         onError: (error) => {
           const { what, next } = describeError(error);
