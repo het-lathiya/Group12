@@ -28,6 +28,8 @@ layers =
 ; import-linter sees an external package only by its top-level name, so the rule is written for
 ; the whole google namespace (google.genai included). The one allowed import is ignored here;
 ; unmatched_ignore_imports_alerting = none lets the contract pass before gemini.py exists (IMP-207).
+; TC-002 (IMP-512): this and the next contract run in make imports, a required CI step (ci.yml);
+; tests/contract/test_provider_contract.py repeats the check for app.generation (TC-156).
 [importlinter:contract:vendor-sdk]
 name = Vendor isolation: google (google.genai) only in app.ai.providers.gemini
 type = forbidden

@@ -1,0 +1,10 @@
+{
+  "http_status": 403,
+  "headers": {},
+  "body": {
+    "error": {
+      "code": "permission_denied",
+      "message": "Sample vendor text that must never surface."
+    }
+  }
+}
