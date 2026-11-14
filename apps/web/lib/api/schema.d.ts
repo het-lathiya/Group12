@@ -1210,6 +1210,11 @@ export interface components {
              */
             saved?: boolean | null;
             source: components["schemas"]["PlaceSource"];
+            /**
+             * Source Name
+             * @description Name of the place's data source; always set by API-16 (FR-016 AC2)
+             */
+            source_name?: string | null;
             suitability: components["schemas"]["Suitability"];
             /** Tags */
             tags: components["schemas"]["Tag"][];
@@ -1265,6 +1270,11 @@ export interface components {
             /** @description Null when the place has no price */
             price: components["schemas"]["PlacePrice"] | null;
             price_label: components["schemas"]["SourceLabel"];
+            /**
+             * Source Name
+             * @description Name of the place's data source; always set by API-16 (FR-016 AC2)
+             */
+            source_name?: string | null;
             suitability: components["schemas"]["Suitability"];
             /** Tags */
             tags: components["schemas"]["Tag"][];

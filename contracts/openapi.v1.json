@@ -2014,6 +2014,18 @@
           "source": {
             "$ref": "#/components/schemas/PlaceSource"
           },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Name of the place's data source; always set by API-16 (FR-016 AC2)",
+            "title": "Source Name"
+          },
           "suitability": {
             "$ref": "#/components/schemas/Suitability"
           },
@@ -2206,6 +2218,18 @@
           },
           "price_label": {
             "$ref": "#/components/schemas/SourceLabel"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Name of the place's data source; always set by API-16 (FR-016 AC2)",
+            "title": "Source Name"
           },
           "suitability": {
             "$ref": "#/components/schemas/Suitability"
