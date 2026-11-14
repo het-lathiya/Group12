@@ -35,3 +35,10 @@
 
 - No new decisions, migrations or contract shape changes.
 - Database verification remains open.
+
+## Integration fix (RUN-069, I-6)
+
+- CI run 43571858283 passed API tests: `464 passed, 1 warning in 238.42s (0:03:58)`. Authorization then reported `1 failed, 46 passed in 41.70s`: the API-26 owner control retimed the must-visit item, which this part correctly locks at generation save.
+- Changed only the explicitly allowed tests/authz/route_matrix.py entry and this record. The control now sends `{plan_revision: 1, duration_min: 60, is_locked: false}`, the §6 combined unlock/retime example this part implements. User A reaches the item, while user B still must receive exactly 404. The locked-item rejection tests remain unchanged and already passed in the full API suite.
+- No authorization assertion was relaxed, no production code changed, and no contract or migration changed. The route inventory is checked locally; the database authorization rerun is CI evidence. This is this part's one integration fix.
+- `make test-authz ARGS='-k tc_065'`: `2 passed, 45 deselected in 0.34s`; scoped ruff: `All checks passed!`.
