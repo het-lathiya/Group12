@@ -95,6 +95,8 @@ class ValidationContext:
     day_dates: Mapping[int, date] = field(default_factory=dict)
     opening_hours: Mapping[str, HoursInfo] | None = None
     cost_inputs: engine.CostInputs | None = None
+    # BF-04 substitutions only; known SAMPLE prices labelled estimate are not category estimates.
+    category_estimate_refs: frozenset[str] = frozenset()
 
     @property
     def num_days(self) -> int:
@@ -351,9 +353,10 @@ def budget_conflicts(plan: Sequence[PlanDay], ctx: ValidationContext) -> list[Fi
                     label,
                 )
             )
-            if label in {"unavailable", "estimate"} or low is None:
+            category_estimate = label == "estimate" and ref in ctx.category_estimate_refs
+            if label == "unavailable" or low is None or category_estimate:
                 incomplete_count += 1
-            if label == "estimate":
+            if category_estimate:
                 estimates.append(
                     finding(
                         "ESTIMATE_USED",
