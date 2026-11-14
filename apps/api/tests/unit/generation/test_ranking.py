@@ -278,3 +278,17 @@ def test_sample_three_day_trip_keeps_all_the_size_rule_allows() -> None:
     candidates = sample_candidates()
     ctx = context(candidates, days=3, budget="300.00", interests=["museum"])
     assert len(ranking.rank_shortlist(candidates, ctx).entries) == 24
+
+
+def test_alternatives_rank_by_the_same_score_and_order_as_the_shortlist() -> None:
+    """IMP-505: ``rank`` (API-28 alternatives) and ``rank_shortlist`` agree on equal inputs."""
+    candidates = sample_candidates()
+    ctx = context(candidates, interests=["museum", "food"], budget="300")
+    ranked = ranking.rank(candidates, ctx)
+    assert [(e.candidate, e.parts) for e in ranked] == [
+        (candidate, ranking.score(candidate, ctx)) for candidate in (e.candidate for e in ranked)
+    ]
+    cut = ranking.rank_shortlist(candidates, ctx).entries[: ranking.shortlist_size(3)]
+    order = [e.candidate for e in ranked if e.candidate.place.category != "stay"]
+    assert [e.candidate for e in cut] == order[: len(cut)]
+    assert [e.parts.total for e in ranked] == sorted((e.parts.total for e in ranked), reverse=True)

@@ -204,6 +204,15 @@ def shortlist_size(num_days: int) -> int:
     return min(SHORTLIST_MAX, max(SHORTLIST_MIN, SHORTLIST_PER_DAY * num_days))
 
 
+def rank[C: Rankable](candidates: Iterable[C], ctx: RankingContext) -> list[Scored[C]]:
+    """Every candidate by score, best first, ties by place ID: the order of the shortlist, and of
+    the replacement alternatives of API-28 (IMP-505)."""
+    return sorted(
+        (Scored(candidate, score(candidate, ctx)) for candidate in candidates),
+        key=lambda entry: (-entry.parts.total, str(entry.candidate.place.id)),
+    )
+
+
 def rank_shortlist[C: Rankable](candidates: Iterable[C], ctx: RankingContext) -> Shortlist[C]:
     """The best places by score (ties by place ID), plus every must-visit place, plus enough food
     places for the meal slots (§8.9), in rank order.
@@ -212,13 +221,13 @@ def rank_shortlist[C: Rankable](candidates: Iterable[C], ctx: RankingContext) ->
     silently, and its conflict note already says it will not be planned.
     """
     excluded = ctx.mapped.filters.categories_excluded
-    ranked = sorted(
+    ranked = rank(
         (
-            Scored(candidate, score(candidate, ctx))
+            candidate
             for candidate in candidates
             if candidate.must_visit or candidate.place.category not in excluded
         ),
-        key=lambda entry: (-entry.parts.total, str(entry.candidate.place.id)),
+        ctx,
     )
     size = shortlist_size(ctx.num_days)
     chosen = ranked[:size]
