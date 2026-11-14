@@ -34,9 +34,12 @@ COUNTS: Final[Mapping[str, str]] = {
 def compute(scores: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """The v1 metrics of a run from its per-attempt scores."""
     n = len(scores)
+    days = [minutes for s in scores for minutes in s.get("daily_travel_min", [])]
     return {
         "metrics_version": METRICS_VERSION,
         "attempts": n,
+        # FR-030 AC2: mean over every planned day of all attempts of its summed travel minutes.
+        "avg_daily_travel_min": round(sum(days) / len(days), 1) if days else None,
         "counts": {
             name: {"k": sum(1 for s in scores if s[field] is True), "n": n}
             for name, field in COUNTS.items()
