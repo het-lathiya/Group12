@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MapPanel } from "@/components/map/MapPanel";
 import type { components } from "@/lib/api/schema";
-import { OPENFREEMAP_STYLE_URL } from "@/lib/map";
+import { MAPLIBRE_WORKER_URL, OPENFREEMAP_STYLE_URL } from "@/lib/map";
 
 import { ITEM } from "../itinerary/fixtures";
 
@@ -11,8 +11,10 @@ type Item = components["schemas"]["Item"];
 
 // §9: MapLibre is mocked; the fake records what the panel draws and lets a test fire map events.
 const fake = vi.hoisted(() => ({
+  workerUrls: [] as string[],
   maps: [] as {
     options: { style: string; attributionControl?: unknown };
+    workerUrlAtCreate: string | undefined;
     handlers: Record<string, ((...args: unknown[]) => void)[]>;
     line: unknown;
     removed: boolean;
@@ -25,6 +27,7 @@ vi.mock("maplibre-gl", () => {
     line: unknown = null;
     removed = false;
     options: { style: string; attributionControl?: unknown };
+    workerUrlAtCreate = fake.workerUrls.at(-1);
     constructor(options: { style: string; attributionControl?: unknown }) {
       this.options = options;
       fake.maps.push(this);
@@ -67,7 +70,8 @@ vi.mock("maplibre-gl", () => {
       return this;
     }
   }
-  return { Map: FakeMap, Marker, LngLatBounds };
+  const setWorkerUrl = (url: string) => fake.workerUrls.push(url);
+  return { Map: FakeMap, Marker, LngLatBounds, setWorkerUrl };
 });
 
 const item = (
@@ -115,6 +119,7 @@ const stopNames = () =>
 
 beforeEach(() => {
   fake.maps.length = 0;
+  fake.workerUrls.length = 0;
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
     {} as RenderingContext,
   );
@@ -160,6 +165,16 @@ describe("MapPanel", () => {
         ],
       },
     });
+  });
+
+  it("IMP-508: the map worker is the bundled asset, set before the map is created", () => {
+    renderPanel();
+
+    // MapLibre 6 derives its own worker URL from import.meta.url, which the production bundle
+    // turns into a file: URL; the panel hands it a served URL first.
+    expect(MAPLIBRE_WORKER_URL).toMatch(/maplibre-gl-worker\.mjs$/);
+    expect(fake.workerUrls).toEqual([MAPLIBRE_WORKER_URL]);
+    expect(fake.maps[0].workerUrlAtCreate).toBe(MAPLIBRE_WORKER_URL);
   });
 
   it("TC-239: selecting a marker opens that stop's card; the selected card's marker is highlighted", () => {
