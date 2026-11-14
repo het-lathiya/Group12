@@ -124,7 +124,13 @@ export function PreferenceForm({
         />
       </FieldSet>
 
-      <FieldSet id="pace" legend="Pace" effect={effects.pace}>
+      <FieldSet
+        id="pace"
+        legend="Pace"
+        effect={effects.pace}
+        hint="Pace sets how many stops fit into each day. Save your preferences to apply it."
+        error={errors.pace?.message}
+      >
         <Controller
           control={control}
           name="pace"
