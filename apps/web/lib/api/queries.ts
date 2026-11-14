@@ -5,7 +5,9 @@ import {
   keepPreviousData,
 } from "@tanstack/react-query";
 
-import { ApiError, api, unwrap } from "@/lib/api/client";
+import { toast } from "sonner";
+
+import { ApiError, api, unwrap, STALE_PLAN_MESSAGE } from "@/lib/api/client";
 import type { components } from "@/lib/api/schema";
 
 /**
@@ -274,11 +276,9 @@ export function useSavePreferences(tripId: string) {
   });
 }
 
-/**
- * API-25 undo of a removal (PD-IMP-408-1). Stays false until IMP-504 builds API-25; while false
- * the "Removed" toast offers no Undo.
- */
-export const EDIT_UNDO_ENABLED = false;
+// IMP-504
+/** API-25 is available, enabling removal undo (IMD-157). */
+export const EDIT_UNDO_ENABLED = true;
 
 /** The mutation key every itinerary edit shares, so all edit controls wait while one is saving. */
 export const editKey = (tripId: string) => ["edit", tripId] as const;
@@ -300,6 +300,8 @@ function useItemEdit<V>(
     Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.itinerary(tripId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.costs(tripId) }),
+      queryClient.invalidateQueries({ queryKey: ["summary", tripId] }),
+      queryClient.invalidateQueries({ queryKey: ["versions", tripId] }),
     ]);
   return useMutation({
     mutationKey: editKey(tripId),
@@ -313,20 +315,32 @@ function useItemEdit<V>(
             plan_revision: result.plan_revision,
             totals: result.totals,
             findings: result.findings,
-            days: current.days.map(
-              (day) =>
-                result.changed_days.find(
-                  (changed) => changed.day_number === day.day_number,
-                ) ?? day,
-            ),
+            days: [
+              ...current.days.filter(
+                (day) =>
+                  !result.changed_days.some(
+                    (changed) => changed.day_number === day.day_number,
+                  ),
+              ),
+              ...result.changed_days,
+            ].sort((a, b) => a.day_number - b.day_number),
           },
       );
       after?.(result, variables);
       await refresh();
     },
     onError: async (error) => {
-      if (error instanceof ApiError && error.code === "STALE_PLAN")
+      if (error instanceof ApiError && error.code === "STALE_PLAN") {
         await refresh();
+        toast.error(STALE_PLAN_MESSAGE, {
+          action: {
+            label: "Reload",
+            onClick: () => {
+              void refresh();
+            },
+          },
+        });
+      }
     },
   });
 }
@@ -381,7 +395,8 @@ export function useRemoveItem(tripId: string) {
   );
 }
 
-/** API-25 add, used only by the removal undo while EDIT_UNDO_ENABLED is false (IMP-504). */
+// IMP-504
+/** API-25 add and removal undo, with the shared server-result and stale-edit handling. */
 export function useAddItem(tripId: string) {
   return useItemEdit(tripId, async (body: Schemas["ItemAddIn"]) =>
     unwrap(

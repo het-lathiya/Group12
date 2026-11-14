@@ -9,6 +9,7 @@ import { FallbackNotice } from "@/components/generation/FallbackNotice";
 import { DayColumn } from "@/components/itinerary/DayColumn";
 import { itemCardId } from "@/components/itinerary/ItineraryItemCard";
 import { MoveDndContext } from "@/components/itinerary/MoveControls";
+import { PlacePicker } from "@/components/itinerary/PlacePicker";
 import { WarningsPanel } from "@/components/itinerary/WarningsPanel";
 import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
@@ -159,7 +160,7 @@ export default function ItineraryPage() {
   const itinerary = useItinerary(tripId);
   const noPlan =
     itinerary.error instanceof ApiError && itinerary.error.status === 404;
-  const trip = useTrip(tripId, noPlan);
+  const trip = useTrip(tripId, true);
   const failed = noPlan ? trip : itinerary;
   const preferences = usePreferences(itinerary.data ? tripId : undefined);
   const placeNames = Object.fromEntries(
@@ -254,9 +255,22 @@ export default function ItineraryPage() {
           title="Nothing planned yet"
           description="Generate a day-by-day plan for this trip."
           action={
-            <Button asChild>
-              <Link href={`/trips/${tripId}/generate`}>Generate</Link>
-            </Button>
+            <div className="flex flex-wrap gap-3">
+              <Button asChild>
+                <Link href={`/trips/${tripId}/generate`}>Generate</Link>
+              </Button>
+              {itinerary.data && trip.data && (
+                <PlacePicker
+                  tripId={tripId}
+                  destinationId={trip.data.destination_id}
+                  planRevision={itinerary.data.plan_revision}
+                  dayNumbers={Array.from(
+                    { length: trip.data.num_days },
+                    (_, i) => i + 1,
+                  )}
+                />
+              )}
+            </div>
           }
         />
       ) : (
@@ -264,6 +278,17 @@ export default function ItineraryPage() {
           <>
             {itinerary.data.source && (
               <FallbackNotice outcome={itinerary.data.source.outcome} />
+            )}
+            {trip.data && (
+              <PlacePicker
+                tripId={tripId}
+                destinationId={trip.data.destination_id}
+                planRevision={itinerary.data.plan_revision}
+                dayNumbers={Array.from(
+                  { length: trip.data.num_days },
+                  (_, i) => i + 1,
+                )}
+              />
             )}
             <div className="flex flex-col gap-6 xl:grid xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start xl:gap-8">
               <div className="flex flex-col gap-6 xl:sticky xl:top-24 xl:order-2">
