@@ -1,3 +1,6 @@
+"use client";
+
+import { AlternativesDialog } from "@/components/itinerary/AlternativesDialog";
 import { ItemEditor } from "@/components/itinerary/ItemEditor";
 import { ItemSources } from "@/components/itinerary/ItemSources";
 import { MoveControls } from "@/components/itinerary/MoveControls";
@@ -140,6 +143,11 @@ export function ItineraryItemCard({
                 dayNumber={edit.dayNumber}
               />
               <MoveControls item={item} {...edit} />
+              <AlternativesDialog
+                item={item}
+                tripId={edit.tripId}
+                planRevision={edit.planRevision}
+              />
             </>
           )}
         </div>
