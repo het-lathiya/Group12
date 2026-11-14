@@ -1,12 +1,16 @@
 import type { components } from "@/lib/api/schema";
 import { formatDayDate } from "@/lib/format";
 
-type SourceLabel = components["schemas"]["SourceLabel"];
+type SourceLabel = components["schemas"]["SourceLabel"] | "traveller_input";
 
-// FR-076: exactly these three; nothing in the MVP is live or verified.
+// FR-076: source labels plus the traveller's own allowance inputs.
 const LOOK: Record<SourceLabel, { text: string; className: string }> = {
   curated: { text: "Curated", className: "bg-primary/10 text-primary" },
   estimate: { text: "Estimate", className: "bg-warning-soft text-warning" },
+  traveller_input: {
+    text: "Traveller input",
+    className: "bg-muted text-muted-foreground",
+  },
   unavailable: {
     text: "Unavailable",
     className: "bg-muted text-muted-foreground",
