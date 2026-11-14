@@ -327,9 +327,10 @@ test(
     expect(to, "a second day to move to").toBeDefined();
     const mover = from.items[from.items.length - 1];
     column = await openDay(page, from.day_number);
-    await column
-      .getByLabel(`Day to move ${mover.place.name} to`)
-      .selectOption(String(to!.day_number));
+    const daySelect = column.getByLabel(`Day to move ${mover.place.name} to`);
+    // selectOption does not focus the select; a keyboard user is on it, so Tab reaches Move.
+    await daySelect.focus();
+    await daySelect.selectOption(String(to!.day_number));
     const moveButton = column.getByRole("button", {
       name: `Move ${mover.place.name} to day ${to!.day_number}`,
     });

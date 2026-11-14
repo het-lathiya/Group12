@@ -37,6 +37,12 @@ const BADGES: Record<
   info: { label: "Info", icon: Info, className: "bg-info-soft text-info" },
 };
 
+const HEADINGS: Record<Severity, string> = {
+  error: "Errors",
+  warning: "Warnings",
+  info: "Infos",
+};
+
 const NOUNS: Record<Severity, [string, string]> = {
   error: ["error", "errors"],
   warning: ["warning", "warnings"],
@@ -151,13 +157,19 @@ export function WarningsPanel({
               return (
                 <section
                   key={severity}
-                  aria-label={`${BADGES[severity].label}s`}
+                  aria-labelledby={`plan-checks-${severity}`}
                 >
+                  <h3
+                    id={`plan-checks-${severity}`}
+                    className="text-sm font-semibold"
+                  >
+                    {HEADINGS[severity]}
+                  </h3>
                   {byDay(group).map(([day, rows]) => (
                     <div key={day ?? "trip"} className="mt-3 first:mt-0">
-                      <h3 className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+                      <h4 className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
                         {day === null ? "Whole trip" : `Day ${day}`}
-                      </h3>
+                      </h4>
                       <ul className="mt-2 flex flex-col gap-3">
                         {rows.map((finding) => (
                           <li
