@@ -52,3 +52,40 @@ Not run: `make check`, `make e2e ARGS='itinerary-edit'` (the run limits this par
 - A remote branch `feat/IMP-508-itinerary-map` (author Manasvi1704, 2026-11-10, based on an older `main`) holds an earlier attempt at this card that also edits `ItineraryItemCard.tsx`. This part was built fresh from `main` within the card's file list; the lead should close or delete that branch so only one pull request exists for the card.
 - Terms of OpenFreeMap remain Unverified until a member checks them and updates `docs/decisions/map-tiles.md`.
 - Screenshots for the completion evidence (map with markers on desktop, list fallback) are still to be taken.
+
+## RUN-070 (IMD-173)
+
+- Run id: RUN-070 (Sprint 5 batch C, part U3, slug map-e2e)
+- Owner: Manasvi (Manasvi Rathore)
+- Status: committed on `part/map-e2e`, not pushed; the lead opens the pull request
+- Base commit: 15475eb
+- Decision: IMD-173 (PD-IMP-508-1, tile-abort E2E and visible attribution check)
+
+### Changed files
+
+- `apps/web/e2e/map.spec.ts` (new, tag `@map`): signs in a confirmed user from the existing `users` fixture, creates a Sampleton trip with the wizard, generates with MOCK and opens the Map tab below 768 px. Every request to `tiles.openfreemap.org` is aborted or answered in the test, so the spec makes no OpenFreeMap request.
+  - (a) aborts the style and tiles and expects the status "Map unavailable; list view shown" and the "Stops" list with one entry per first-day item, named "Stop N: <place>" in position order (the numbers the itinerary items and markers use).
+  - (b) fulfils the style URL with an inline MapLibre style (version 8, a background layer and an empty inline GeoJSON source carrying the OpenFreeMap style's attribution string) and expects the attribution control to be visible with "OpenFreeMap" and "OpenStreetMap" and no fallback notice. If the browser has no WebGL (checked in the page), it expects the list fallback instead and records a `webgl: false` annotation.
+- `docs/progress/parts/IMP-508-whole-task.md` (this section)
+
+No fixture, component, contract or migration changed.
+
+### Commands
+
+- `npx eslint e2e/map.spec.ts` (apps/web): no output, exit 0
+- `npx prettier --check e2e/map.spec.ts` (apps/web): `All matched files use Prettier code style!`
+- `npm run typecheck` (apps/web, `next typegen && tsc --noEmit`, covers `e2e/`): `✓ Types generated successfully`, tsc exit 0
+- `make e2e ARGS='--grep @map'`: not run (no local stack here); deferred to the integration or CI run, the lead fills in the run id
+
+### Acceptance
+
+- (a) Aborted style and tiles show MapListFallback with the itinerary's numbers and "Map unavailable; list view shown" (TC-240): **not verified** yet; the spec exists, the E2E run is deferred to CI (run id: to be filled by the lead). The notice copy in `MapListFallback.tsx` matches exactly.
+- (b) Map attribution visible: **not verified** yet; E2E deferred to CI (run id: to be filled by the lead). If that run's browser has no WebGL, the test asserts the fallback instead and this criterion stays "not verified (no WebGL in CI)".
+
+### Blockers
+
+- None for the spec. The E2E evidence needs the CI or integration run.
+
+### Proposed decisions
+
+- PD-RUN-070-1: `MapPanel` sets `attributionControl: { compact: false }` without `customAttribution`, so MapLibre shows only attributions of the style's used sources. A local style with no sources would leave the control empty, so test (b) uses an empty inline GeoJSON source carrying the OpenFreeMap attribution string; this proves the control renders the style's attribution visibly, not the live wording of OpenFreeMap (still Unverified in `docs/decisions/map-tiles.md`). Proposal: accept, or add `customAttribution` with the OpenStreetMap credit in `MapPanel` so the credit does not depend on the remote style (a component change for a later run).
