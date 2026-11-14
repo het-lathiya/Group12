@@ -102,3 +102,30 @@ No fixture, component, contract or migration changed.
   - `npm run typecheck`: `✓ Types generated successfully`, tsc exit 0
 - Acceptance: unit (credit configured; fallback names include visible text): verified. E2E map.spec and the axe re-scan: not verified, deferred to CI.
 - Proposed decision PD-RUN-070b-1: `.github/workflows/e2e.yml` runs only `make e2e ARGS='journey'`, so `map.spec.ts` (tag `@map`) did not run in CI in RUN-070. Proposal: add `@map` (map.spec) to the E2E workflow. The workflow file is outside this part and was not edited.
+
+## RUN-071b (PD-RUN-071-2, map worker in the production build, owner Manasvi)
+
+- Owner: Manasvi (Manasvi Rathore). Base commit: b2cc217. Slug: whole-task.
+- Evidence: CI E2E runs 43589661503, 43590291645 and 43591160613; `e2e/map.spec.ts` "with a local style the map attribution is visible (IMD-173)" failed at every width. The browser console on the itinerary page showed `Error: Worker failed to load. Check that the worker URL is correct.` and the network log had no request for a worker file; `MapPanel` then swapped in `MapListFallback`, so the built app never showed a map.
+- Cause (confirmed in the installed package and in the built output):
+  - `maplibre-gl` 6.16.0 builds its worker URL in a function `el()` as `new URL("./maplibre-gl-worker.mjs", import.meta.url)`, and returns an empty string unless `import.meta.url` starts with `http(s):`. `setWorkerUrl(url)` (`WORKER_URL`) overrides it.
+  - Turbopack's production bundle rewrites `import.meta.url` of that module to `file:///ROOT/node_modules/maplibre-gl/dist/maplibre-gl.mjs` (`{ get url() { return e.F("node_modules/maplibre-gl/dist/maplibre-gl.mjs") } }`; the runtime's `F` returns `file:///ROOT/...`). So `el()` returned `""` and the worker was created with `new Worker("", { type: "module" })`, which fires the `error` event; MapLibre reports "Worker failed to load" and `MapPanel` fails over to the list.
+  - The worker file itself was already emitted by the build (`.next/static/media/maplibre-gl-worker.<hash>.mjs`); only its URL was never handed to MapLibre.
+- Fix (smallest, bundler-native; no new dependency, no file under `public/`, `next.config.ts` unchanged):
+  - `apps/web/lib/map.ts`: `MAPLIBRE_WORKER_URL = new URL("../node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs", import.meta.url).href`. Turbopack treats the `new URL(literal, import.meta.url)` form as a static asset and resolves it to the served path `/_next/static/media/maplibre-gl-worker.<hash>.mjs` (same origin, so MapLibre starts it as a module worker directly). The worker comes from the installed package, so it always has the version of the library.
+  - `apps/web/components/map/MapPanel.tsx`: `setWorkerUrl(MAPLIBRE_WORKER_URL)` runs inside the existing `try`, just before `new MapLibreMap(...)`. `MapPanel` is still loaded with `next/dynamic` and `ssr: false`; the `error` handler, the WebGL check and `MapListFallback` are unchanged (IMP-508 step 4: a real style, tile or WebGL failure still swaps in the list).
+  - `apps/web/tests/unit/map/MapPanel.test.tsx`: the mock gains `setWorkerUrl`; a new test checks that `MAPLIBRE_WORKER_URL` names `maplibre-gl-worker.mjs`, that `setWorkerUrl` is called once with it, and that it was already set when the map was constructed. With the call removed the test fails (checked by hand).
+- Proof without the full stack (apps/web, public env `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1`):
+  - Before the fix, `npm run build` produced chunk `1t2a1enzsyvzz.js` (the chunk of the CI failure) with `let t=Z.url;if(!/^https?:/.test(t))return"";`, `Z.url` being the `file:///ROOT/...` getter, and no `setWorkerUrl` call.
+  - After the fix, `npm run build`: `✓ Compiled successfully in 5.3s`. The map chunk contains `vQ=new e.U(e.r(61665)).href` (module 61665 is `e.q("/_next/static/media/maplibre-gl-worker.247mnn5i12bew.mjs")`) and, in the effect, `tL.WORKER_URL=vQ,e=new vV({container:a.current,style:"https://tiles.openfreemap.org/styles/liberty",...` (the worker URL set before the map is created). `.next/static/media/maplibre-gl-worker.247mnn5i12bew.mjs` is 519372 bytes.
+  - Standalone server (`node .next/standalone/server.js`, PORT 3999, with `.next/static` and `public` copied as the E2E workflow does; stopped afterwards): `curl -sI http://127.0.0.1:3999/_next/static/media/maplibre-gl-worker.247mnn5i12bew.mjs` → `HTTP/1.1 200 OK`, `Content-Type: application/javascript; charset=UTF-8`, `Content-Length: 519372`; the body is byte-identical to `node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs` (`cmp` silent).
+  - Headless Chromium against that server (one-off script outside the repository, browser closed afterwards): `new Worker("", { type: "module" })` (what MapLibre did before) → `error event`; `new Worker("/_next/static/media/maplibre-gl-worker.247mnn5i12bew.mjs", { type: "module" })` → `no error event after 2s`, and the browser requested exactly that file.
+- Commands (apps/web):
+  - `npx vitest run tests/unit/map`: `Test Files  1 passed (1)` / `Tests  5 passed (5)`
+  - `npx eslint components/map lib/map.ts tests/unit/map`: no output, exit 0
+  - `npx prettier --check components/map lib/map.ts tests/unit/map`: `All matched files use Prettier code style!`
+  - `npm run typecheck`: `✓ Types generated successfully`, tsc exit 0
+  - `npm run build` (public env as above): `✓ Compiled successfully in 5.3s`
+- Acceptance: worker URL configured before the map is created (unit): verified. Built output references a served worker and the file is served with a JavaScript type and loads as a module worker in Chromium: verified (commands above). `e2e/map.spec.ts` (b) in the E2E workflow against the fixed build: **not verified** here (no local stack); the lead's CI run decides, run id to be filled in.
+- Blockers: none. Open risk: the path `../node_modules/maplibre-gl/dist/...` assumes `maplibre-gl` is installed in `apps/web/node_modules` (true for `npm ci` in CI and in the Dockerfile); a hoisted workspace install would need the path changed.
+- Proposed decisions: none.
