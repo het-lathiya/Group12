@@ -59,6 +59,7 @@ async def replace_plan(
     *,
     origin: str,
     generation_id: UUID,
+    locked_place_ids: frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
     """Replace the trip's days, items and warnings with the plan; returns the snap-1 days.
 
@@ -92,7 +93,7 @@ async def replace_plan(
                 "origin": origin,
                 "note": note,
                 "note_origin": "ai" if note else "none",
-                "is_locked": False,
+                "is_locked": item.place_id in locked_place_ids,
             }
             session.add(
                 ItineraryItem(

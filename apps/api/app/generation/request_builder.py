@@ -23,6 +23,7 @@ from app.ai.providers.base import ModelProvider
 from app.core.logging import redact_text
 from app.db.models import PlaceOpeningHours
 from app.generation import grouping, presets, records, repository, retrieval
+from app.itinerary import service as itinerary_service
 from app.places.schemas import PlaceSummary
 from app.rag.constants import RAG_MAX_PASSAGES, RAG_TOP_K_PLACE
 from app.rag.mmr import RetrievedChunk
@@ -243,6 +244,7 @@ async def build(
     prompt_template_id: str,
     prompt_version: str,
     retrieved: RetrievalResult | None = None,
+    scope: Scope | None = None,
 ) -> GenerationRequest:
     trip = await trips_service.get_trip(session, user_id, trip_id)
     prefs = await trips_service.get_preferences(session, user_id, trip_id)
@@ -260,7 +262,9 @@ async def build(
         trip,
         prefs,
         prefs.must_visit_place_ids,
-        [],
+        await itinerary_service.locked_constraints(
+            session, user_id, trip_id, scope.day_number if scope and scope.kind == "day" else None
+        ),
         [
             shortlist_place(
                 PlaceSummary.from_row(candidate.place), hours_summary(candidate.hours, weekdays)
@@ -271,6 +275,7 @@ async def build(
             prompt_template_id=prompt_template_id,
             prompt_version=prompt_version,
             contingency_pct=await repository.contingency_pct(session, trip_id),
+            scope=scope or Scope(kind="full", day_number=None),
         ),
     )
     meta = registry.load(prompt_template_id, prompt_version).meta

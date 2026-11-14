@@ -30,7 +30,6 @@ from app.budget import engine
 from app.budget.schemas import AmountRange
 from app.core.config import get_settings
 from app.core.errors import (
-    EndpointNotImplemented,
     GenerationInProgress,
     InvalidEdit,
     NotFound,
@@ -108,7 +107,13 @@ class Replace:
     ranked: bool = False  # API-29: the place must be one of the item's current alternatives
 
 
-EditOperation = Move | Retime | Remove | Add | Lock | Replace
+@dataclass(frozen=True)
+class LockAndEdit:
+    edit: Move | Retime
+    is_locked: bool
+
+
+EditOperation = Move | Retime | Remove | Add | Lock | Replace | LockAndEdit
 
 
 @dataclass
@@ -212,21 +217,25 @@ async def patch_item(
 ) -> EditResultOut:
     """API-26: day_number and/or position is a move (FR-060); start_time and/or duration_min is a
     retime (FR-063). A move without day_number stays on its day; without position it goes last."""
-    if body.is_locked is not None:
-        raise EndpointNotImplemented()  # lock and unlock are IMP-506
+    if body.is_locked is not None and not is_enabled(get_settings(), "locks"):
+        raise NotFound()
     moves = body.day_number is not None or body.position is not None
     retimes = body.start_time is not None or body.duration_min is not None
     if moves and retimes:  # PD-IMP-409-1: §6 does not define a combined move and retime
         raise InvalidEdit("Move and retime are separate edits; send one, then the other.")
-    if not moves and not retimes:
+    if not moves and not retimes and body.is_locked is None:
         raise InvalidEdit("The request changes nothing.")
     trip_id, day_number = await _locate(session, user_id, item_id)
     op: EditOperation
     if moves:
         op = Move(item_id, body.day_number or day_number, body.position)
-    else:
+    elif retimes:
         start = None if body.start_time is None else time.fromisoformat(body.start_time)
         op = Retime(item_id, start_time=start, duration_min=body.duration_min)
+    else:
+        op = Lock(item_id, bool(body.is_locked))
+    if isinstance(op, (Move, Retime)) and body.is_locked is not None:
+        op = LockAndEdit(op, body.is_locked)
     return await apply_edit(session, user_id, trip_id, body.plan_revision, op)
 
 
@@ -424,6 +433,12 @@ def _unlocked(item: ItineraryItem) -> None:
 
 async def _apply(session: AsyncSession, plan: Plan, op: EditOperation) -> None:
     match op:
+        case LockAndEdit(edit, is_locked):
+            if not is_locked:
+                await _apply(session, plan, Lock(edit.item_id, False))
+            await _apply(session, plan, edit)
+            if is_locked:
+                await _apply(session, plan, Lock(edit.item_id, True))
         case Move(item_id, day_number, position):
             source, item = plan.find(item_id)
             _unlocked(item)
