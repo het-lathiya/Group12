@@ -22,6 +22,7 @@ import {
   usePreferences,
   useSavePreferences,
   useTrip,
+  useUpdateTrip,
 } from "@/lib/api/queries";
 import type { components } from "@/lib/api/schema";
 import {
@@ -96,9 +97,16 @@ function detailsOf(trip: Schemas["TripOut"]): TripDetailsValues {
  * Preferences and Must-visit places save with API-14, and the field effects are read back from
  * API-15. With `draftId` (/trips/new?draft=<id>) a saved draft reopens at its first incomplete step.
  */
-export function TripWizard({ draftId }: { draftId?: string }) {
-  const draft = useTrip(draftId ?? "", draftId !== undefined);
-  if (draftId === undefined) return <Wizard />;
+export function TripWizard({
+  draftId,
+  editId,
+}: {
+  draftId?: string;
+  editId?: string;
+}) {
+  const id = editId ?? draftId;
+  const draft = useTrip(id ?? "", id !== undefined);
+  if (id === undefined) return <Wizard />;
   if (draft.isPending) {
     return (
       <div className="mx-auto w-full max-w-3xl">
@@ -121,7 +129,8 @@ export function TripWizard({ draftId }: { draftId?: string }) {
   return (
     <Wizard
       initialTrip={draft.data}
-      initialStep={draft.data.status === "draft" ? 1 : REVIEW}
+      initialStep={editId ? 0 : draft.data.status === "draft" ? 1 : REVIEW}
+      editing={editId !== undefined}
     />
   );
 }
@@ -129,9 +138,11 @@ export function TripWizard({ draftId }: { draftId?: string }) {
 function Wizard({
   initialTrip,
   initialStep = 0,
+  editing = false,
 }: {
   initialTrip?: Schemas["TripOut"];
   initialStep?: number;
+  editing?: boolean;
 }) {
   const [step, setStep] = useState(initialStep);
   const [trip, setTrip] = useState(initialTrip);
@@ -139,11 +150,13 @@ function Wizard({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const lastSave = useRef<(() => Promise<void>) | null>(null);
   const createTrip = useCreateTrip();
+  const updateTrip = useUpdateTrip(trip?.id ?? "");
   const savePreferences = useSavePreferences(trip?.id ?? "");
   const preferences = usePreferences(trip?.id);
   const heading = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
-  const saving = createTrip.isPending || savePreferences.isPending;
+  const saving =
+    createTrip.isPending || updateTrip.isPending || savePreferences.isPending;
 
   // Focus moves to the new step's heading, so screen readers announce it (§7.9).
   useEffect(() => {
@@ -190,6 +203,7 @@ function Wizard({
   const saveDetails = (values: TripDetailsValues) =>
     save(async () => {
       if (!trip) setTrip(await createTrip.mutateAsync(toTripIn(values)));
+      else if (editing) setTrip(await updateTrip.mutateAsync(toTripIn(values)));
       setStep(1);
     });
 
@@ -232,7 +246,11 @@ function Wizard({
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <h1 className="font-heading text-2xl font-semibold">
-        {initialTrip ? "Continue your trip" : "Plan a new trip"}
+        {editing
+          ? "Edit your trip"
+          : initialTrip
+            ? "Continue your trip"
+            : "Plan a new trip"}
       </h1>
       <div className="rounded-xl border bg-card p-4 text-card-foreground md:p-8">
         <TripStepper steps={STEPS.map((item) => item.name)} current={step} />
@@ -274,7 +292,7 @@ function Wizard({
           <div hidden={step !== 0}>
             <TripDetailsStep
               formId={FORM_IDS[0]}
-              locked={trip !== undefined}
+              locked={trip !== undefined && !editing}
               initial={initialTrip && detailsOf(initialTrip)}
               onSave={saveDetails}
             />

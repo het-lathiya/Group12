@@ -10,6 +10,7 @@ import { DayColumn } from "@/components/itinerary/DayColumn";
 import { itemCardId } from "@/components/itinerary/ItineraryItemCard";
 import { MoveDndContext } from "@/components/itinerary/MoveControls";
 import { PlacePicker } from "@/components/itinerary/PlacePicker";
+import { StalePlanBanner } from "@/components/itinerary/StalePlanBanner";
 import { WarningsPanel } from "@/components/itinerary/WarningsPanel";
 import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
@@ -225,6 +226,12 @@ export default function ItineraryPage() {
       <h1 className="font-heading text-2xl font-semibold tracking-[-0.01em] sm:text-3xl">
         Your itinerary
       </h1>
+      {itinerary.data && (
+        <StalePlanBanner
+          tripId={tripId}
+          planStale={itinerary.data.plan_stale}
+        />
+      )}
       {itinerary.isPending || (noPlan && trip.isPending) ? (
         <DaySkeleton />
       ) : tripNotFound ? (
