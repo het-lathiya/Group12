@@ -36,7 +36,7 @@ from app.budget import engine
 from app.core.config import Settings, get_settings
 from app.db.session import transaction
 from app.evaluation import manifest, metrics, retrieval_metrics
-from app.generation import request_builder, retrieval, schedule
+from app.generation import grouping, request_builder, retrieval, schedule
 from app.itinerary.schemas import PlannedDay
 from app.places import service as places_service
 from app.places.schemas import Destination, PlaceSummary
@@ -95,7 +95,7 @@ async def score_case(
     provider: ModelProvider, case: dict[str, Any], repeat: int
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """(score, raw output) of one attempt."""
-    request = GenerationRequest.model_validate(case["request"])
+    request = _grouped(GenerationRequest.model_validate(case["request"]))
     score: dict[str, Any] = {
         "case_id": case["id"],
         "repeat": repeat,
@@ -108,6 +108,7 @@ async def score_case(
         "rejected_items": 0,
         "findings": {},
         "budget_status": None,
+        "daily_travel_min": [],
         "latency_ms": None,
         "input_tokens": None,
         "output_tokens": None,
@@ -159,8 +160,23 @@ async def score_case(
         rejected_items=checked.rejected_items,
         findings=dict(sorted(codes.items())),
         budget_status=summary.status,
+        daily_travel_min=[sum(i.travel_from_prev_min or 0 for i in day.items) for day in plan],
     )
     return score, raw
+
+
+def _grouped(request: GenerationRequest) -> GenerationRequest:
+    """A frozen request without day_hints gets them from the grouping, as the request builder
+    gives them in production (IMP-503), so the scores are of grouped plans."""
+    if request.day_hints:
+        return request
+    hints = grouping.group_days(
+        request.shortlist,
+        request.must_visit_place_ids,
+        request.trip.num_days,
+        request.limits.max_items_per_day,
+    )
+    return request.model_copy(update={"day_hints": hints})
 
 
 def _costs(
