@@ -2949,7 +2949,7 @@ Every fact shown comes from a database row that points to `data_sources` (name, 
 
 1. Parse the text as JSON; failure → `ProviderInvalidOutput(malformed_json)`. Validate with the `ItineraryOutput` model; failure → `schema_violation` (TC-022, TC-023).
 2. Drop days whose `day_number` is outside `1..num_days` (finding `OUTSIDE_TRIP_DATES`, error) and, for day scope, any day other than the requested one.
-3. Drop every item whose `place_id` is not in the request's shortlist (which contains only active places of the destination): finding `UNKNOWN_PLACE`, error, item named `d<day>-i<position>`. Duplicate place on the same day: keep the first.
+3. Drop every item whose `place_id` is not in the request's shortlist (which contains only active places of the destination): finding `UNKNOWN_PLACE`, error, item named `d<day>-i<position>`. Duplicate place within the plan: keep the first.
 4. Re-insert locked items exactly as stored (they are never taken from the answer).
 5. Keep theme, note, summary and assumptions as AI-written text, escaped and length-checked; discard anything else.
 
