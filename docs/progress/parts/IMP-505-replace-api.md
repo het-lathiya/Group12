@@ -60,18 +60,32 @@ Python tools were run from the worktree's `apps/api` with `PYTHONPATH=.`.
 | `pytest -q --collect-only tests/api/test_edits.py -k alternative` | `8/45 tests collected (37 deselected) in 0.03s` |
 | `python -m app.openapi_export` diffed with `contracts/` | no difference |
 
-Not run: `make test-api ARGS='-k alternative'` and `make test-authz` (no PostgreSQL in this run, as the run prompt says). Deferred to integration.
+### Integration fix (RUN-068, after the lead's run)
+
+The lead's run found `tests/authz/test_ownership.py::test_the_same_request_reaches_user_a[API-29 ...]` failing with 422 INVALID_EDIT ("This item already visits that place."). Root cause: this part's matrix entry for API-29 sent `owned.place_id`. That is A's must-visit place, which A's first item already visits, and `Owned` names no alternative. The entry now sends `plan_revision: 0`. A's control call gets 409 STALE_PLAN, which shows the request is well formed and reaches A's item. B still gets 404 from the item lookup, which runs before the revision check. The product code is unchanged.
+
+With `TEST_DATABASE_URL` pointing at the lead's PostgreSQL 16 + pgvector (database `travel_test_504`):
+
+| Command | Result |
+| --- | --- |
+| `pytest -q tests/api/test_edits.py -k alternative` | `8 passed, 37 deselected in 4.64s` |
+| `pytest -q tests/api/test_edits.py` | `45 passed in 23.63s` |
+| `pytest -q tests/authz` | `47 passed in 21.91s` |
+| `pytest -q tests/api/test_itinerary.py` | `23 passed in 14.61s` |
+| `pytest -q tests/api/test_edits.py tests/authz tests/api/test_itinerary.py` | `115 passed in 58.71s` |
+| `ruff check app tests` / `ruff format --check app tests` | `All checks passed!` / `205 files already formatted` |
+| `mypy app` / `lint-imports` | `Success: no issues found in 118 source files` / `Contracts: 6 kept, 0 broken.` |
 
 ## Acceptance criteria
 
 | Criterion | Status | How |
 | --- | --- | --- |
-| FR-065 AC1 / TC-208: up to three alternatives with cost and time differences | not verified (deferred to integration) | `test_tc_208_alternatives_route_lists_up_to_three_ranked_places_with_deltas` |
-| FR-065 AC2 / TC-209: applied, the day is recalculated and revalidated | not verified (deferred to integration) | `test_tc_209_replace_route_applies_an_alternative_keeping_the_start_time` |
-| FR-065 AC3 / TC-210: none fit gives a message | not verified (deferred to integration) | `test_tc_210_alternatives_route_says_none_fit_when_no_place_is_left` |
+| FR-065 AC1 / TC-208: up to three alternatives with cost and time differences | verified (integration fix run) | `test_tc_208_alternatives_route_lists_up_to_three_ranked_places_with_deltas` |
+| FR-065 AC2 / TC-209: applied, the day is recalculated and revalidated | verified (integration fix run) | `test_tc_209_replace_route_applies_an_alternative_keeping_the_start_time` |
+| FR-065 AC3 / TC-210: none fit gives a message | verified (integration fix run) | `test_tc_210_alternatives_route_says_none_fit_when_no_place_is_left` |
 | Ordered by the same ranking score as generation (unit check on equal inputs) | verified | `test_alternatives_rank_by_the_same_score_and_order_as_the_shortlist` (31 passed) |
-| FEATURES_DISABLED with 'alternatives': both routes 404, and the floor still passes (TC-372) | not verified (deferred to integration) | `test_tc_372_alternative_routes_are_not_found_when_switched_off_and_the_floor_works` (API side; the E2E half is not this part) |
-| Stale plan_revision on API-29 returns 409 STALE_PLAN | not verified (deferred to integration) | `test_replace_route_refuses_a_non_alternative_or_a_stale_revision[stale]` |
+| FEATURES_DISABLED with 'alternatives': both routes 404, and the floor still passes (TC-372) | verified (integration fix run) | `test_tc_372_alternative_routes_are_not_found_when_switched_off_and_the_floor_works` (API side; the E2E half is not this part) |
+| Stale plan_revision on API-29 returns 409 STALE_PLAN | verified (integration fix run) | `test_replace_route_refuses_a_non_alternative_or_a_stale_revision[stale]` |
 
 ## Blockers
 
