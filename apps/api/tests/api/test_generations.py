@@ -13,6 +13,7 @@ import json
 import logging
 import re
 import uuid
+from collections import Counter
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -237,7 +238,13 @@ async def test_tc_134_tc_162_mock_generation_completes_with_no_network_call(
     assert (done["status"], done["outcome"], done["failure_reason"]) == ("completed", "model", None)
     assert done["plan_revision"] == 1
     assert done["latency_ms"] is not None
-    assert done["validation_summary"] == {"errors": 0, "warnings": 0, "infos": 0}
+    assert done["validation_summary"] == {"errors": 0, "warnings": 8, "infos": 0}
+    read = await api_client.get(f"/api/v1/trips/{trip}/itinerary", headers=auth_user.headers)
+    assert Counter(f["code"] for f in read.json()["findings"]) == {
+        "OUTSIDE_HOURS": 5,
+        "DAY_TOO_LONG": 2,
+        "COST_INCOMPLETE": 1,
+    }
     days, items = await plan_rows(db_session, trip)
     assert len(days) == 3
     assert items > 0

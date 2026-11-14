@@ -6,6 +6,7 @@ the test's rolled-back session, as in test_generations.py. No provider host is r
 """
 
 import uuid
+from collections import Counter
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
@@ -160,7 +161,13 @@ async def test_us_153_the_saved_plan_is_returned_in_order(
     assert body["trip_id"] == trip_id
     assert body["plan_revision"] == generation["plan_revision"] == 1
     assert body["version_id"] == generation["itinerary_version_id"]
-    assert (body["is_current"], body["plan_stale"], body["findings"]) == (True, False, [])
+    assert (body["is_current"], body["plan_stale"]) == (True, False)
+    assert Counter(f["code"] for f in body["findings"]) == {
+        "OUTSIDE_HOURS": 5,
+        "DAY_TOO_LONG": 2,
+        "COST_INCOMPLETE": 1,
+    }
+    assert all(f["severity"] == "warning" for f in body["findings"])
     assert body["source"] == {
         "generation_id": generation["id"],
         "provider": "MOCK",
@@ -283,7 +290,15 @@ async def test_findings_are_the_warnings_of_the_current_revision_only(
     response = await api_client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=auth_user.headers)
 
     assert response.status_code == 200, response.text
-    (finding,) = response.json()["findings"]
+    current = response.json()["findings"]
+    assert Counter(f["code"] for f in current) == {
+        "OUTSIDE_HOURS": 5,
+        "DAY_TOO_LONG": 2,
+        "HOURS_UNVERIFIED": 1,
+        "COST_INCOMPLETE": 1,
+    }
+    assert all(f["message"] != "From an older revision." for f in current)
+    (finding,) = [f for f in current if f["code"] == "HOURS_UNVERIFIED"]
     assert uuid.UUID(finding.pop("id"))
     assert finding == {
         "code": "HOURS_UNVERIFIED",
@@ -493,8 +508,14 @@ async def test_tc_194_api_32_revalidates_and_replaces_the_warnings_of_the_revisi
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["plan_revision"] == revision
-    assert body["validation_summary"] == {"errors": 1, "warnings": 0, "infos": 0}
-    (finding,) = body["findings"]
+    assert body["validation_summary"] == {"errors": 1, "warnings": 8, "infos": 0}
+    assert Counter(f["code"] for f in body["findings"]) == {
+        "OUTSIDE_HOURS": 5,
+        "DAY_TOO_LONG": 2,
+        "MUST_VISIT_MISSING": 1,
+        "COST_INCOMPLETE": 1,
+    }
+    (finding,) = [f for f in body["findings"] if f["code"] == "MUST_VISIT_MISSING"]
     assert finding["code"] == "MUST_VISIT_MISSING"
     assert finding["severity"] == "error"
     assert (finding["place_id"], finding["item_id"]) == (str(place_id), None)  # IMD-42
@@ -502,7 +523,10 @@ async def test_tc_194_api_32_revalidates_and_replaces_the_warnings_of_the_revisi
     assert finding["suggested_fix"]
     assert await warning_rows(db_session, trip_id) == [
         (revision - 1, "COST_INCOMPLETE"),
+        (revision, "COST_INCOMPLETE"),
+        *[(revision, "DAY_TOO_LONG")] * 2,
         (revision, "MUST_VISIT_MISSING"),
+        *[(revision, "OUTSIDE_HOURS")] * 5,
     ]
     trip = await db_session.get(Trip, uuid.UUID(trip_id))
     assert trip is not None
@@ -604,9 +628,16 @@ async def test_tc_193_a_saved_version_returns_its_warnings_and_repair_summary(
         db_session, auth_user.user_id, uuid.UUID(trip_id), uuid.UUID(version_id)
     )
 
-    assert [(f.code, f.place_id, f.item_id) for f in findings] == [
-        ("MUST_VISIT_MISSING", place_id, None)
+    assert Counter(f.code for f in findings) == {
+        "OUTSIDE_HOURS": 5,
+        "DAY_TOO_LONG": 2,
+        "MUST_VISIT_MISSING": 1,
+        "COST_INCOMPLETE": 1,
+    }
+    assert [(f.place_id, f.item_id) for f in findings if f.code == "MUST_VISIT_MISSING"] == [
+        (place_id, None)
     ]
+    assert all(f.message != "Of the later revision." for f in findings)
     assert all(f.suggested_fix for f in findings)
     assert summary["deterministic_repairs"] == 0
     assert summary["repair_attempts"] == 0
