@@ -518,3 +518,29 @@ export function useLockItem(tripId: string) {
       ),
   );
 }
+
+// IMP-510
+/** API-11 saves trip settings; plan_stale comes only from the backend. */
+export function useUpdateTrip(tripId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: Schemas["TripPatch"]) =>
+      unwrap(
+        await api().PATCH("/api/v1/trips/{trip_id}", {
+          params: { path: { trip_id: tripId } },
+          body,
+        }),
+      ),
+    onSuccess: async (trip) => {
+      queryClient.setQueryData(queryKeys.trip(tripId), trip);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.trips() }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.itinerary(tripId),
+        }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.costs(tripId) }),
+        queryClient.invalidateQueries({ queryKey: ["summary", tripId] }),
+      ]);
+    },
+  });
+}
