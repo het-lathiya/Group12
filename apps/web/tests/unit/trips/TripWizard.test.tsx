@@ -660,3 +660,31 @@ it("IMP-503: a resumed preference form posts the selected pace through API-14", 
   });
   expect(save.body).not.toHaveProperty("plan_stale");
 });
+
+it("IMP-510: edit mode preloads details and PATCHes the same trip before preferences", async () => {
+  server.fail[`PATCH /api/v1/trips/${TRIP_ID}`] = () =>
+    server.json({ ...DRAFT_TRIP, title: "Renamed trip", plan_stale: false });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <TripWizard editId={TRIP_ID} />
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  const title = await screen.findByLabelText("Trip title");
+  expect(title).toHaveValue(DRAFT_TRIP.title);
+  expect(title).toBeEnabled();
+  await user.clear(title);
+  await user.type(title, "Renamed trip");
+  await user.click(next());
+  await screen.findByRole("heading", { name: "Your preferences" });
+  expect(posts()).toHaveLength(1);
+  expect(posts()[0]).toMatchObject({
+    method: "PATCH",
+    path: `/api/v1/trips/${TRIP_ID}`,
+    body: { title: "Renamed trip", start_date: DRAFT_TRIP.start_date },
+  });
+  expect(posts()[0].body).not.toHaveProperty("plan_stale");
+});
