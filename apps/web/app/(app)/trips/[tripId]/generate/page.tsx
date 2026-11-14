@@ -14,7 +14,12 @@ import { Button } from "@/components/ui/button";
 import { ApiError, OFFLINE_MESSAGE } from "@/lib/api/client";
 import { useProfile, useStartGeneration } from "@/lib/api/queries";
 
-type StartError = { error: ErrorStateError; reload: boolean };
+type StartError = {
+  error: ErrorStateError;
+  reload: boolean;
+  ruleBased?: boolean;
+  resetAt?: string;
+};
 
 const OFFLINE: ErrorStateError = { message: OFFLINE_MESSAGE };
 
@@ -65,6 +70,13 @@ export default function GeneratePage() {
         );
         if (active) watch(active.message);
         else setStartError({ error, reload: true });
+      } else if (error.code === "AI_QUOTA_REACHED") {
+        setStartError({
+          error,
+          reload: false,
+          ruleBased: true,
+          resetAt: error.details.find((d) => d.field === "reset_at")?.message,
+        });
       } else {
         setStartError({ error, reload: false });
       }
@@ -130,6 +142,24 @@ export default function GeneratePage() {
           }
           retryLabel={startError.reload ? "Reload" : "Try again"}
         />
+      )}
+
+      {startError?.ruleBased && (
+        <section
+          aria-label="Daily generation limit"
+          className="flex flex-col gap-3"
+        >
+          {startError.resetAt && (
+            <p>Daily limit resets at {startError.resetAt} (UTC).</p>
+          )}
+          <Button
+            variant="outline"
+            disabled={running}
+            onClick={() => void generate("rule_based")}
+          >
+            Build a rule-based plan
+          </Button>
+        </section>
       )}
 
       {generationId && (

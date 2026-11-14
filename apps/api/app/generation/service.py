@@ -9,6 +9,9 @@ plan_revision}: the same request while one is active returns that generation, a 
 refused with GENERATION_IN_PROGRESS.
 """
 
+import asyncio
+import math
+from datetime import UTC, datetime, timedelta
 from typing import Final
 from uuid import UUID
 
@@ -18,7 +21,8 @@ from app.ai.factory import GENERATE_TEMPLATE_ID
 from app.ai.prompts import registry
 from app.ai.providers.base import ModelProvider
 from app.auth import service as auth_service
-from app.core.errors import Conflict, GenerationInProgress, ValidationFailed
+from app.core.config import get_settings
+from app.core.errors import Conflict, GenerationInProgress, QuotaReached, ValidationFailed
 from app.db.models import AiGeneration
 from app.generation import fallback_planner, jobs, outcomes, records, repository
 from app.generation.schemas import GenerationOut, GenerationStartIn
@@ -30,6 +34,33 @@ from app.validation.schemas import ValidationSummary
 
 RULE_BASED_MODEL_ID: Final = fallback_planner.MODEL_ID
 TIMED_OUT_MESSAGE: Final = "Generation timed out."
+_quota_lock = asyncio.Lock()  # IMD-12: one process; serialise count + insert across trips.
+
+
+def utc_day(now: datetime) -> tuple[datetime, datetime]:
+    start = now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    return start, start + timedelta(days=1)
+
+
+async def check_daily_cap(session: AsyncSession, user_id: UUID, now: datetime) -> None:
+    start, reset = utc_day(now)
+    user_count, global_count = await repository.daily_usage(session, user_id, start, reset)
+    settings = get_settings()
+    scope = (
+        "global"
+        if global_count >= settings.ai_daily_generations_global
+        else ("user" if user_count >= settings.ai_daily_generations_per_user else None)
+    )
+    if scope:
+        raise QuotaReached(
+            "AI generation is paused for today. Build a rule-based plan or try again after the reset.",
+            details=[
+                ErrorDetail(field="scope", message=scope),
+                ErrorDetail(field="reset_at", message=reset.isoformat().replace("+00:00", "Z")),
+                ErrorDetail(field="mode", message="rule_based"),
+            ],
+            retry_after_s=max(1, math.ceil((reset - now).total_seconds())),
+        )
 
 
 async def start_generation(
@@ -76,25 +107,28 @@ async def start_generation(
             )
         return await _to_out(session, active), False
 
-    metadata = provider.get_model_metadata()
-    template = registry.load(GENERATE_TEMPLATE_ID)
-    generation_id = await repository.create_queued(
-        session,
-        trip_id=trip_id,
-        user_id=user_id,
-        provider=metadata.provider,
-        model_id=RULE_BASED_MODEL_ID if body.mode == "rule_based" else metadata.model_id,
-        prompt_template_id=template.template_id,
-        prompt_version=template.version,
-        input_schema_version=template.meta.input_schema_version,
-        output_schema_version=template.meta.output_schema_version,
-        mapping_version=preference_mapping.MAPPING_VERSION,
-        scope="full",
-        request_hash=request_hash,
-    )
-    row = await repository.get_for_user(session, generation_id, user_id)
-    out = await _to_out(session, row)
-    await session.commit()  # the job reads the row in its own transaction (§6.4)
+    async with _quota_lock:
+        if body.mode == "ai":
+            await check_daily_cap(session, user_id, datetime.now(UTC))
+        metadata = provider.get_model_metadata()
+        template = registry.load(GENERATE_TEMPLATE_ID)
+        generation_id = await repository.create_queued(
+            session,
+            trip_id=trip_id,
+            user_id=user_id,
+            provider=metadata.provider,
+            model_id=RULE_BASED_MODEL_ID if body.mode == "rule_based" else metadata.model_id,
+            prompt_template_id=template.template_id,
+            prompt_version=template.version,
+            input_schema_version=template.meta.input_schema_version,
+            output_schema_version=template.meta.output_schema_version,
+            mapping_version=preference_mapping.MAPPING_VERSION,
+            scope="full",
+            request_hash=request_hash,
+        )
+        row = await repository.get_for_user(session, generation_id, user_id)
+        out = await _to_out(session, row)
+        await session.commit()  # the job reads the row in its own transaction (§6.4)
     submit(generation_id, provider)
     return out, True
 
