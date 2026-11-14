@@ -1,6 +1,6 @@
 """API-22 and API-23, the generation job (§6.4, §6.6.4, §8.2; IMP-210: TC-012, TC-151, TC-162;
-IMP-305: TC-114 to TC-119, TC-134, TC-135, TC-309; FR-024, FR-025, FR-031, FR-038, NFR-008,
-IMD-24).
+IMP-305: TC-114 to TC-119, TC-134, TC-135, TC-309; IMP-502: TC-011, TC-191, TC-192; FR-024,
+FR-025, FR-031, FR-038, FR-057, NFR-008, IMD-24).
 
 MOCK provider, or the Gemini adapter replaying the ok fixture through a fake transport; the socket
 guard of tests/conftest.py blocks every provider host. API-22's
@@ -700,7 +700,7 @@ async def test_a_crash_between_items_and_version_leaves_the_previous_plan_intact
 
 
 @pytest.mark.asyncio
-async def test_tc_135_tc_307_an_id_outside_the_shortlist_is_never_saved_and_the_fallback_runs(
+async def test_tc_135_tc_307_an_id_outside_the_shortlist_is_never_saved_and_repair_drops_it(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
@@ -714,9 +714,10 @@ async def test_tc_135_tc_307_an_id_outside_the_shortlist_is_never_saved_and_the_
 
     done = await poll(api_client, auth_user, generation_id, submitted, sessions)
 
-    # IMP-402: the answer is refused and the rule-based plan is saved in its place (§8.3).
-    assert (done["status"], done["outcome"]) == ("completed", "fallback_rule_based")
-    assert (done["failure_reason"], done["fallback_reason"]) == (None, "invalid_output")
+    # IMP-502: step 8 drops the item, a deterministic repair; the rest of the answer is saved.
+    assert (done["status"], done["outcome"]) == ("completed", "model_repaired")
+    assert (done["failure_reason"], done["fallback_reason"]) == (None, None)
+    assert (done["deterministic_repairs"], done["repair_attempts"]) == (1, 0)
     places = set(
         await db_session.scalars(
             select(Place.id).where(
@@ -733,21 +734,33 @@ async def test_tc_135_tc_307_an_id_outside_the_shortlist_is_never_saved_and_the_
     assert saved <= places
     row = await db_session.get(AiGeneration, uuid.UUID(generation_id), populate_existing=True)
     assert row is not None
-    assert row.validation_summary == {
-        "errors": 0,
-        "warnings": 0,
-        "infos": 0,
-        "invalid_ids": 1,
-        "rejected_items": 1,
-        "unknown_source_ids": 0,
-        "kind": None,
-        "provider_failure": "invalid_output",
-    }
-    assert done["validation_summary"]["errors"] == 0
+    assert (row.validation_summary["invalid_ids"], row.validation_summary["rejected_items"]) == (
+        1,
+        1,
+    )
+    assert "provider_failure" not in row.validation_summary
+
+
+class Logged(MockProvider):
+    """The mock with a call log: every request generate_itinerary received."""
+
+    def __init__(self, scenario: MockScenario) -> None:
+        super().__init__(scenario, app_env="test")
+        self.calls: list[GenerationRequest] = []
+
+    async def generate_itinerary(self, request: GenerationRequest) -> Any:
+        self.calls.append(request)
+        return await super().generate_itinerary(request)
+
+
+def use_logged(app: FastAPI, scenario: MockScenario) -> Logged:
+    provider = Logged(scenario)
+    app.dependency_overrides[get_model_provider] = lambda: provider
+    return provider
 
 
 @pytest.mark.asyncio
-async def test_tc_011_invalid_output_is_classified_not_called_again_and_falls_back(
+async def test_tc_011_invalid_output_goes_to_one_repair_call_never_a_blind_retry(
     api_app: FastAPI,
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
@@ -756,27 +769,70 @@ async def test_tc_011_invalid_output_is_classified_not_called_again_and_falls_ba
     submitted: list[Job],
     sessions: Sessions,
 ) -> None:
-    calls = 0
-
-    class Counting(MockProvider):
-        async def generate_itinerary(self, request: GenerationRequest) -> Any:
-            nonlocal calls
-            calls += 1
-            return await super().generate_itinerary(request)
-
-    api_app.dependency_overrides[get_model_provider] = lambda: Counting(
-        "invalid_json", app_env="test"
-    )
+    provider = use_logged(api_app, "invalid_json")
     generation_id = (await start(api_client, auth_user, trip)).json()["id"]
 
     done = await poll(api_client, auth_user, generation_id, submitted, sessions)
 
-    assert calls == 1
+    assert len(provider.calls) == 2  # 1 generate + 1 repair (IMP-502)
+    assert provider.calls[1].repair_context is not None
     assert (done["status"], done["outcome"]) == ("completed", "fallback_rule_based")
     assert (done["failure_reason"], done["fallback_reason"]) == (None, "invalid_output")
+    assert done["repair_attempts"] == 1
     row = await db_session.get(AiGeneration, uuid.UUID(generation_id), populate_existing=True)
     assert row is not None
     assert row.validation_summary["kind"] == "malformed_json"
+
+
+@pytest.mark.asyncio
+async def test_tc_191_repair_fixes_the_overlap_deterministically_without_a_model_call(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    provider = use_logged(api_app, "flawed")  # the trip has no must-visit place: overlap only
+    generation_id = (await start(api_client, auth_user, trip)).json()["id"]
+
+    done = await poll(api_client, auth_user, generation_id, submitted, sessions)
+
+    assert len(provider.calls) == 1  # FR-057 AC1
+    assert (done["status"], done["outcome"]) == ("completed", "model_repaired")
+    assert done["deterministic_repairs"] >= 1
+    assert done["repair_attempts"] == 0
+    body = await itinerary(api_client, auth_user, trip)
+    assert body["source"]["outcome"] == "model_repaired"
+    assert [f for f in body["findings"] if f["code"] == "OVERLAP"] == []
+
+
+@pytest.mark.asyncio
+async def test_tc_192_repair_leaves_what_it_cannot_fix_as_a_warning_after_one_call(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    provider = use_logged(api_app, "flawed")  # every day full: no room for the must-visit place
+    square = await place_id(db_session, "Sample Clock Square (sample)")
+    trip_id = await trip_with(api_client, auth_user, sampleton, must_visit=[square])
+
+    generation_id = (await start(api_client, auth_user, trip_id)).json()["id"]
+    done = await poll(api_client, auth_user, generation_id, submitted, sessions)
+
+    assert len(provider.calls) == 2  # FR-057 AC2: at most one repair call
+    context = provider.calls[1].repair_context
+    assert context is not None
+    assert "MUST_VISIT_MISSING" in [f.code for f in context.findings]
+    assert (done["outcome"], done["repair_attempts"]) == ("model_repaired", 1)
+    body = await itinerary(api_client, auth_user, trip_id)
+    assert [f["place_id"] for f in body["findings"] if f["code"] == "MUST_VISIT_MISSING"] == [
+        square
+    ]  # FR-057 AC3
 
 
 class SlowProvider(MockProvider):
@@ -1308,7 +1364,8 @@ async def test_tc_142_must_visit_missing_names_the_place_and_the_reason(
     generation_id = (await start(api_client, auth_user, trip_id)).json()["id"]
     done = await poll(api_client, auth_user, generation_id, submitted, sessions)
 
-    assert (done["status"], done["outcome"]) == ("completed", "model")
+    # IMP-502: no day has room, so the error left gets the one repair call and stays visible.
+    assert (done["status"], done["outcome"]) == ("completed", "model_repaired")
     assert done["validation_summary"]["errors"] >= 1
     body = await itinerary(api_client, auth_user, trip_id)
     [missing] = [f for f in body["findings"] if f["code"] == "MUST_VISIT_MISSING"]

@@ -242,10 +242,10 @@ def test_generation_failures_an_open_breaker_keeps_a_quota_or_auth_cause(
             lambda: MockProvider("ok", app_env="test", raise_error=ProviderUnavailable()),
             "provider_unavailable",
         ),
+        # after its one repair call (IMP-502); an unknown place is repaired, not a fallback
         (lambda: MockProvider("invalid_json", app_env="test"), "invalid_output"),
-        (lambda: MockProvider("unknown_place", app_env="test"), "invalid_output"),  # TC-307
     ],
-    ids=["timeout", "rate_limited", "unavailable", "invalid_json", "unknown_place"],
+    ids=["timeout", "rate_limited", "unavailable", "invalid_json"],
 )
 @pytest.mark.asyncio
 async def test_tc_148_tc_307_generation_failures_fall_back_to_a_labelled_rule_based_plan(

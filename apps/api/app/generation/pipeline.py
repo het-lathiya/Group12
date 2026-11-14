@@ -5,10 +5,18 @@ shortlist (steps 2 to 5) -> input limit -> record
 the settings -> provider.generate_itinerary (steps 6, 7) -> mark_validating -> steps 8 and 9 -> save
 the plan and complete the record in one transaction (step 11). Each status change is its own short
 transaction, and none stays open across the provider call (§5.8). Step 8 is
-``app.validation.output_check`` (IMP-306); step 9 is ``recalculate`` (IMP-308). Output
-that cannot be saved goes through ``end_invalid_output``; repair is IMP-502, which sends the same
-request and so the same passages. Trip completeness (step 1) is checked by API-22 before the row
-exists.
+``app.validation.output_check`` (IMP-306); step 9 is ``recalculate`` (IMP-308). Trip
+completeness (step 1) is checked by API-22 before the row exists.
+
+Step 10 (IMP-502, §8.13): ``assess`` runs steps 8 and 9 on an answer, applies the deterministic
+repair of ``app.validation.repair`` and validates again. A usable answer with no error left is
+saved (``model``, or ``model_repaired`` after a fix). Otherwise ``repair_call`` makes the one
+model repair call: the same request (so the same passages) with ``repair_context`` holding the
+answer and its findings, inside its own 25 s and never more than the job has left, with no
+transport retry. Its answer goes through ``assess`` again: usable is ``model_repaired``; not usable
+is the rule-based plan with ``unresolved_validation``; a failed or impossible repair call is the
+rule-based plan with ``invalid_output`` (quota and configuration errors end ``failed``, IMD-44).
+An invalid answer is never retried blindly.
 
 The rule-based plan (``fallback_planner``, IMP-402) runs for mode rule_based (no retrieval and no
 provider call) and after a transient provider error or an answer that cannot be saved; it goes
@@ -34,22 +42,23 @@ recorded on the breaker once, after the adapter's retries; retrieval's embedding
 Never logged: the request built for the provider, its raw output, notes or prompt text (FR-125).
 """
 
+import asyncio
 import logging
 import time
 from collections import Counter
 from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, replace
-from typing import Any, Final, Literal
+from typing import Any, Final
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import factory, limits
-from app.ai.errors import ProviderError, ProviderInvalidOutput
+from app.ai.errors import InvalidOutputKind, ProviderError, ProviderInvalidOutput
 from app.ai.providers.base import ModelProvider
 from app.budget import engine
-from app.core.config import get_settings
+from app.core.config import REPAIR_TIME_ALLOWANCE_S, get_settings
 from app.generation import (
     fallback_planner,
     outcomes,
@@ -58,7 +67,7 @@ from app.generation import (
     retrieval,
     schedule,
 )
-from app.generation.records import FailureReason, TokenUsage
+from app.generation.records import CompletedOutcome, FailureReason, TokenUsage
 from app.itinerary import service as itinerary_service
 from app.itinerary.schemas import PlannedDay, PlannedItem
 from app.places import repository as places_repository
@@ -66,9 +75,15 @@ from app.places import service as places_service
 from app.routing.cache import RouteCacheRepository
 from app.routing.client import get_client
 from app.routing.service import RoutingService
-from app.schemas.ai import GenerationRequest, ItineraryOutput, ModelMetadata
+from app.schemas.ai import (
+    GenerationRequest,
+    ItineraryOutput,
+    ModelMetadata,
+    RepairContext,
+    UsageMetadata,
+)
 from app.trips import service as trips_service
-from app.validation import output_check
+from app.validation import output_check, repair
 from app.validation.rules import Finding, ValidationContext
 from app.validation.validator import validate
 
@@ -77,6 +92,11 @@ logger = logging.getLogger(__name__)
 Sessions = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
 SEVERITY_KEYS: Final = {"error": "errors", "warning": "warnings", "info": "infos"}
+# §8.12: a plan with one of these left is not usable.
+BLOCKING: Final = frozenset({"UNKNOWN_PLACE", "OUTSIDE_TRIP_DATES", "OVERLAP", "CLOSED_ON_DAY"})
+# §8.14: the job's 120 s (jobs.PIPELINE_TIMEOUT_S; jobs imports this module) less the 15 s kept
+# for the fallback and the save; the repair call never runs into them.
+REPAIR_DEADLINE_S: Final = 120 - 15
 
 
 @dataclass
@@ -126,28 +146,211 @@ class Job:
             )
 
 
+@dataclass(frozen=True)
+class Assessed:
+    """An answer after steps 8 and 9 and the deterministic repair of step 10."""
+
+    output: ItineraryOutput | None  # None: nothing could be read or nothing is left
+    plan: list[PlannedDay]
+    findings: list[Finding]  # step 9's on the repaired plan, or step 8's when no plan is left
+    step8: dict[str, Any]  # output_check.summary of the answer
+    fixes: int  # deterministic repairs, step 8's drops included
+
+    @property
+    def usable(self) -> bool:
+        """§8.12: at least one item and none of BLOCKING left."""
+        return (
+            self.output is not None
+            and any(day.items for day in self.plan)
+            and not any(finding.code in BLOCKING for finding in self.findings)
+        )
+
+    @property
+    def errors_remain(self) -> bool:
+        return self.output is None or any(f.severity == "error" for f in self.findings)
+
+
+def unreadable(kind: InvalidOutputKind) -> Assessed:
+    return Assessed(None, [], [], output_check.summary(kind=kind), 0)
+
+
+async def evaluate(
+    job: Job, request: GenerationRequest, output: ItineraryOutput
+) -> tuple[list[PlannedDay], list[Finding]]:
+    """Step 9: the recalculated plan and the merged validator's findings on it."""
+    async with job.sessions() as session:
+        plan = await recalculate(session, output, request, job.trip_id, job.user_id)
+        findings = await plan_findings(session, request, plan, job.trip_id, job.user_id)
+    return plan, findings
+
+
+async def assess(job: Job, request: GenerationRequest, answer: ItineraryOutput) -> Assessed:
+    """Steps 8 and 9, then the deterministic repair and step 9 again if it changed anything."""
+    try:
+        answer = output_check.apply_limits(
+            answer,
+            trip_days=request.trip.num_days,
+            max_items_per_day=request.limits.max_items_per_day,
+        )
+    except ProviderInvalidOutput as exc:
+        return unreadable(exc.kind)
+    active = await job.active_ids(request)
+    checked = output_check.check_output(
+        answer, active, request.trip.num_days, request.passage_ids()
+    )
+    step8 = output_check.summary(checked)
+    dropped = len(checked.findings)  # step 8 dropped each unknown place and day outside the trip
+    if not checked.output.days:
+        return Assessed(None, [], checked.findings, step8, dropped)
+    plan, findings = await evaluate(job, request, checked.output)
+    repaired = repair.repair(
+        checked.output, findings, repair.scope_for(request), repair.travel_gaps(plan)
+    )
+    if repaired.output is None:
+        return Assessed(None, [], findings, step8, dropped + repaired.fixes)
+    if repaired.fixes:
+        plan, findings = await evaluate(job, request, repaired.output)
+    return Assessed(repaired.output, plan, findings, step8, dropped + repaired.fixes)
+
+
+def add_usage(first: TokenUsage | None, second: TokenUsage | None) -> UsageMetadata | None:
+    """Both calls' reported counts; a count neither call reported stays null (FR-038 AC2)."""
+    if first is None and second is None:
+        return None
+
+    def total(name: str) -> int | None:
+        counts = [getattr(u, name) for u in (first, second) if u and getattr(u, name) is not None]
+        return sum(counts) if counts else None
+
+    return UsageMetadata(
+        input_tokens=total("input_tokens"),
+        output_tokens=total("output_tokens"),
+        thinking_tokens=total("thinking_tokens"),
+    )
+
+
+async def finish(
+    job: Job,
+    request: GenerationRequest,
+    provider: ModelProvider,
+    first: Assessed,
+    *,
+    usage: TokenUsage | None,
+    metadata: ModelMetadata,
+) -> None:
+    """Step 10's decision on the first answer: save it, or make the one repair call."""
+    if first.usable and not first.errors_remain:
+        await save(
+            job,
+            first.plan,
+            first.findings,
+            outcome="model_repaired" if first.fixes else "model",
+            usage=usage,
+            validation_summary=first.step8,
+            metadata=metadata,
+            deterministic_repairs=first.fixes,
+        )
+        return
+    await repair_call(job, request, provider, first, usage=usage, metadata=metadata)
+
+
 async def end_invalid_output(
     job: Job,
     request: GenerationRequest,
     answer_summary: dict[str, Any],
     *,
+    provider: ModelProvider,
     usage: TokenUsage | None,
     metadata: ModelMetadata,
 ) -> None:
-    """The one route for an answer that cannot be saved; it is never retried blindly.
-
-    The rule-based plan replaces it (fallback_reason invalid_output, IMD-22) until IMP-502 adds
-    the repair call in front of this route. ``answer_summary`` is step 8 of the refused answer.
-    """
+    """The one route for an answer the adapter could not read: the repair call, never a blind
+    retry (TC-011). ``answer_summary`` is step 8 of the refused answer."""
     kind = answer_summary.get("kind") or "place check"
     logger.warning("generation %s invalid output: %s", job.generation_id, kind)
+    first = Assessed(None, [], [], answer_summary, 0)
+    await repair_call(job, request, provider, first, usage=usage, metadata=metadata)
+
+
+async def repair_call(
+    job: Job,
+    request: GenerationRequest,
+    provider: ModelProvider,
+    first: Assessed,
+    *,
+    usage: TokenUsage | None,
+    metadata: ModelMetadata,
+) -> None:
+    """The one model repair call (§8.13): repair_attempts 1, status repairing, then revalidate."""
+    allowance = min(REPAIR_TIME_ALLOWANCE_S, REPAIR_DEADLINE_S - job.elapsed_ms() / 1000)
+    if allowance <= 0:
+        logger.warning("generation %s has no time left for the repair call", job.generation_id)
+        await run_fallback(
+            job,
+            request,
+            outcomes.INVALID_OUTPUT.reason,
+            answer_summary=first.step8,
+            usage=usage,
+            metadata=metadata,
+            deterministic_repairs=first.fixes,
+        )
+        return
+    async with job.sessions() as session:
+        await repository.mark_repairing(session, job.generation_id)
+    context = RepairContext(
+        invalid_output=first.output.model_dump_json() if first.output else "",
+        findings=first.findings,
+    )
+    attempts = {"deterministic_repairs": first.fixes, "repair_attempts": 1}
+    try:
+        async with asyncio.timeout(allowance):
+            result = await provider.generate_itinerary(
+                request.model_copy(update={"repair_context": context})
+            )
+    except (ProviderError, TimeoutError) as exc:
+        outcome = outcomes.resolve(exc) if isinstance(exc, ProviderError) else None
+        logger.warning("generation %s repair call failed", job.generation_id)
+        if outcome is not None and outcome.kind == "failed":
+            await job.fail(outcome.reason, usage=usage)
+            return
+        step8 = first.step8
+        if isinstance(exc, ProviderInvalidOutput):
+            step8 = output_check.summary(kind=exc.kind)
+        await run_fallback(
+            job,
+            request,
+            outcomes.INVALID_OUTPUT.reason,
+            answer_summary=step8,
+            usage=usage,
+            metadata=metadata,
+            **attempts,
+        )
+        return
+
+    usage = add_usage(usage, result.usage)
+    second = await assess(job, request, result.output)
+    attempts["deterministic_repairs"] += second.fixes
+    if second.usable:
+        await save(
+            job,
+            second.plan,
+            second.findings,
+            outcome="model_repaired",
+            usage=usage,
+            validation_summary=second.step8,
+            metadata=metadata,
+            **attempts,
+        )
+        return
+    # An answer step 8 could not read is a failed repair call; a readable one is unresolved.
+    cause = outcomes.INVALID_OUTPUT if second.step8["kind"] else outcomes.UNRESOLVED
     await run_fallback(
         job,
         request,
-        outcomes.INVALID_OUTPUT.reason,
-        answer_summary=answer_summary,
+        cause.reason,
+        answer_summary=second.step8,
         usage=usage,
         metadata=metadata,
+        **attempts,
     )
 
 
@@ -170,6 +373,8 @@ async def run_fallback(
     answer_summary: dict[str, Any] | None = None,
     usage: TokenUsage | None = None,
     metadata: ModelMetadata | None = None,
+    deterministic_repairs: int = 0,
+    repair_attempts: int = 0,
 ) -> None:
     """The rule-based plan through steps 8 to 11; ``provider_failure`` is None for mode rule_based.
 
@@ -197,38 +402,41 @@ async def run_fallback(
     if not checked.usable:
         await job.fail("unresolved_validation", usage=usage, validation_summary=validation_summary)
         return
+    plan, findings = await evaluate(job, request, checked.output)
     await save(
         job,
-        request,
-        checked.output,
+        plan,
+        findings,
         outcome="fallback_rule_based",
         usage=usage,
         validation_summary=validation_summary,
         metadata=metadata,
+        deterministic_repairs=deterministic_repairs,
+        repair_attempts=repair_attempts,
     )
 
 
 async def save(
     job: Job,
-    request: GenerationRequest,
-    output: ItineraryOutput,
+    plan: list[PlannedDay],
+    findings: list[Finding],
     *,
-    outcome: Literal["model", "fallback_rule_based"],
+    outcome: CompletedOutcome,
     usage: TokenUsage | None,
     validation_summary: dict[str, Any],
     metadata: ModelMetadata | None,
+    deterministic_repairs: int = 0,
+    repair_attempts: int = 0,
 ) -> None:
-    """Steps 9 and 11: recalculate and validate, then save the plan, its warnings and the record
-    together. The record's counts add the plan's findings to step 8's."""
-    async with job.sessions() as session:
-        plan = await recalculate(session, output, request, job.trip_id, job.user_id)
-        findings = await plan_findings(session, request, plan, job.trip_id, job.user_id)
+    """Step 11: save the plan of step 9, its warnings and the record together. The record's
+    counts add the plan's findings to step 8's."""
     counts = Counter(SEVERITY_KEYS[finding.severity] for finding in findings)
     plan_summary = {key: counts[key] for key in SEVERITY_KEYS.values()}
     validation_summary = {
         **validation_summary,
         **{key: validation_summary.get(key, 0) + plan_summary[key] for key in plan_summary},
     }
+    repairs = {"deterministic_repairs": deterministic_repairs, "repair_attempts": repair_attempts}
     async with job.sessions() as session:
         await itinerary_service.save_generated_plan(
             session,
@@ -236,8 +444,8 @@ async def save(
             job.user_id,
             plan,
             job.generation_id,
-            validation_summary=plan_summary,
-            origin=outcome,
+            validation_summary={**plan_summary, **repairs},
+            origin="fallback_rule_based" if outcome == "fallback_rule_based" else "model",
             findings=findings,
         )
         await repository.complete(
@@ -249,6 +457,7 @@ async def save(
             validation_summary=validation_summary,
             adapter_version=metadata.adapter_version if metadata else None,
             model_version=metadata.model_version if metadata else None,
+            **repairs,
         )
     logger.info("generation %s completed %s in %d ms", job.generation_id, outcome, job.elapsed_ms())
 
@@ -411,8 +620,14 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
         result = await provider.generate_itinerary(request)
     except ProviderInvalidOutput as exc:
         breaker.record_success()  # the service answered
+        await job.mark_validating()
         await end_invalid_output(
-            job, request, output_check.summary(kind=exc.kind), usage=None, metadata=metadata
+            job,
+            request,
+            output_check.summary(kind=exc.kind),
+            provider=provider,
+            usage=None,
+            metadata=metadata,
         )
         return
     except ProviderError as exc:
@@ -423,34 +638,5 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
 
     breaker.record_success()
     await job.mark_validating()
-    active = await job.active_ids(request)
-    try:
-        answer = output_check.apply_limits(
-            result.output,
-            trip_days=request.trip.num_days,
-            max_items_per_day=request.limits.max_items_per_day,
-        )
-    except ProviderInvalidOutput as exc:
-        await end_invalid_output(
-            job, request, output_check.summary(kind=exc.kind), usage=result.usage, metadata=metadata
-        )
-        return
-
-    checked = output_check.check_output(
-        answer, active, request.trip.num_days, request.passage_ids()
-    )
-    if not checked.usable:
-        await end_invalid_output(
-            job, request, output_check.summary(checked), usage=result.usage, metadata=metadata
-        )
-        return
-
-    await save(
-        job,
-        request,
-        checked.output,
-        outcome="model",
-        usage=result.usage,
-        validation_summary=output_check.summary(checked),
-        metadata=metadata,
-    )
+    first = await assess(job, request, result.output)
+    await finish(job, request, provider, first, usage=result.usage, metadata=metadata)
