@@ -227,6 +227,32 @@ describe("MoveControls", () => {
     });
   });
 
+  it("focuses the moved item's controls in its new day once they render enabled (IMP-513)", async () => {
+    // A frame that fires before React commits the answer (as in a fast browser): the item's
+    // controls are still the disabled, pre-answer ones then, so focus must wait for the commit.
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    const user = renderPage();
+    await screen.findByRole("group", { name: "Move River Walk (sample)" });
+    await user.click(
+      screen.getByRole("button", { name: "Move River Walk (sample) to day 2" }),
+    );
+
+    expect(
+      await screen.findByText("Moved River Walk (sample) to day 2 position 2"),
+    ).toHaveAttribute("aria-live", "polite");
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("region", { name: "Day 2" })).getByRole(
+          "button",
+          { name: "Move River Walk (sample) to day 1" },
+        ),
+      ).toHaveFocus(),
+    );
+  });
+
   it("does not reorder before the server answers, then shows the conflict in WarningsPanel (FR-060 AC3)", async () => {
     hold = true;
     const user = renderPage();
