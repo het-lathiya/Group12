@@ -36,15 +36,17 @@ async def search_places(
     categories: Sequence[str],
     limit: int,
     offset: int,
-) -> tuple[list[Place], int]:
-    """One page of active places of an active destination, ordered by name, and the total.
+) -> tuple[list[tuple[Place, str]], int]:
+    """One page of (place, source name) of an active destination, ordered by name, and the total.
 
     ``q`` matches anywhere in the name, case-insensitively; ``categories`` keeps places in any of
-    them (index ix_places_dest_cat).
+    them (index ix_places_dest_cat). Rows the quality gate rejected are never loaded or are
+    deactivated (§5.6), so the active filter also hides them.
     """
     query = (
-        select(Place)
+        select(Place, DataSource.name)
         .join(Destination, Destination.id == Place.destination_id)
+        .join(DataSource, DataSource.id == Place.source_id)
         .where(
             Place.destination_id == destination_id,
             Place.is_active.is_(True),
@@ -57,7 +59,7 @@ async def search_places(
         query = query.where(Place.category.in_(list(categories)))
     total = await session.scalar(select(func.count()).select_from(query.subquery()))
     page = query.order_by(Place.name, Place.id).limit(limit).offset(offset)
-    return list((await session.scalars(page)).all()), int(total or 0)
+    return [(row[0], row[1]) for row in await session.execute(page)], int(total or 0)
 
 
 async def destination_by_id(session: AsyncSession, destination_id: UUID) -> Destination | None:

@@ -1,5 +1,5 @@
-"""API-06 and basic API-16 (§6.6.3, §6.5 Destination and PlaceSummary; FR-019: TC-069, TC-101,
-TC-102; IMP-205 places-api-search part).
+"""API-06 and API-16 (§6.6.3, §6.5 Destination and PlaceSummary; FR-019: TC-069, TC-101,
+TC-102; IMP-205 places-api-search part; FR-016: TC-092 to TC-094, IMP-509 whole-task part).
 
 Runs against the migrated test database with Sampleton loaded through the seed (IMP-107, IMP-205);
 every test is rolled back.
@@ -48,7 +48,9 @@ PLACE_FIELDS = {
     "hours_label",
     "verification_status",
     "suitability",
+    "source_name",
 }
+SAMPLE_SOURCE = "SAMPLE fixture (synthetic)"
 
 
 @pytest_asyncio.fixture
@@ -341,3 +343,90 @@ async def test_places_show_prices_as_money_and_null_when_unpriced(
     unpriced = [item for item in page["items"] if item["price_label"] == "unavailable"]
     assert unpriced
     assert all(item["price"] is None for item in unpriced)
+
+
+# API-16 for the explore page (IMP-509; FR-016). `make test-api ARGS='-k places_list'`.
+
+
+@pytest.mark.asyncio
+async def test_tc_092_places_list_pages_every_active_place_once_by_name_then_id(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    pages = [
+        (await search(api_client, auth_user, sampleton, limit=12, offset=offset)).json()
+        for offset in (0, 12, 24)
+    ]
+
+    assert [len(page["items"]) for page in pages] == [12, 12, 6]
+    assert {page["total"] for page in pages} == {30}
+    items = [item for page in pages for item in page["items"]]
+    assert len({item["id"] for item in items}) == 30
+    keys = [(item["name"], item["id"]) for item in items]
+    assert keys == sorted(keys)
+    beyond = (await search(api_client, auth_user, sampleton, offset=30)).json()
+    assert (beyond["items"], beyond["total"]) == ([], 30)
+
+
+@pytest.mark.asyncio
+async def test_tc_093_places_list_names_the_source_and_verification_of_every_place(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    items = (await search(api_client, auth_user, sampleton, limit=50)).json()["items"]
+
+    assert len(items) == 30
+    assert {item["source_name"] for item in items} == {SAMPLE_SOURCE}
+    assert all(item["verification_status"] in vocabulary.VERIFICATION_STATUSES for item in items)
+
+
+@pytest.mark.asyncio
+async def test_tc_094_places_list_labels_sample_prices_and_hours_as_estimates(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    items = (await search(api_client, auth_user, sampleton, limit=50)).json()["items"]
+
+    # The explore page shows the sample banner from these labels and API-10's is_sample.
+    assert all(item["price_label"] != "curated" for item in items)
+    assert all(item["hours_label"] != "curated" for item in items)
+    lookout = next(i for i in items if i["name"] == "Sample Harbour Lookout (sample)")
+    assert (lookout["price_label"], lookout["verification_status"]) == ("estimate", "estimated")
+
+
+@pytest.mark.asyncio
+async def test_places_list_rejects_limit_51_and_needs_a_token(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    too_many = await search(api_client, auth_user, sampleton, limit=51)
+    assert too_many.status_code == 422
+    assert too_many.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    anonymous = await api_client.get("/api/v1/places", params={"destination_id": str(sampleton.id)})
+    assert anonymous.status_code == 401
+    assert anonymous.json()["error"]["code"] == "UNAUTHENTICATED"
+
+
+@pytest.mark.asyncio
+async def test_places_list_keeps_to_one_destination_and_hides_inactive_rows(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    other = await add_destination_with_place(
+        db_session, sampleton, active=True, place_name="Aaa Elsewhere Gate"
+    )
+    await db_session.execute(
+        update(Place).where(Place.external_ref == "sample-002").values(is_active=False)
+    )
+
+    first = (await search(api_client, auth_user, sampleton, limit=1)).json()
+    assert first["total"] == 29
+    assert first["items"][0]["name"] != "Aaa Elsewhere Gate"
+    every = (await search(api_client, auth_user, sampleton, limit=50)).json()["items"]
+    names = {item["name"] for item in every}
+    assert "Sample Old Signal Tower (sample)" not in names
+    assert "Aaa Elsewhere Gate" not in names
+
+    theirs = (await search(api_client, auth_user, other)).json()
+    [elsewhere] = theirs["items"]
+    assert elsewhere["name"] == "Aaa Elsewhere Gate"
+    assert elsewhere["source_name"]

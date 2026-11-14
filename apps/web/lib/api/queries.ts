@@ -414,3 +414,35 @@ export function useMoveItem(tripId: string) {
       ),
   );
 }
+
+// IMP-509
+
+/** Places per explore page; API-16 allows at most 50. */
+export const EXPLORE_PAGE_SIZE = 20;
+
+/** API-16 for the explore page: one page of the destination's places, by name. */
+export function usePlacesPage(
+  destinationId: string | undefined,
+  offset: number,
+) {
+  return useQuery({
+    queryKey: queryKeys.places(destinationId ?? "", {
+      limit: EXPLORE_PAGE_SIZE,
+      offset,
+    }),
+    queryFn: async () =>
+      unwrap(
+        await api().GET("/api/v1/places", {
+          params: {
+            query: {
+              destination_id: destinationId ?? "",
+              limit: EXPLORE_PAGE_SIZE,
+              offset,
+            },
+          },
+        }),
+      ),
+    enabled: destinationId !== undefined,
+    placeholderData: keepPreviousData,
+  });
+}
