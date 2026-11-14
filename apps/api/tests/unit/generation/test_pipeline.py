@@ -115,7 +115,9 @@ def test_pipeline_rejects_an_id_outside_the_shortlist_before_saving(
 
     journal.run(MockProvider("unknown_place", app_env="test"))
 
-    assert journal.fell_back("invalid_output")  # IMP-402: the rule-based plan is saved instead
+    # IMP-502: step 8 drops the item, a deterministic repair; the rest of the answer is saved.
+    assert journal.completed["outcome"] == "model_repaired"
+    assert journal.completed["deterministic_repairs"] >= 1
     assert journal.saved_ids() <= sample_request().shortlist_ids()
 
 

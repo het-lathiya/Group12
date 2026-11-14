@@ -58,10 +58,10 @@ def test_prompt_tc_169_load_returns_itinerary_generate_v1() -> None:
     assert (template.template_id, template.version) == ("itinerary_generate", "v1")
     assert template.system_text.startswith("You arrange trip itineraries")
     assert "${request_json}" in template.user_text
-    assert template.repair_text is None  # repair.txt arrives with the repair card (§8.13)
+    assert template.repair_text is not None  # appended on the repair call (§8.13, IMP-502)
     assert template.meta.output_schema_version == "io-1"
     assert template.meta.input_schema_version == "gr-1"
-    assert set(template.sha256) == {"system.txt", "user.txt", "meta.json"}
+    assert set(template.sha256) == {"system.txt", "user.txt", "meta.json", "repair.txt"}
 
 
 def test_prompt_tc_026_unknown_version_raises_an_error_naming_the_version() -> None:

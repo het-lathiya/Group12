@@ -49,7 +49,12 @@ from app.ai.errors import (
 )
 from app.ai.prompts import registry
 from app.ai.providers.base import check_embed_input, l2_normalised
-from app.core.config import GEMINI_EMBEDDING_MODELS, GEMINI_TIME_ALLOWANCE_S, Settings
+from app.core.config import (
+    GEMINI_EMBEDDING_MODELS,
+    GEMINI_TIME_ALLOWANCE_S,
+    REPAIR_TIME_ALLOWANCE_S,
+    Settings,
+)
 from app.schemas.ai import (
     EMBEDDING_DIMENSIONS,
     OUTPUT_MODELS,
@@ -406,7 +411,10 @@ class GeminiProvider:
             return interaction, parse_output(interaction, output_model)
 
         try:
-            interaction, output = await self._with_retries(attempt)
+            # §8.13: the repair call has its own 25 s and no transport retry.
+            interaction, output = await self._with_retries(
+                attempt, repair=request.repair_context is not None
+            )
         except ProviderAuthError:
             self._last_state = "down"
             raise
@@ -457,16 +465,19 @@ class GeminiProvider:
         except ValueError:  # the body of a 200 answer that is not an embedding response
             raise ProviderInvalidOutput("malformed_json") from None
 
-    async def _with_retries[T](self, call: Callable[[float], Awaitable[T]]) -> T:
+    async def _with_retries[T](
+        self, call: Callable[[float], Awaitable[T]], *, repair: bool = False
+    ) -> T:
         """§8.4: at most MAX_ATTEMPTS (1 + GEMINI_MAX_RETRIES) inside the 70 s allowance.
 
         Only timeouts, rate limits and outages are retried, after 1, 2, 4 s with ±25 % jitter, or
         ``retry_after_s`` if longer; a wait that would reach the end of the allowance is not made,
         so no attempt starts once it is spent. Each attempt gets min(GEMINI_TIMEOUT_S, time left).
+        A repair call (§8.13) makes one attempt inside its own 25 s allowance.
         """
         clock = self._clock or time.monotonic
-        deadline = clock() + GEMINI_TIME_ALLOWANCE_S
-        attempts = min(1 + self._max_retries, MAX_ATTEMPTS)
+        deadline = clock() + (REPAIR_TIME_ALLOWANCE_S if repair else GEMINI_TIME_ALLOWANCE_S)
+        attempts = 1 if repair else min(1 + self._max_retries, MAX_ATTEMPTS)
         attempt = 0
         while True:
             try:

@@ -10,16 +10,26 @@ from fixtures.pipeline import Journal
 
 from app.ai.providers.mock import MockProvider
 from app.generation import fallback_planner, retrieval
+from app.schemas.ai import GenerationRequest
+
+
+def full_days() -> GenerationRequest:
+    """One item a day: the mock fills both days, so repair has no room for FORT (IMP-502)."""
+    request = sample_request()
+    one = request.limits.model_copy(update={"max_items_per_day": 1})
+    return request.model_copy(update={"limits": one})
 
 
 def test_must_visit_a_place_the_model_left_out_is_saved_as_must_visit_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    journal = Journal(monkeypatch, sample_request())
+    journal = Journal(monkeypatch, full_days())
 
     journal.run(MockProvider("flawed", app_env="test"))  # leaves FORT out (IMD-27)
 
-    assert journal.completed["outcome"] == "model"  # MUST_VISIT_MISSING does not block (§8.12)
+    # MUST_VISIT_MISSING does not block (§8.12); the error left gets the one repair call.
+    assert journal.completed["outcome"] == "model_repaired"
+    assert journal.completed["repair_attempts"] == 1
     [missing] = [f for f in journal.findings if f.code == "MUST_VISIT_MISSING"]
     assert (str(missing.place_id), missing.item_ref, missing.severity) == (FORT, None, "error")
     assert "Example Fort" in missing.message
@@ -31,7 +41,7 @@ def test_must_visit_a_place_the_model_left_out_is_saved_as_must_visit_missing(
 def test_must_visit_the_reason_of_a_filter_conflict_is_named(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    journal = Journal(monkeypatch, sample_request())
+    journal = Journal(monkeypatch, full_days())
     journal.reasons = {FORT: retrieval.MUST_VISIT_REASONS[retrieval.NOTE_CLOSED]}
 
     journal.run(MockProvider("flawed", app_env="test"))

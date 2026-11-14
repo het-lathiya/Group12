@@ -24,8 +24,9 @@ from app.ai.errors import (
     ProviderTimeout,
     ProviderUnavailable,
 )
-from app.ai.providers.gemini import MAX_ATTEMPTS, GeminiProvider
-from app.core.config import GEMINI_TIME_ALLOWANCE_S, Settings
+from app.ai.providers.gemini import MAX_ATTEMPTS, GeminiProvider, wire_schema
+from app.core.config import GEMINI_TIME_ALLOWANCE_S, REPAIR_TIME_ALLOWANCE_S, Settings
+from app.schemas.ai import ItineraryOutput, RepairContext
 
 RECORDINGS = Path(__file__).resolve().parents[2] / "fixtures" / "provider_recordings" / "gemini"
 KEY = "unit-test-gemini-key-not-real"
@@ -220,3 +221,30 @@ def test_retry_tc_018_a_slow_answer_becomes_a_provider_timeout_per_attempt() -> 
         generate(gemini)
 
     assert timeouts == [0.01, 0.01]  # a timeout is transient: one retry, then the fallback
+
+
+# IMP-502 (§8.13): the repair call makes one attempt inside its own 25 s
+
+
+def test_retry_the_repair_call_is_one_attempt_of_at_most_25_s_with_the_wire_schema() -> None:
+    clock, answers = FakeClock(), Answers(recording("unavailable_503"), recording("ok"))
+    gemini = adapter(answers, clock, gemini_timeout_s=35)
+    timeouts = timed(gemini, clock, took_s=1)
+    schemas: list[dict[str, Any]] = []
+    spied = gemini._call_vendor
+
+    async def call(system: str, user: str, schema: dict[str, Any], timeout_s: float) -> Any:
+        schemas.append(schema)
+        return await spied(system, user, schema, timeout_s)
+
+    gemini._call_vendor = call  # type: ignore[method-assign]  # spy on the one vendor call
+    context = RepairContext(invalid_output="", findings=[])
+    request = sample_request().model_copy(update={"repair_context": context})
+
+    with pytest.raises(ProviderUnavailable):
+        asyncio.run(gemini.generate_itinerary(request))
+
+    assert answers.count == 1  # no transport retry
+    assert clock.sleeps == []
+    assert timeouts == [REPAIR_TIME_ALLOWANCE_S]
+    assert schemas == [wire_schema(ItineraryOutput)]
