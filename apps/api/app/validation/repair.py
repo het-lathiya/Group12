@@ -90,6 +90,21 @@ def travel_gaps(plan: Sequence[PlanDay]) -> dict[str, int]:
     }
 
 
+def retimed[O: ItineraryOutput](output: O, plan: Sequence[PlanDay]) -> O:
+    """The answer with step 9's times and durations, so a plan step 9 already put right needs no
+    fix: the model's own times are replaced by step 9 and are never repaired or counted."""
+    times = {
+        item.place_id: (item.start_time, item.duration_min) for day in plan for item in day.items
+    }
+    data = output.model_dump()
+    for day in data["days"]:
+        for item in day["items"]:
+            item["start_time"], item["duration_min"] = times.get(
+                item["place_id"], (item["start_time"], item["duration_min"])
+            )
+    return type(output).model_validate(data)
+
+
 def _hhmm(clock: int) -> str:
     clock = min(clock, LAST_START)
     return f"{clock // 60:02d}:{clock % 60:02d}"

@@ -14,6 +14,7 @@ from app.ai.prompts import registry
 from app.ai.providers.mock import MockProvider
 from app.core.config import MockScenario
 from app.generation import pipeline
+from app.itinerary.schemas import PlannedDay, PlannedItem
 from app.schemas.ai import (
     GenerationRequest,
     GroundedItineraryOutput,
@@ -258,6 +259,26 @@ def test_repair_keeps_the_io_2_answer_and_its_citations() -> None:
     assert [item.source_ids for day in result.output.days for item in day.items] == [["p1"], []]
 
 
+def test_repair_retimed_takes_step_9_times_so_a_plan_already_right_needs_no_fix() -> None:
+    model_times = answer((1, [(FORT, "09:00", 120), (THALI, "10:00", 60)]))
+    plan = [
+        PlannedDay(
+            1,
+            "",
+            [
+                PlannedItem(FORT, "activity", "09:00", 120, ""),
+                PlannedItem(THALI, "meal", "11:15", 60, "", 10, None, None, "routing_api"),
+            ],
+        )
+    ]
+
+    timed = repair.retimed(model_times, plan)
+    result = repair.repair(timed, [], scope(), repair.travel_gaps(plan))
+
+    assert layout(timed) == [(1, [(FORT, "09:00"), (THALI, "11:15")])]
+    assert result.fixes == 0
+
+
 def test_repair_scope_for_a_request_reads_its_limits_must_visit_and_locks() -> None:
     request = sample_request()
     lock = LockedItem.model_validate(
@@ -340,7 +361,8 @@ def test_repair_tc_190_tc_191_flawed_overlap_and_must_visit_fixed_without_a_mode
 
     assert len(provider.calls) == 1
     assert journal.completed["outcome"] == "model_repaired"
-    assert journal.completed["deterministic_repairs"] == 2  # one shift, one insertion
+    # step 9 re-times the overlap, so the one repair is inserting FORT
+    assert journal.completed["deterministic_repairs"] == 1
     assert journal.completed["repair_attempts"] == 0
     assert FORT in journal.saved_ids()
     assert journal.findings == []
