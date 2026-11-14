@@ -93,7 +93,10 @@ def test_budget_incomplete_and_estimated_item_findings() -> None:
     from app.validation.rules import budget_conflicts
 
     ctx = ValidationContext(
-        date(2026, 12, 7), date(2026, 12, 7), cost_inputs=CostInputs(1, 1, 0, "INR", None, 0, 0, 0)
+        date(2026, 12, 7),
+        date(2026, 12, 7),
+        cost_inputs=CostInputs(1, 1, 0, "INR", None, 0, 0, 0),
+        category_estimate_refs=frozenset({"d1-i2"}),
     )
     items = [
         PlannedItem(PLACE, "activity", "09:00", 60, "", cost_label="unavailable"),
@@ -156,3 +159,25 @@ def test_budget_findings_never_drop_repair_items_even_if_severity_is_error() -> 
     )
     assert result.output == output
     assert result.fixes == 0
+
+
+def test_budget_known_estimated_price_is_not_a_bf_04_category_estimate() -> None:
+    from decimal import Decimal
+
+    from app.budget.engine import CostInputs
+    from app.validation.rules import budget_conflicts
+
+    ctx = ValidationContext(
+        date(2026, 12, 7), date(2026, 12, 7), cost_inputs=CostInputs(1, 1, 0, "INR", None, 0, 0, 0)
+    )
+    item = PlannedItem(
+        PLACE,
+        "activity",
+        "09:00",
+        60,
+        "",
+        cost_min=Decimal("5.00"),
+        cost_max=Decimal("6.00"),
+        cost_label="estimate",
+    )
+    assert budget_conflicts([PlannedDay(1, "", [item])], ctx) == []
