@@ -105,10 +105,20 @@ jobs:
           PORT=3000 HOSTNAME=0.0.0.0 nohup node server.js > "$RUNNER_TEMP/web.log" 2>&1 &
           curl -fsS --retry 30 --retry-delay 1 --retry-all-errors -o /dev/null http://localhost:3000/
 
+      # One report folder per step: the HTML reporter empties its folder at the start of a run.
       - name: Run the journey
         env:
           BASE_URL: http://localhost:3000
+          PLAYWRIGHT_HTML_REPORT: playwright-report/journey
         run: make e2e ARGS='journey'
+
+      # PD-RUN-070b-1: the map specs (tag @map); they run even when the journey failed.
+      - name: Run the map specs
+        if: ${{ !cancelled() }}
+        env:
+          BASE_URL: http://localhost:3000
+          PLAYWRIGHT_HTML_REPORT: playwright-report/map
+        run: make e2e ARGS='map'
 
       - name: Upload the Playwright report and the server logs
         if: always()

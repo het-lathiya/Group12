@@ -1,0 +1,41 @@
+# PD-RUN-070b-1 · e2e-map
+
+- Run id: RUN-071
+- Owner: Kirtan
+- Status: PR_OPEN-pending (the lead integrates and dispatches the E2E workflow)
+- Base commit: aec7caa
+- Scope: `.github/workflows/e2e.yml` ran only `make e2e ARGS='journey'`, so `apps/web/e2e/map.spec.ts` (tag `@map`, IMD-173, TC-240) did not run in CI. The MOCK `e2e` job now runs it as well. No application code, spec, contract, test or dependency changed.
+
+## Files changed
+
+- .github/workflows/e2e.yml (`e2e` job only; the `staging` job, triggers, permissions, env and secrets are unchanged):
+  - New step "Run the map specs" after "Run the journey": `make e2e ARGS='map'` with `BASE_URL: http://localhost:3000`. `if: ${{ !cancelled() }}` makes it run when the journey step failed, so both specs report.
+  - `PLAYWRIGHT_HTML_REPORT` is set per step (`playwright-report/journey`, `playwright-report/map`). The CI reporter in `apps/web/playwright.config.ts` is `["html", { open: "never" }]` with no `outputFolder`, so both runs would write to `apps/web/playwright-report/` and the second would empty the first. Playwright 1.64.1 reads `PLAYWRIGHT_HTML_REPORT` (resolved against the working directory, which `make e2e` sets to `apps/web`), so the config is untouched.
+  - The upload step is unchanged: its path `apps/web/playwright-report/` already covers both subfolders. `test-results/` is cleared at the start of each run, but the HTML report copies its attachments and traces into its own folder, so the report does not depend on it and it is not uploaded.
+- docs/progress/parts/PD-RUN-070b-1-e2e-map.md: this record.
+
+## Commands and results
+
+- `python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' .github/workflows/e2e.yml`: parses, exit 0.
+- `actionlint .github/workflows/e2e.yml`: no output, exit 0.
+- `apps/web/node_modules/.bin/prettier --check .github/workflows/e2e.yml` (main checkout's binary): `Code style issues found in the above file.` The only difference is one blank line at the end of the file, which the unmodified file at aec7caa has too (the same check on `git show aec7caa:.github/workflows/e2e.yml` gives the same warning). Not changed here; the repository's `format:check` runs inside `apps/web` and does not cover `.github/`.
+- Not run: `make e2e` (needs the local Supabase stack, API and web app), PostgreSQL tests, live calls.
+
+## Acceptance
+
+- The map spec runs in the MOCK E2E job after the journey step, and also when the journey step failed: implemented, YAML valid and actionlint clean; not verified by a CI run (pending the lead's `workflow_dispatch` of E2E on the integrated branch).
+- The artifact covers both specs: the journey and map reports are in separate folders under `apps/web/playwright-report/`, which the unchanged upload step contains: implemented; not verified by a CI run (the artifact contents are to be checked on the dispatched run).
+- Journey step, triggers, secrets and the staging job unchanged: verified by the diff (only the two `env` lines and the new step differ).
+
+## Blockers
+
+- none
+
+## Proposed decisions
+
+- none
+
+## Open issues
+
+- The `map` filter is a regular expression on the spec path; today only `e2e/map.spec.ts` matches. A future spec whose path contains "map" would also run in this step.
+- If the dispatched run shows the map specs failing for a reason in `map.spec.ts`, that is outside this part.
