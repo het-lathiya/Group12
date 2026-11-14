@@ -312,7 +312,100 @@ Summary: 10 merged; **0 with an approval**; 10 with all six checks green on the 
 
 ## SG-4 end of week 4: core reliability (blueprint Gate 3, IMP-499)
 
-Status: not run
+Status: **pass with listed gaps**
+
+- Run: RUN-064 (decision-record, Nidhi; IMP-499 whole-task, Kirtan), 14 November 2026. Index: [sprint-4.md](sprint-4.md). Checkpoint: [cut-list-checkpoint.md](../decisions/cut-list-checkpoint.md).
+- Gate commit: `ec6973a` (`main` at preflight, as expected), with only this run's two documentation commits on top, on branch `feat/IMP-499-sg4-gate`. No `.env` file was read, and no staging URL, AWS or Gemini call was made in this run. The staging evidence below is the operator's, quoted as given.
+- Scope of this result: criteria 1 to 3 are shown on the local stack in CI and by API tests. On AWS staging, only the deploy, `/health`, the draft check and a configuration-error run are shown (operator). The card's staging steps (journey, timeout fallback demo, edit totals, `make smoke`) wait for the staging window of Wednesday 18 November 2026 (IMD-137). So the result is "pass with listed gaps", with every staging item an open item with an owner and a date.
+- Sprint 4 cards: all 25 parts on 15 cards (IMP-401 to IMP-414 and IMP-318) are merged. None is blocked or cut. The Ahmedabad half of FR-036 AC3 (IMP-402) is open ([sprint-4.md](sprint-4.md)).
+- Team decisions of 12–13 November 2026 are recorded as IMD-159 to IMD-166, and IMD-148 is confirmed (RUN-064 decision-record).
+- Cut-list checkpoint: **C cannot be computed from the repository** (no per-story point values). No cut is applied, and `FEATURES_DISABLED` is unchanged. Proposed decision PD-IMP-499-1; supervisor to confirm.
+
+### Staging evidence (operator, quoted as given)
+
+- Deploy staging [43440282256](https://github.com/het-lathiya/Group12/actions/runs/43440282256) green on `ec6973a`. `/health` on 13 Nov 20:39 IST: `{"status":"ok","version":"ec6973ad25d7…","environment":"staging","provider":"GEMINI"}`.
+- Draft check on staging, 13 Nov 2026: step-1-only trip "abc" (Ahmedabad) shown under Drafts with Continue draft; Continue draft resumed at step 2 with step 1 filled (operator).
+- Timing run on staging, 13 Nov 20:39 IST: 10 of 10 AI generations ended status `failed` / failure_reason `config_error`, retrieval_mode `lexical_fallback`; no plan written. This shows the configuration-error path (IMD-44) on staging. **It is not a fallback-plan demonstration and gives no NFR-050 value.**
+
+### Criteria
+
+| # | Criterion (card IMP-499) | Result | Evidence |
+| --- | --- | --- | --- |
+| 1 | Sign-up to a saved, edited itinerary passes on staging (TC-369, IMP-414 evidence) | pass on the local stack in CI; not verifiable on staging | [E2E 43431854989](https://github.com/het-lathiya/Group12/actions/runs/43431854989) on `f741fd6`: `4 passed (36.7s)` at four widths with sign-up, generation (MOCK), removal with toast and focus, retime, reload and Open latest ([IMP-414 journey-staging](parts/IMP-414-journey-staging.md), [journey report](../test-reports/journey-sprint4.md)). The journey also passed on `main` at the gate commit: [E2E 43439545599](https://github.com/het-lathiya/Group12/actions/runs/43439545599) (push) and [E2E 43537426722](https://github.com/het-lathiya/Group12/actions/runs/43537426722) (nightly). TC-370 on staging, with MOCK and with Gemini: open item |
+| 2 | A provider failure produces a labelled fallback plan (TC-148, IMP-403 evidence) | pass by API tests; not verifiable on staging | This run: `make test-api ARGS='-k generation_failures'` → `30 passed, 395 deselected, 1 warning in 8.99s` (TC-148 timeout, rate limit, unavailable and invalid JSON fall back; TC-308 outage leaves the trip unchanged; TC-307, TC-149, TC-150). Part record: [IMP-403 failure-outcomes](parts/IMP-403-failure-outcomes.md) (`30 passed, 374 deselected`). Labelled notice: [IMP-403 fallback-notice](parts/IMP-403-fallback-notice.md), wording per IMD-154 ([RUN-059 fallback-wording](parts/RUN-059-fallback-wording.md)). The staging `MOCK_PROVIDER_SCENARIO=timeout` demo (IMD-33) with a screenshot: open item. The staging config_error run shows IMD-44 only |
+| 3 | Edits recalculate in one transaction (IMP-407 evidence) | pass by API tests; not verifiable on staging | [IMP-407 whole-task](parts/IMP-407-whole-task.md): TC-206 (every edit returns recalculated totals equal to API-24), TC-207 and TC-312 (a fault in validate, insert_warnings or insert_version rolls back and nothing is written), stale 409 and active-generation 409. Remove, retime and move routes: [IMP-408 remove-retime-ops](parts/IMP-408-remove-retime-ops.md) (TC-200, TC-204), [IMP-409 move-op](parts/IMP-409-move-op.md) (TC-199). All are part of `make test-api` (`425 passed`) in this run's `make check`. Edit totals on staging: open item. The itinerary page shows no totals until IMP-507 (note) |
+| 4 | `make check` and the e2e job are green on `main` at the gate commit | pass | [CI 43439545525](https://github.com/het-lathiya/Group12/actions/runs/43439545525) success, [E2E 43439545599](https://github.com/het-lathiya/Group12/actions/runs/43439545599) and [43537426722](https://github.com/het-lathiya/Group12/actions/runs/43537426722) success, [Deploy staging 43440282256](https://github.com/het-lathiya/Group12/actions/runs/43440282256) success, all on `ec6973a`. Local `make check` in this run: exit 0 (table below) |
+| 5 | The checkpoint decision with its arithmetic is recorded; any cut is applied by flag, not by deleting code | pass with a gap | [cut-list-checkpoint.md](../decisions/cut-list-checkpoint.md) records the rule, the search, why C cannot be computed (no per-story points; card points total 244, not the planned 203), the stories not complete, the bound (no cut unless they exceed 23 of 203 points), and PD-IMP-499-1. No cut, so no flag change and no code deleted. Gap: the decision waits for the supervisor's confirmation |
+
+Card tests: `make e2e ARGS='journey'` in CI (row 1; not run locally, since this machine has no Docker); `make test-api ARGS='-k generation_failures'` (row 2, this run); `make smoke URL=<staging api url>` **not run** (no staging call in this run; open item).
+
+### Checks of this run (`ec6973a` plus the decision-record commit)
+
+The API suites ran against a throwaway local PostgreSQL 16.2 with pgvector (pip `pgserver`, port 55432), which was stopped afterwards.
+
+| Command | Exit | Last line |
+| --- | --- | --- |
+| `make lint` | 0 | `All matched files use Prettier code style!` |
+| `make test-api ARGS='-k generation_failures'` | 0 | `30 passed, 395 deselected, 1 warning in 8.99s` |
+| `make check` | 0 | `      Tests  190 passed (190)` |
+
+`make check` parts: ruff `All checks passed!`; ESLint `✖ 1 problem (0 errors, 1 warning)` (a warning from before this run); Prettier `All matched files use Prettier code style!`; mypy `Success: no issues found in 118 source files`; import-linter `Contracts: 6 kept, 0 broken.`; openapi-check `contracts/ and apps/web/lib/api/schema.d.ts are up to date`; unit `1040 passed, 1 warning in 16.79s`; contract `87 passed, 2 deselected, 1 warning in 13.46s`; api `425 passed, 1 warning in 112.14s (0:01:52)`; authz `41 passed in 17.82s`; web `Test Files  26 passed (26)`, `Tests  190 passed (190)`.
+
+### Working-agreement audit (IMD-68)
+
+Pull requests #259 to #273 merged in Sprint 4, from `gh pr view <n> --json reviewDecision,reviews,mergedBy,statusCheckRollup`. All were merged by the operator account `het-lathiya`.
+
+| PR | Title | reviewDecision | Approving reviewer | Checks green on merged head | Meets the agreement |
+| --- | --- | --- | --- | --- | --- |
+| #259 | IMP-404 · IMP-413 · validator rules and evaluation harness | none | none | yes (6/6) | **no**: no approval |
+| #260 | IMP-410 · IMP-411 · IMP-412 · drafts, budget inputs and screen states | none | none | yes (6/6) | **no**: no approval |
+| #261 | IMP-401 · IMP-402 · IMP-406 · retries, fallback planner, samples and must-visit | none | none | yes (6/6) | **no**: no approval |
+| #267 | IMP-403 · IMP-405 · IMP-407 · failure outcomes, warnings and edit core | none | none | yes (6/6) | **no**: no approval |
+| #268 | IMP-408 · IMP-409 · remove, retime and move edits | none | none | yes (6/6) | **no**: no approval |
+| #269 | RUN-059 · decision record IMD-137..155 and SG-3 fixes | none | none | yes (6/6) | **no**: no approval |
+| #270 | IMP-402 · sample-itineraries part | none | none | yes (6/6) | **no**: no approval |
+| #271 | IMP-318 · whole task | none | none | yes (6/6) | **no**: no approval |
+| #272 | IMP-414 · journey test, fixtures and staging job | none | none | yes (6/6 on the last run; an earlier run of six was cancelled) | **no**: no approval |
+| #273 | IMP-410 · dashboard New trip fix | none | none | yes (6/6) | **no**: no approval |
+
+Summary: 10 merged; **0 with an approval**; 10 with all six checks green on the merged head. As at SG-3, no merged pull request meets the working agreement in full. Nothing was changed on these pull requests.
+
+### Gaps and open defects
+
+- Every staging step of the card (journey, timeout fallback demo, edit totals, `make smoke`) is not shown. On staging, Gemini generations end in `config_error` (operator's run of 13 November 2026), so no Gemini plan exists on staging yet.
+- The card's evidence "journey recording" is not attached; the CI run above is the journey evidence.
+- C is not computed (checkpoint record); PD-IMP-499-1 waits for the supervisor.
+- Working agreement not met by any merged pull request (audit above).
+- No severity 1 or 2 defect is open in the gate's scope. The one found in Sprint 4 (removal toast and focus, IMP-408) was fixed in RUN-063b and is covered by the journey.
+
+### Open items
+
+| Item | Owner | Due |
+| --- | --- | --- |
+| TC-370 journey on staging, with MOCK and with Gemini (fresh staging account, IMD-163, IMD-164) | Kirtan, Het | Wed 18 November 2026 |
+| `MOCK_PROVIDER_SCENARIO=timeout` fallback on staging, with screenshot (IMD-33) | Kirtan | Wed 18 November 2026 |
+| Edit an item on staging and confirm the totals change in one response | Kirtan | Wed 18 November 2026 |
+| Gemini `config_error` on staging: compare the key in SSM with the working local key (`make live-smoke` passed locally on 13 November), then redeploy | Kirtan, Het | Wed 18 November 2026 |
+| Staging RAG index line (including the per-minute limit finding of SG-3 row 6) | Kirtan | Wed 18 November 2026 |
+| ACC-19 on staging | Het | Wed 18 November 2026 |
+| NFR-050 p95 over 10 staging generations | Het | Wed 18 November 2026 |
+| `make smoke` against staging, TC-433 to TC-435, Supabase redirect URLs, IMD-139 alarm output, staging stop/start log | Kirtan | Wed 18 November 2026 |
+| Carried from SG-3: TC-438 forced failure, CORS on staging, IMP-216 staging walk-through, IMP-206 staging load | Kirtan | Wed 18 November 2026 |
+| IMP-114 interviews (US-151), PR #201 | Junaid, Krrish | Thu 19 November 2026 |
+| Ahmedabad saved samples (FR-036 AC3), waiting for two trip inputs | Jeel | no date set |
+| TC-384 error-catalogue checklist | Krrish | no date set |
+| Screenshots on the local stack of the #260, #261, #267 and #268 screens | Manasvi, Krrish | no date set |
+| Idle-machine `make test-web` ×10 | operator | no date set |
+| IMD-159 code fix: domain wording for a malformed `Money.currency` | Kirtan | no date set |
+| `infra/aws/02_rds.sh`, `04_ssm.sh`, `06_services.sh`: replace `--cli-input-json file:///dev/stdin` with a file | Kirtan | before the next run of those scripts |
+| Focus-fallback test (previous card, then day heading, after a removal) | Krrish | IMP-513 |
+| Totals not shown on the itinerary page until IMP-507 | note only | IMP-507 |
+| PD-IMP-499-1 confirmation (no cut at SG-4) | Supervisor, Kirtan | no date set |
+| Carried from SG-3: IMP-113 remaining facts (Gemini tier, ORS key and allowance, e-mail sender, AWS plan); `docs/decisions/accounts.md` still says "outcome pending" | Nidhi, Junaid, Kirtan | no date set |
+| Carried from SG-3: IMD-120 data checks (Malhar plan, Junaid 20 percent sample, Jeel and Malhar 60 rows); no record on `main` shows them done | Malhar, Junaid, Jeel | no date set |
+| Carried from SG-3: TC-334 coverage, report-only step in CI since RUN-059; thresholds still proposed | Kirtan | no date set |
+
+Closed since SG-3: AWS staging set-up and first deploy (Deploy staging green, `/health` above); TC-436 (IMD-138); local guide JWKS mode and `pytest-cov` in CI (RUN-059 devops-bundle); axe in Playwright (`apps/web/e2e/axe.ts`, used by the journey); D3 fix IMD-126 (RUN-057); D4 fix IMD-127 and the unknown-destination case IMD-166 (RUN-059 destination-404); D12 fix IMD-135 (`e3a4184`); F-1 `Money.currency` pattern and `user_hash` (RUN-059 devops-bundle); ES256 token test (RUN-059 token-leeway).
 
 ## SG-5 end of week 5: trip management (IMP-599)
 
