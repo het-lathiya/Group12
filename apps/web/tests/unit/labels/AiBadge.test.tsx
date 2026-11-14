@@ -51,7 +51,7 @@ describe("AiBadge", () => {
 
     expect(within(noteLine()).getByText("AI-written")).toBeInTheDocument();
     expect(within(noteLine()).queryByText("Curated")).not.toBeInTheDocument();
-    expect(screen.getByText("Curated")).toBeInTheDocument();
+    expect(screen.getAllByText("Curated")).toHaveLength(2);
     expect(screen.getAllByText("AI-written")).toHaveLength(1);
   });
 

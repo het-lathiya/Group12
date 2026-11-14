@@ -41,7 +41,7 @@ describe("ItineraryItemCard", () => {
       />,
     );
     expect(screen.getByText("GBP 10.00–25.50")).toBeInTheDocument();
-    expect(screen.getByText("Curated")).toBeInTheDocument();
+    expect(screen.getAllByText("Curated")).toHaveLength(2);
 
     rerender(
       <ItineraryItemCard

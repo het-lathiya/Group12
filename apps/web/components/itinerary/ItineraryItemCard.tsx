@@ -133,6 +133,9 @@ export function ItineraryItemCard({
               {SLOT_LABELS[item.slot_type]}
             </span>
           </p>
+          <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+            Hours <SourceBadge label={item.place.hours_label} kind="hours" />
+          </p>
           {item.note && (
             <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-card-foreground">
               {/* FR-035: the label comes first, so the reader knows before reading the text. */}
