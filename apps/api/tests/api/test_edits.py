@@ -1141,9 +1141,9 @@ async def test_add_place_route_refuses_an_active_generation_and_another_users_tr
     jobs_queue: Queue,
 ) -> None:
     trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
-    newcomer = await unplanned_place(db_session, trip_id)
+    newcomer = (await unplanned_place(db_session, trip_id)).id  # state() expires loaded rows
     before = await state(db_session, trip_id)
-    body = {"plan_revision": before["revision"], "day_number": 1, "place_id": str(newcomer.id)}
+    body = {"plan_revision": before["revision"], "day_number": 1, "place_id": str(newcomer)}
     other = AuthUser(user_id=uuid.uuid4(), email="other@example.test")
     await insert_auth_user(db_session, other.user_id)
 

@@ -37,16 +37,30 @@ Python tools were run from the worktree's `apps/api` with `PYTHONPATH=.` (and `a
 | `pytest -q --collect-only tests/api/test_edits.py -k "add_place or stale"` | `11/37 tests collected (26 deselected) in 0.03s` |
 | `python -m app.openapi_export` diffed with `contracts/` | no difference |
 
-Not run: `make test-api ARGS='-k "add_place or stale"'` and `make test-authz` (no PostgreSQL in this run, as the run prompt says). Deferred to integration.
+### Integration fix (RUN-068, after the lead's run)
+
+The lead's run against PostgreSQL found `test_add_place_route_refuses_an_active_generation_and_another_users_trip` failing with `MissingGreenlet`. Root cause: a test bug, not the route. The test read `newcomer.id` after `state()`, which calls `expire_all()`, so the attribute access lazy-loaded the `places` row outside the async context. The test now keeps the place's ID before `state()`, as the other tests do. The product code is unchanged.
+
+With `TEST_DATABASE_URL` pointing at the lead's PostgreSQL 16 + pgvector (database `travel_test_504`):
+
+| Command | Result |
+| --- | --- |
+| `pytest -q tests/api/test_edits.py -k "add_place or stale"` | `13 passed, 32 deselected in 6.67s` |
+| `pytest -q tests/api/test_edits.py` | `45 passed in 23.63s` |
+| `pytest -q tests/authz` | `47 passed in 21.91s` |
+| `pytest -q tests/api/test_itinerary.py` | `23 passed in 14.61s` |
+| `pytest -q tests/api/test_edits.py tests/authz tests/api/test_itinerary.py` | `115 passed in 58.71s` |
+| `ruff check app tests` / `ruff format --check app tests` | `All checks passed!` / `205 files already formatted` |
+| `mypy app` / `lint-imports` | `Success: no issues found in 118 source files` / `Contracts: 6 kept, 0 broken.` |
 
 ## Acceptance criteria
 
 | Criterion | Status | How |
 | --- | --- | --- |
-| FR-062 AC1 / TC-202: inserted at a feasible time, day revalidated | not verified (deferred to integration) | `test_tc_202_add_place_route_inserts_at_a_feasible_time_and_revalidates` written and collected |
-| FR-062 AC2 / TC-203: conflict reported and addition kept | not verified (deferred to integration) | `test_tc_203_add_place_route_keeps_a_conflicting_addition_and_reports_it`; undo (cancel) is Malhar's step 6 |
-| FR-069 AC1 / TC-217: second tab gets 409 STALE_PLAN, rows identical | not verified (deferred to integration) | `test_tc_217_stale_edit_from_a_second_client_is_refused_and_rows_stay_identical` |
-| Day 0 or num_days+1 returns 422 INVALID_EDIT | not verified; num_days+1 returns INVALID_EDIT, day 0 returns 422 VALIDATION_ERROR | `test_add_place_route_refuses_a_day_outside_the_trip_or_an_unknown_place`; see PD-IMP-504-2 |
+| FR-062 AC1 / TC-202: inserted at a feasible time, day revalidated | verified (integration fix run) | `test_tc_202_add_place_route_inserts_at_a_feasible_time_and_revalidates` written and collected |
+| FR-062 AC2 / TC-203: conflict reported and addition kept | verified (integration fix run) | `test_tc_203_add_place_route_keeps_a_conflicting_addition_and_reports_it`; undo (cancel) is Malhar's step 6 |
+| FR-069 AC1 / TC-217: second tab gets 409 STALE_PLAN, rows identical | verified (integration fix run) | `test_tc_217_stale_edit_from_a_second_client_is_refused_and_rows_stay_identical` |
+| Day 0 or num_days+1 returns 422 INVALID_EDIT | not verified as written: num_days+1 gives INVALID_EDIT (passing), day 0 gives 422 VALIDATION_ERROR (passing) | `test_add_place_route_refuses_a_day_outside_the_trip_or_an_unknown_place`; see PD-IMP-504-2 |
 | The page never computes times or totals | not applicable to this part | Malhar's screen part |
 
 ## Blockers
