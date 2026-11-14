@@ -21,6 +21,8 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 # GEMINI_TIMEOUT_S x (GEMINI_MAX_RETRIES + 1) must fit the 70 s generation allowance (§8.4).
 GEMINI_TIME_ALLOWANCE_S = 70
+# §8.13, §8.14 step 10: the one repair call's own allowance, a single attempt.
+REPAIR_TIME_ALLOWANCE_S = 25
 # A1 §6.5: the embedding models the adapter knows the prefix or task-type rule of.
 GEMINI_EMBEDDING_MODELS = ("gemini-embedding-2", "gemini-embedding-001")
 

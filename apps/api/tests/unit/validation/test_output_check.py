@@ -241,7 +241,7 @@ def test_a_place_gone_inactive_during_the_call_is_rejected(
 
     journal.run(MockProvider("ok", app_env="test"))
 
-    assert journal.fell_back("invalid_output")
+    assert journal.completed["outcome"] == "model_repaired"  # dropped by step 8 (IMP-502)
     assert journal.completed["validation_summary"]["invalid_ids"] == 1
     assert THALI not in journal.saved_ids()
 
@@ -349,7 +349,7 @@ def test_output_check_imd_126_the_pipeline_saves_the_answer_without_the_outside_
 
     journal.run(Answers("ok", app_env="test"))
 
-    assert journal.completed["outcome"] == "model"
+    assert journal.completed["outcome"] == "model_repaired"  # the drop is a repair (IMP-502)
     assert journal.saved_ids() == {FORT}
     recorded = journal.completed["validation_summary"]
     assert (recorded["errors"], recorded["rejected_items"]) == (1, 1)

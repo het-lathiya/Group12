@@ -91,6 +91,9 @@ class Journal:
         async def mark_validating(session: object, generation_id: UUID) -> None:
             self.steps.append("validating")
 
+        async def mark_repairing(session: object, generation_id: UUID) -> None:
+            self.steps.append("repairing")
+
         async def save(session: object, *args: Any, **kwargs: Any) -> None:
             self.steps.append("save")
             self.saved = args[2]
@@ -126,6 +129,7 @@ class Journal:
         monkeypatch.setattr(repository, "record_settings", record_settings)
         monkeypatch.setattr(repository, "record_retrieval", record_retrieval)
         monkeypatch.setattr(repository, "mark_validating", mark_validating)
+        monkeypatch.setattr(repository, "mark_repairing", mark_repairing)
         monkeypatch.setattr(repository, "complete", complete)
         monkeypatch.setattr(repository, "fail", fail)
 

@@ -94,7 +94,7 @@ def test_tc_028_an_invented_place_is_rejected_whatever_the_note_says(
 
     journal.run(Obeys(with_invented_place()))
 
-    assert journal.fell_back("invalid_output")  # IMP-402: the rule-based plan, not the answer
+    assert journal.completed["outcome"] == "model_repaired"  # step 8 drops it (IMP-502)
     assert journal.completed["validation_summary"]["invalid_ids"] == 1
     assert INVENTED not in journal.saved_ids()
 
@@ -236,7 +236,7 @@ def test_injection_tc_454_a_place_a_passage_asked_for_is_still_rejected(
 
     journal.run(Obeys(with_invented_place()))
 
-    assert journal.fell_back("invalid_output")  # IMP-402: the rule-based plan, not the answer
+    assert journal.completed["outcome"] == "model_repaired"  # step 8 drops it (IMP-502)
     assert journal.completed["validation_summary"]["invalid_ids"] == 1
     assert INVENTED not in journal.saved_ids()
 
