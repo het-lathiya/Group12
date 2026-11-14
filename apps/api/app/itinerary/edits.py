@@ -20,7 +20,7 @@ for API-26 and API-27).
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import time
+from datetime import time, timedelta
 from typing import Any, Final
 from uuid import UUID, uuid4
 
@@ -36,7 +36,7 @@ from app.core.errors import (
 )
 from app.db.models import ItineraryDay, ItineraryItem, Place
 from app.itinerary import repository, service
-from app.itinerary.schemas import EditResultOut, ItemPatchIn
+from app.itinerary.schemas import EditResultOut, ItemAddIn, ItemPatchIn
 from app.places import repository as places_repository
 from app.routing.cache import RouteCacheRepository
 from app.routing.client import get_client
@@ -115,11 +115,6 @@ class Plan:
                     return day_number, item
         raise InvalidEdit("This item is not in the plan.")
 
-    def day(self, day_number: int) -> list[ItineraryItem]:
-        if day_number not in self.items:
-            raise InvalidEdit(f"Day {day_number} is not in the plan.")
-        return self.items[day_number]
-
 
 async def apply_edit(
     session: AsyncSession, user_id: UUID, trip_id: UUID, base_revision: int, op: EditOperation
@@ -151,6 +146,7 @@ async def apply_edit(
 
     await _apply(session, plan, op)
     await _recalculate(session, user_id, plan)
+    day_rows = [plan.days[number] for number in sorted(plan.days)]  # with any day row just added
 
     rows = await repository.plan_items(session, trip_id)
     planned = service.planned_days(day_rows, rows)
@@ -223,6 +219,35 @@ async def remove_item(
     return await apply_edit(session, user_id, trip_id, plan_revision, Remove(item_id))
 
 
+async def add_item(
+    session: AsyncSession, user_id: UUID, trip_id: UUID, body: ItemAddIn
+) -> EditResultOut:
+    """API-25 (FR-062): without start_time the place follows the previous item (previous end +
+    travel + buffer); conflicts it causes are saved and returned as findings."""
+    start = None if body.start_time is None else time.fromisoformat(body.start_time)
+    op = Add(body.day_number, body.place_id, body.position, start, body.duration_min)
+    return await apply_edit(session, user_id, trip_id, body.plan_revision, op)
+
+
+async def _day(session: AsyncSession, plan: Plan, day_number: int) -> list[ItineraryItem]:
+    """The items of a trip day. IMD-152 (PD-IMP-407-2): the save writes only days with items, so a
+    trip day without a row gets one on its first add or move; a day outside the trip is refused."""
+    if day_number not in plan.items:
+        if not 1 <= day_number <= plan.trip.num_days:
+            raise InvalidEdit(f"Day {day_number} is not in the trip.")
+        day = ItineraryDay(
+            id=uuid4(),
+            trip_id=plan.trip.id,
+            day_number=day_number,
+            plan_date=plan.trip.start_date + timedelta(days=day_number - 1),
+            theme=None,
+        )
+        session.add(day)
+        await session.flush()  # before any item points at it
+        plan.days[day_number], plan.items[day_number] = day, []
+    return plan.items[day_number]
+
+
 async def _active_place(session: AsyncSession, trip: TripOut, place_id: UUID) -> Place:
     rows = await places_repository.active_places_by_ids(session, trip.destination_id, [place_id])
     if not rows:
@@ -249,7 +274,7 @@ async def _apply(session: AsyncSession, plan: Plan, op: EditOperation) -> None:
         case Move(item_id, day_number, position):
             source, item = plan.find(item_id)
             _unlocked(item)
-            target = plan.day(day_number)
+            target = await _day(session, plan, day_number)
             plan.items[source].remove(item)
             position = len(target) + 1 if position is None else position
             if not 1 <= position <= len(target) + 1:
@@ -276,7 +301,9 @@ async def _apply(session: AsyncSession, plan: Plan, op: EditOperation) -> None:
             await session.delete(item)
             plan.changed.add(day_number)
         case Add(day_number, place_id, position, start_time, duration_min):
-            target = plan.day(day_number)
+            target = await _day(session, plan, day_number)
+            if position is None and start_time is not None:  # a chosen time keeps the day in order
+                position = 1 + sum(other.start_time <= start_time for other in target)
             position = len(target) + 1 if position is None else position
             if not 1 <= position <= len(target) + 1:
                 raise InvalidEdit(f"Position {position} is outside day {day_number}.")
