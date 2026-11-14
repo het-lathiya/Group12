@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.budget import repository as budget_repository
 from app.core.errors import Conflict, NotFound, ValidationFailed
+from app.db.models import Trip
 from app.places import service as places_service
 from app.schemas.common import ErrorDetail, Money, Page
 from app.trips import domain, preference_mapping, repository
@@ -31,11 +32,6 @@ from app.trips.schemas import (
     TripStatus,
 )
 
-# API-11: changing any of these while an itinerary exists marks the plan stale (FR-011).
-PLAN_FIELDS = frozenset(
-    {"destination_id", "start_date", "end_date", "adults", "children", "group_needs", "budget"}
-)
-
 
 def _to_draft(body: TripIn) -> domain.TripDraft:
     return domain.TripDraft(
@@ -48,6 +44,20 @@ def _to_draft(body: TripIn) -> domain.TripDraft:
         group_needs=[need.value for need in body.group_needs],
         budget_amount=body.budget.amount if body.budget else None,
         budget_currency=body.budget.currency if body.budget else None,
+    )
+
+
+def _stored_draft(trip: Trip) -> domain.TripDraft:
+    return domain.TripDraft(
+        title=trip.title,
+        destination_id=trip.destination_id,
+        start_date=trip.start_date,
+        end_date=trip.end_date,
+        adults=trip.adults,
+        children=trip.children,
+        group_needs=list(trip.group_needs),
+        budget_amount=trip.budget_amount,
+        budget_currency=trip.budget_currency,
     )
 
 
@@ -178,7 +188,9 @@ async def update_trip(
             "budget_amount": draft.budget_amount,
             "budget_currency": draft.budget_currency,
         }
-        if row.has_itinerary and changes & PLAN_FIELDS:
+        # FR-011: dates, travellers, budget or destination changed; items outside new dates are
+        # left for the validator to report as OUTSIDE_TRIP_DATES.
+        if row.has_itinerary and domain.plan_affected(_stored_draft(trip), draft):
             values["plan_stale"] = True
     if body.status == TripStatus.ARCHIVED:
         values["status"] = "archived"
@@ -262,21 +274,28 @@ async def save_preferences(
     if errors:
         raise ValidationFailed(details=errors)
 
-    await repository.upsert_preferences(
-        session,
-        trip_id,
-        {
-            "interests": [interest.value for interest in body.interests],
-            "pace": body.pace.value,
-            "budget_priority": body.budget_priority.value,
-            "transport_pref": body.transport_pref.value,
-            "accommodation_type": body.accommodation_type.value,
-            "step_free_required": body.step_free_required,
-            "notes": body.notes,
-        },
+    values = {
+        "interests": [interest.value for interest in body.interests],
+        "pace": body.pace.value,
+        "budget_priority": body.budget_priority.value,
+        "transport_pref": body.transport_pref.value,
+        "accommodation_type": body.accommodation_type.value,
+        "step_free_required": body.step_free_required,
+        "notes": body.notes,
+    }
+    stored = await repository.get_preferences(session, trip_id)
+    # FR-011: only a real change flags the plan; the edit page resending the same values does not.
+    changed = (
+        stored is None
+        or any(getattr(stored, name) != value for name, value in values.items())
+        or set(await repository.must_visit_place_ids(session, trip_id)) != set(wanted)
     )
+    await repository.upsert_preferences(session, trip_id, values)
     await repository.replace_must_visit(session, trip_id, wanted)
     await repository.mark_preferences_saved(
-        session, trip_id, make_ready=trip.status == "draft", make_stale=row.has_itinerary
+        session,
+        trip_id,
+        make_ready=trip.status == "draft",
+        make_stale=row.has_itinerary and changed,
     )
     return await get_preferences(session, user_id, trip_id)
