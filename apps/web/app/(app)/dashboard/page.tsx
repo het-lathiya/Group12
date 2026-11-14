@@ -45,6 +45,8 @@ export default function DashboardPage() {
             variant={latestTripId ? "default" : "outline"}
             onClick={openLatest}
             disabled={latest.isPending}
+            // Not transition-all: the opacity fade after re-enabling left the label below 4.5:1 for a frame.
+            className="transition-colors"
           >
             Open latest
           </Button>

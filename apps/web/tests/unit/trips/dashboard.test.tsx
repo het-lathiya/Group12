@@ -81,6 +81,9 @@ describe("dashboard (FR-013, FR-014)", () => {
     const user = renderDashboard();
     const open = await screen.findByRole("button", { name: "Open latest" });
     await vi.waitFor(() => expect(open).toBeEnabled());
+    // NFR-025: no opacity fade on re-enable, or axe can read a half-faded label (3.33:1).
+    expect(open).toHaveClass("transition-colors");
+    expect(open).not.toHaveClass("transition-all");
 
     await user.click(open);
 

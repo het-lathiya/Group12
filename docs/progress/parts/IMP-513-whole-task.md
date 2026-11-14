@@ -104,3 +104,22 @@ Owner: Krrish. Part: PD-RUN-070b-2 (axe-targets). Base commit: aec7caa. File cha
   - `npx prettier --check e2e/axe.ts`: `All matched files use Prettier code style!`
   - `npm run typecheck`: `next typegen && tsc --noEmit` finished with no errors (exit 0)
 - Acceptance: targets logged and attached on every attempt: not verified in CI (code path only; proof pending the lead's E2E dispatch). Threshold unchanged: verified by diff (the `expect` and the serious block are untouched apart from reusing the hoisted `where`).
+
+## RUN-071 contrast
+
+Owner: Krrish. Part: U3 (contrast fix, completes TC-383). Base commit: a106239. Files changed: `apps/web/app/(app)/dashboard/page.tsx`, `apps/web/tests/unit/trips/dashboard.test.tsx` (plus this record).
+
+- Finding (E2E run 43590291645, first attempt, chromium-360, from the axe target log added in PD-RUN-070b-2): rule `color-contrast`, impact serious, page `/dashboard`, target `.border-border`, "insufficient color contrast of 3.33 (foreground #8b8988, background #fafaf9, 14px, normal weight)". The retry scan of the same page passed, and run 43589661503 passed every `/dashboard` scan.
+- Element: the "Open latest" Button in `dashboard/page.tsx`. With no latest itinerary it is the outline variant (`border-border`), the only outline Button on the page. It is `disabled={latest.isPending}`.
+- Cause: the shared Button has `disabled:opacity-50` and `transition-all`. When the latest-itinerary query settles, the button is enabled and its opacity animates 0.5 to 1. axe scanned during that fade. #8b8988 is the 50% blend of the foreground token (#1C1917) over #FAFAF9, and its ratio computes to 3.33, matching the report. It is a transient state, not a token problem.
+- Fix: `className="transition-colors"` on that Button. `cn` (the `cn` package, `apps/web/lib/utils.ts`) drops `transition-all` when `transition-colors` follows (checked by running `cn("... transition-all ... disabled:opacity-50 ...", "transition-colors")`: result has `transition-colors`, no `transition-all`). Opacity now changes at once and colour changes still ease. `components/ui/button.tsx` is not edited. No rule, element or threshold was excluded; the scan and E2E files are untouched.
+- Contrast after: settled label is the foreground token #1C1917 (inherited from `body`) on the background token #FAFAF9, 16.74:1 (WCAG formula, node calculation). AA needs 4.5:1.
+- Test: `tests/unit/trips/dashboard.test.tsx`, TC-088 test now also asserts the enabled "Open latest" button has `transition-colors` and not `transition-all`. Checked to fail with the dashboard change reverted (`Tests  1 failed | 6 passed (7)`) and pass with it.
+- Commands (from `apps/web`):
+  - `npx vitest run tests/unit/trips/dashboard.test.tsx`: `Tests  7 passed (7)`
+  - `npx eslint "app/(app)/dashboard/page.tsx" tests/unit/trips/dashboard.test.tsx`: no output (exit 0)
+  - `npx prettier --check` on the same two files: `All matched files use Prettier code style!`
+  - `npm run typecheck`: `next typegen && tsc --noEmit` finished with no errors
+- Acceptance: TC-383 contrast on `/dashboard`: verified by cause analysis, the computed ratios and the unit assertion; not verified in CI (needs the lead's next E2E run). Threshold unchanged.
+- Open issue (outside this part): the same transient shows on `/trips/new` (run 43590291645, chromium-1280): `color-contrast`, the TripWizard Back button, #797877 on #fcfcfc, 4.29:1 (computes to 4.29), in `apps/web/components/trips/TripWizard.tsx`. It needs the same treatment or the shared fix below.
+- Proposed decision: in a follow-up that owns `components/ui/button.tsx`, replace `transition-all` with colour and shadow transitions (no opacity), so every disabled-to-enabled Button is free of the fade. That would also remove the need for the per-button class added here.
