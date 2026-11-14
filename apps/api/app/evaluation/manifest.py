@@ -1,8 +1,9 @@
-"""Run record of the evaluation harness (§8.17, card step 4; IMP-413).
+"""Run record of the evaluation harness (§8.17; IMP-413, IMP-514).
 
 ``eval/results/<run_id>/run.json`` names what produced the scores: dataset and its hash, provider,
-model, prompt template, schema versions, settings sent, metrics version, git commit and times. It
-never holds a key, a prompt body or a model answer.
+model, prompt template, schema versions, settings sent, metrics, case count, failures, git commit
+and times. It never holds a key, a prompt body or a model answer. ``write`` refuses a record that
+lacks a required field (FR-120, TC-390).
 """
 
 import hashlib
@@ -10,13 +11,37 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from app.schemas.ai import OUTPUT_SCHEMA_VERSION, ModelMetadata
 
 
 class DatasetError(Exception):
     """The dataset cannot be read or does not match its manifest."""
+
+
+class IncompleteRecordError(Exception):
+    """A run record lacks a required field; nothing is written."""
+
+
+# A field is missing when it is absent or null; an empty value ({} settings, [] failures) is valid.
+REQUIRED_FIELDS: Final = (
+    "run_id",
+    "started_at",
+    "git_commit",
+    "dataset_id",
+    "dataset_version",
+    "provider",
+    "model_id",
+    "prompt_template_id",
+    "prompt_version",
+    "input_schema_version",
+    "output_schema_version",
+    "generation_settings",
+    "metrics",
+    "case_count",
+    "failures",
+)
 
 
 def sha256(path: Path) -> str:
@@ -62,6 +87,8 @@ def build(
     started_at: str,
     ended_at: str,
     metrics: dict[str, Any],
+    case_count: int,
+    failures: list[dict[str, Any]],
 ) -> dict[str, Any]:
     return {
         "run_id": run_id,
@@ -84,4 +111,15 @@ def build(
         "started_at": started_at,
         "ended_at": ended_at,
         "metrics": metrics,
+        "case_count": case_count,
+        "failures": failures,
     }
+
+
+def write(path: Path, record: dict[str, Any]) -> None:
+    """Write ``record`` as JSON; IncompleteRecordError, and no file, if a required field is missing."""
+    missing = [name for name in REQUIRED_FIELDS if record.get(name) is None]
+    if missing:
+        raise IncompleteRecordError(f"run record lacks {', '.join(missing)}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")

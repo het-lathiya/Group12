@@ -8,7 +8,8 @@ The provider comes from ``--provider`` on a copy of the settings, so the applica
 (``AI_PROVIDER``) never changes. GEMINI runs are manual and refused without ``GEMINI_API_KEY``.
 
 Writes ``<out>/run.json`` (the record), ``<out>/scores.json`` and ``<out>/raw/<case>_<repeat>.json``.
-Exit codes: 0 done, 1 dataset unreadable or not matching its manifest, 2 provider not available.
+Exit codes: 0 done, 1 dataset unreadable or not matching its manifest, 2 provider not available,
+3 run record incomplete (nothing written; IMP-514). Keys and prompt bodies are never written.
 
 ``--suite retrieval`` (IMP-318, Amendment A1 §6.14) needs a migrated, seeded and indexed database.
 For each labelled query it builds the trip in memory, runs ``rag.service.retrieve`` and the ranking
@@ -592,8 +593,18 @@ def main(argv: list[str] | None = None, settings: Settings | None = None) -> int
         started_at=started.isoformat(),
         ended_at=datetime.now(UTC).isoformat(),
         metrics=metrics.compute(scores),
+        case_count=len(cases),
+        failures=[
+            {"case_id": s["case_id"], "repeat": s["repeat"], "error": s["error"]}
+            for s in scores
+            if s["error"] is not None
+        ],
     )
-    _write(out / "run.json", record)
+    try:
+        manifest.write(out / "run.json", record)  # checked first: an incomplete run writes nothing
+    except manifest.IncompleteRecordError as exc:
+        print(exc, file=sys.stderr)
+        return 3
     _write(out / "scores.json", scores)
     for name, output in raw.items():
         _write(out / "raw" / f"{name}.json", output)
