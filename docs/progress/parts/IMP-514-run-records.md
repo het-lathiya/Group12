@@ -54,3 +54,12 @@ none
 ## Open issues
 
 - `make eval` with the shared virtual environment imports the main checkout unless `PYTHONPATH=.` is set; this is only a local worktree effect, not a CI one.
+
+## RUN-069 fix
+
+- Owner: Manya Rana; base commit: 4c6c693; status: verified.
+- Replaced `eval/results/20261114T055841Z-mock/run.json` with `eval/results/20261114T064139Z-mock/run.json`.
+- After the decision-only part, temporarily checked out detached BASE in the same checkout (no extra branch or worktree), verified a clean tracked tree, and ran `make eval PROVIDER=MOCK DATASET=trips/v1` before any batch code changes. Returned to the batch branch for this commit.
+- Exact result: `evaluation 20261114T064139Z-mock: 45 attempts, written to /home/hetlathiya/Group12/eval/results/20261114T064139Z-mock`.
+- Verified the record git_commit equals the full origin/main commit for BASE 4c6c693; 15 cases, 3 repeats, 45 attempts, no failures. This resolves the rewritten branch SHA reference under IMD-176. The metrics definition hash is that of BASE content, before IMD-169 documentation.
+- TC-287 verified by the complete run record. TC-391 and baseline report not run: BASELINE=no. No new proposed decisions or open issues.
