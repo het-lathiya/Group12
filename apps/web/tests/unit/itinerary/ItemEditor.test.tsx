@@ -269,9 +269,7 @@ describe("ItemEditor", () => {
     expect(
       await screen.findByText("Removed Old Mill Museum (sample)"),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Undo" }),
-    ).not.toBeInTheDocument(); // PD-IMP-408-1
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeInTheDocument(); // IMP-504 enables removal undo (IMD-157)
     await waitFor(() => expect(cached()?.totals).toEqual(SERVER_TOTALS));
   });
 
@@ -345,9 +343,7 @@ describe("ItemEditor", () => {
     expect(
       await screen.findByText("Removed Old Mill Museum (sample)"),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Undo" }),
-    ).not.toBeInTheDocument(); // IMD-157
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeInTheDocument(); // IMP-504 enables removal undo (IMD-157)
     await waitFor(() =>
       expect(document.getElementById(`item-${ITEM_B.id}`)).toHaveFocus(),
     );
