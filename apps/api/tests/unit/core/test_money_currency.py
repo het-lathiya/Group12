@@ -14,3 +14,9 @@ def test_money_accepts_an_iso_4217_code() -> None:
 def test_money_refuses_any_other_currency_format(currency: str) -> None:
     with pytest.raises(ValidationError):
         Money(amount="10.00", currency=currency)
+
+
+def test_imd_159_currency_pattern_error_uses_plain_language() -> None:
+    with pytest.raises(ValidationError) as error:
+        Money(amount="10.00", currency="IN1")
+    assert error.value.errors()[0]["msg"] == "Currency must be a three-letter ISO 4217 code."
