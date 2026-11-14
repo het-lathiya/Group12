@@ -1,27 +1,25 @@
-"""Provider contract suite (§8.19; IMP-110 skeleton: TC-001, TC-158; NFR-043).
+"""Provider contract suite (§8.19; IMP-110, IMP-207, IMP-301, IMP-512; FR-040 AC1-AC3, NFR-043).
 
-Every adapter must pass the same tests. Each entry of ``ADAPTERS`` builds a fresh provider, plus
-one that raises a given shared error. The in-test double stays registered next to the MOCK adapter
-(IMP-207), so the suite keeps checking its own expectations.
-
-Adapters join by adding one entry:
-- IMP-207: ``mock`` (``app.ai.providers.mock.MockProvider``, scenarios and ``raise_error``);
-- IMP-301: ``gemini_recorded`` (the Gemini adapter behind a fake HTTP transport, no network);
-- IMP-512: completes the suite for every adapter (failure scenarios per error type, live marker).
+Every adapter must pass the same tests: the ``adapter`` fixture of conftest.py runs each shared test
+for ``double``, ``mock`` and ``gemini_recorded`` (the Gemini adapter replaying
+provider_recordings/gemini/ with respx). No key and no network: only tests marked ``live`` reach
+Gemini, through make live-smoke. A new adapter joins by adding one entry to conftest.ADAPTERS
+(docs/guides/adding-a-provider.md).
 """
 
+import ast
 import asyncio
 import inspect
 import json
 import math
 import socket
 from collections.abc import Callable
-from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
-from fixtures.ai import SAMPLE_OUTPUT, DoubleProvider, sample_request
+from fixtures.ai import SAMPLE_OUTPUT, sample_request
 
 from app.ai.errors import (
     ProviderAuthError,
@@ -44,13 +42,6 @@ from app.schemas.ai import (
     ModificationRequest,
     ProviderResult,
 )
-
-
-@dataclass(frozen=True)
-class Adapter:
-    build: Callable[[], ModelProvider]
-    failing: Callable[[ProviderError], ModelProvider]
-
 
 USAGE = {
     "total_input_tokens": 120,
@@ -76,42 +67,6 @@ def vendor_error(status: int, code: str, **headers: str) -> httpx.Response:
     return httpx.Response(status, json=body, headers=headers)
 
 
-def gemini(answer: httpx.Response | Exception | None = None) -> GeminiProvider:
-    """GeminiProvider behind a fake transport: nothing leaves the process."""
-    ok = httpx.Response(200, json=interaction(json.dumps(SAMPLE_OUTPUT)))
-
-    def respond(request: httpx.Request) -> httpx.Response:
-        if isinstance(answer, Exception):
-            raise answer
-        return answer or ok
-
-    settings = Settings(gemini_api_key="contract-key-not-real", gemini_model_id="contract-model")
-    client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
-    return GeminiProvider(settings, http_client=client)
-
-
-def gemini_failing(error: ProviderError) -> GeminiProvider:
-    answers: dict[type[ProviderError], httpx.Response | Exception] = {
-        ProviderTimeout: httpx.ReadTimeout("slow"),
-        ProviderRateLimited: vendor_error(429, "rate_limit_exceeded", **{"retry-after": "1"}),
-        ProviderUnavailable: vendor_error(503, "service_unavailable"),
-        ProviderQuotaExhausted: vendor_error(429, "quota_exceeded"),
-        ProviderInvalidOutput: httpx.Response(200, json=interaction("not json")),
-        ProviderAuthError: vendor_error(403, "permission_denied"),
-        ProviderBadRequest: vendor_error(404, "model_not_found"),
-    }
-    return gemini(answers[type(error)])
-
-
-ADAPTERS: dict[str, Adapter] = {
-    "double": Adapter(build=DoubleProvider, failing=lambda error: DoubleProvider(error)),
-    "mock": Adapter(
-        build=lambda: MockProvider("ok", app_env="test"),
-        failing=lambda error: MockProvider("ok", app_env="test", raise_error=error),
-    ),
-    "gemini_recorded": Adapter(build=gemini, failing=gemini_failing),
-}
-
 OPERATIONS = (
     "generate_itinerary",
     "modify_itinerary",
@@ -120,10 +75,10 @@ OPERATIONS = (
     "get_model_metadata",
 )
 
-
-@pytest.fixture(params=sorted(ADAPTERS), ids=str)
-def adapter(request: pytest.FixtureRequest) -> Adapter:
-    return ADAPTERS[request.param]
+# The conftest's Adapter (build, failing) and the gemini fixture's builder; conftest modules are
+# not imported.
+Adapter = Any
+Gemini = Callable[..., GeminiProvider]
 
 
 def test_tc_001_adapter_implements_the_model_provider_interface(adapter: Adapter) -> None:
@@ -215,10 +170,68 @@ def test_modify_itinerary_is_not_enabled_in_the_mvp(adapter: Adapter) -> None:
     ],
     ids=lambda error: type(error).__name__,
 )
-def test_failures_surface_as_the_shared_error_types(adapter: Adapter, error: ProviderError) -> None:
+def test_tc_005_failures_surface_as_the_shared_error_types(
+    adapter: Adapter, error: ProviderError
+) -> None:
     with pytest.raises(type(error)) as raised:
         asyncio.run(adapter.failing(error).generate_itinerary(sample_request()))
     assert raised.value.failure_reason == error.failure_reason
+
+
+async def interface_only_caller(provider: ModelProvider) -> list[str]:
+    """A caller written against ModelProvider only, as the generation service is."""
+    health = await provider.health_check()
+    metadata = provider.get_model_metadata()
+    result = await provider.generate_itinerary(sample_request())
+    output = ItineraryOutput.model_validate(result.output.model_dump())
+    return [health.status, metadata.provider, *output.place_ids()]
+
+
+def test_tc_157_tc_008_the_same_caller_runs_unchanged_on_every_adapter(adapter: Adapter) -> None:
+    provider = adapter.build()
+    request = sample_request()
+    status, name, *place_ids = asyncio.run(interface_only_caller(provider))
+
+    assert status in ("ok", "degraded", "down")
+    assert name == provider.name
+    assert place_ids
+    assert set(place_ids) <= request.shortlist_ids()
+    # A failing provider reaches the same caller as the shared type, never a vendor error.
+    with pytest.raises(ProviderTimeout):
+        asyncio.run(interface_only_caller(adapter.failing(ProviderTimeout())))
+
+
+APP = Path(__file__).resolve().parents[2] / "app"
+CONCRETE_ADAPTERS = (
+    "app.ai.providers.gemini",
+    "app.ai.providers.mock",
+    "app.ai.providers.finetuned",
+)
+
+
+def imported_modules(path: Path) -> set[str]:
+    names: set[str] = set()
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            names.add(node.module)
+            names.update(f"{node.module}.{alias.name}" for alias in node.names)
+    return names
+
+
+def test_tc_156_generation_imports_no_concrete_adapter_or_vendor_sdk() -> None:
+    """FR-040 AC1, card step 3: generation reaches a provider only through factory and base.
+
+    make imports enforces the same rule for every module (.importlinter, TC-002); this test names
+    the generation module so a breach there fails make test-contract too.
+    """
+    files = sorted((APP / "generation").glob("*.py"))
+    assert files
+    for path in files:
+        for name in imported_modules(path):
+            assert not name.startswith(CONCRETE_ADAPTERS), f"{path.name} imports {name}"
+            assert name.split(".")[0] != "google", f"{path.name} imports {name}"
 
 
 def test_tc_162_generate_itinerary_makes_no_network_call(
@@ -254,27 +267,34 @@ def test_tc_163_mock_failure_scenarios_raise_the_shared_error(scenario: MockScen
 
 # ---------- Gemini (IMP-301): TC-003, TC-004, TC-005, and the manual TC-029 ----------
 
+OK_RECORDING = Path(__file__).resolve().parents[1] / "fixtures/provider_recordings/gemini/ok.json"
 
-def test_tc_003_gemini_answers_through_the_interface_with_a_provider_result() -> None:
+
+def test_tc_003_gemini_answers_through_the_interface_with_a_provider_result(
+    gemini: Gemini,
+) -> None:
+    recorded = json.loads(OK_RECORDING.read_text(encoding="utf-8"))["body"]
     provider: ModelProvider = gemini()
     result = asyncio.run(provider.generate_itinerary(sample_request()))
     assert isinstance(result, ProviderResult)
-    assert result.output == ItineraryOutput.model_validate(SAMPLE_OUTPUT)
+    assert result.output.model_dump(mode="json") == json.loads(
+        recorded["steps"][0]["content"][0]["text"]
+    )
     assert result.finish_reason == "completed"
-    assert result.provider_request_id == "sample-interaction"
+    assert result.provider_request_id == recorded["id"]
 
 
-def test_tc_004_gemini_usage_is_mapped() -> None:
+def test_tc_004_gemini_usage_is_mapped(gemini: Gemini) -> None:
     usage = asyncio.run(gemini().generate_itinerary(sample_request())).usage
     assert usage.model_dump() == {
-        "input_tokens": 120,
-        "output_tokens": 40,
-        "thinking_tokens": 10,
-        "total_tokens": 170,
+        "input_tokens": 812,
+        "output_tokens": 146,
+        "thinking_tokens": 37,
+        "total_tokens": 995,
     }
 
 
-def test_tc_004_gemini_usage_stays_null_when_absent() -> None:
+def test_tc_004_gemini_usage_stays_null_when_absent(gemini: Gemini) -> None:
     answer = httpx.Response(200, json=interaction(json.dumps(SAMPLE_OUTPUT), usage=None))
     usage = asyncio.run(gemini(answer).generate_itinerary(sample_request())).usage
     assert set(usage.model_dump().values()) == {None}
@@ -301,7 +321,7 @@ def test_tc_004_gemini_usage_stays_null_when_absent() -> None:
     ids=lambda value: getattr(value, "__name__", None),
 )
 def test_tc_005_gemini_failures_map_to_the_shared_types(
-    answer: httpx.Response | Exception, expected: type[ProviderError]
+    gemini: Gemini, answer: httpx.Response | Exception, expected: type[ProviderError]
 ) -> None:
     with pytest.raises(expected) as raised:
         asyncio.run(gemini(answer).generate_itinerary(sample_request()))
