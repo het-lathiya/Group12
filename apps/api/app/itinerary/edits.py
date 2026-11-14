@@ -27,6 +27,8 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.budget import engine
+from app.budget.schemas import AmountRange
+from app.core.config import get_settings
 from app.core.errors import (
     EndpointNotImplemented,
     GenerationInProgress,
@@ -34,21 +36,35 @@ from app.core.errors import (
     NotFound,
     StalePlan,
 )
+from app.core.flags import is_enabled
 from app.db.models import ItineraryDay, ItineraryItem, Place
+from app.generation import ranking, retrieval
 from app.itinerary import repository, service
-from app.itinerary.schemas import EditResultOut, ItemAddIn, ItemPatchIn
+from app.itinerary.schemas import (
+    Alternative,
+    AlternativesOut,
+    EditResultOut,
+    ItemAddIn,
+    ItemPatchIn,
+    ReplaceIn,
+)
 from app.places import repository as places_repository
+from app.places.schemas import PlaceSummary
 from app.routing.cache import RouteCacheRepository
 from app.routing.client import get_client
-from app.routing.estimate import buffer_minutes
+from app.routing.estimate import buffer_minutes, estimate
 from app.routing.service import RoutingService
+from app.trips import preference_mapping
 from app.trips import service as trips_service
-from app.trips.schemas import TripOut
+from app.trips.schemas import PreferencesOut, TripOut
 from app.validation import validator
 
 DAY_START: Final = time(9, 0)  # §8.6 limits.day_start, for an item added to an empty day
 LAST_MINUTE: Final = 24 * 60 - 1
 FOOD: Final = "food"
+MAX_ALTERNATIVES: Final = 3  # FR-065
+NO_ALTERNATIVE: Final = "No alternative fits"  # FR-065 AC3, §6.6.5 API-28
+LOCKED: Final = "This item is locked; unlock it to replace it."
 
 
 @dataclass(frozen=True)
@@ -89,6 +105,7 @@ class Lock:
 class Replace:
     item_id: UUID
     place_id: UUID
+    ranked: bool = False  # API-29: the place must be one of the item's current alternatives
 
 
 EditOperation = Move | Retime | Remove | Add | Lock | Replace
@@ -98,6 +115,7 @@ EditOperation = Move | Retime | Remove | Add | Lock | Replace
 class Plan:
     """The trip's plan as mutable rows: items per day number, in position order."""
 
+    user_id: UUID
     trip: TripOut
     days: dict[int, ItineraryDay]
     items: dict[int, list[ItineraryItem]]
@@ -131,6 +149,7 @@ async def apply_edit(
         raise NotFound(service.NO_ITINERARY)
     trip = await trips_service.get_trip(session, user_id, trip_id)
     plan = Plan(
+        user_id=user_id,
         trip=trip,
         days={day.day_number: day for day in day_rows},
         items={day.day_number: [] for day in day_rows},
@@ -248,6 +267,140 @@ async def _day(session: AsyncSession, plan: Plan, day_number: int) -> list[Itine
     return plan.items[day_number]
 
 
+def _alternatives_enabled() -> None:
+    if not is_enabled(get_settings(), "alternatives"):
+        raise NotFound()  # IMD-11: a switched-off feature's routes answer 404
+
+
+async def _alternatives(
+    session: AsyncSession,
+    trip: TripOut,
+    prefs: PreferencesOut,
+    item: ItineraryItem,
+    planned: set[UUID],
+) -> list[retrieval.Candidate]:
+    """IMP-505: the best places for the item's slot, by the generation score (§8.9).
+
+    The candidates are the trip's places that pass the IMP-304 hard filters; the context is built
+    from all of them, as generation builds it, and the ranking is lexical (no query text here).
+    Kept: same slot family (a meal takes a food place, an activity any other), not in the plan.
+    """
+    candidates = await retrieval.retrieve_candidates(
+        session, trip, prefs, prefs.must_visit_place_ids
+    )
+    destination = await places_repository.destination_by_id(session, trip.destination_id)
+    if destination is None:
+        raise NotFound()
+    mapped = preference_mapping.map_preferences(
+        preference_mapping.Preferences(
+            interests=[interest.value for interest in prefs.interests],
+            pace=preference_mapping.Pace(prefs.pace),
+            budget_priority=preference_mapping.BudgetPriority(prefs.budget_priority),
+            step_free_required=prefs.step_free_required,
+            must_visit_place_ids=list(prefs.must_visit_place_ids),
+        ),
+        preference_mapping.TripFacts(children=trip.children),
+        semantic=False,
+    )
+    context = ranking.build_context(
+        candidates,
+        mapped,
+        destination,
+        num_days=trip.num_days,
+        meal_slots_per_day=0,  # read only by the shortlist cut, not by the score
+        # shortcut: generation's private helper, so the price part matches; PD-IMP-505-2.
+        activity_budget=await retrieval._trip_activity_budget(session, trip),
+    )
+    meal = item.slot_type == "meal"
+    fitting = (
+        candidate
+        for candidate in candidates
+        if candidate.conflict_note is None  # a must-visit place that fails a filter stays out
+        and candidate.place.id not in planned
+        and (candidate.place.category == FOOD) == meal
+    )
+    return [entry.candidate for entry in ranking.rank(fitting, context)[:MAX_ALTERNATIVES]]
+
+
+def _leg(origin: Place | None, target: Place | None, mode: str) -> int:
+    """Estimated travel minutes between two places (§9.3.5); 0 at either end of the day."""
+    if origin is None or target is None:
+        return 0
+    travel = estimate(
+        float(origin.lat), float(origin.lon), float(target.lat), float(target.lon), mode
+    )
+    return travel.minutes
+
+
+async def alternatives(session: AsyncSession, user_id: UUID, item_id: UUID) -> AlternativesOut:
+    """API-28 (FR-065 AC1, AC3): at most three ranked alternatives with their cost and time
+    differences against the current place; a locked item has none. Reads only."""
+    _alternatives_enabled()
+    trip_id, _ = await _locate(session, user_id, item_id)
+    rows = await repository.plan_items(session, trip_id)
+    item, current = next((i, p) for i, p, _ in rows if i.id == item_id)
+    if item.is_locked:
+        return AlternativesOut(item_id=item_id, alternatives=[], message=LOCKED)
+    trip = await trips_service.get_trip(session, user_id, trip_id)
+    prefs = await trips_service.get_preferences(session, user_id, trip_id)
+    planned = {row.place_id for row, _, _ in rows}
+    day = [place for row, place, _ in rows if row.day_id == item.day_id]
+    index = item.position - 1
+    previous = day[index - 1] if index > 0 else None
+    following = day[index + 1] if index + 1 < len(day) else None
+    mode = prefs.transport_pref.value
+    currency = service.trip_currency(trip)
+
+    def cost(place: Place) -> engine.ItemCost:
+        return engine.item_cost(
+            place, adults=trip.adults, children=trip.children, currency=currency
+        )
+
+    def visit(place: Place) -> int:
+        travel = _leg(previous, place, mode) + _leg(place, following, mode)
+        return place.typical_duration_min + travel
+
+    old = cost(current)
+    wanted = {interest.value for interest in prefs.interests}
+    out = []
+    for candidate in await _alternatives(session, trip, prefs, item, planned):
+        place = candidate.place
+        new = cost(place)
+        known = None not in (new.lo, new.hi, old.lo, old.hi)
+        # shortcut: cost_delta is required by contract v1; an unknown price counts 0 and the
+        # reason says so (PD-IMP-505-3).
+        lo = (new.lo or 0) - (old.lo or 0)
+        hi = (new.hi or 0) - (old.hi or 0)
+        matched = sorted(wanted & {*place.tags, place.category})
+        reason = (
+            f"Matches your interests: {', '.join(matched)}"
+            if matched
+            else f"A {place.category} place that fits this slot"
+        )
+        out.append(
+            Alternative(
+                place=PlaceSummary.from_row(place),
+                cost_delta=AmountRange(min=engine.from_minor(lo), max=engine.from_minor(hi)),
+                time_delta_min=visit(place) - visit(current),
+                reason=reason if known else f"{reason}; price unavailable",
+            )
+        )
+    return AlternativesOut(
+        item_id=item_id, alternatives=out, message=None if out else NO_ALTERNATIVE
+    )
+
+
+async def replace_item(
+    session: AsyncSession, user_id: UUID, item_id: UUID, body: ReplaceIn
+) -> EditResultOut:
+    """API-29 (FR-065 AC2): keep the start time, take the new place's typical duration,
+    recalculate and revalidate. The place must be a current alternative; a locked item is 422."""
+    _alternatives_enabled()
+    trip_id, _ = await _locate(session, user_id, item_id)
+    op = Replace(item_id, body.place_id, ranked=True)
+    return await apply_edit(session, user_id, trip_id, body.plan_revision, op)
+
+
 async def _active_place(session: AsyncSession, trip: TripOut, place_id: UUID) -> Place:
     rows = await places_repository.active_places_by_ids(session, trip.destination_id, [place_id])
     if not rows:
@@ -340,6 +493,12 @@ async def _apply(session: AsyncSession, plan: Plan, op: EditOperation) -> None:
             _unlocked(item)
             if place_id == item.place_id:
                 raise InvalidEdit("This item already visits that place.")
+            if op.ranked:
+                prefs = await trips_service.get_preferences(session, plan.user_id, plan.trip.id)
+                planned = {other.place_id for day in plan.items.values() for other in day}
+                ranked = await _alternatives(session, plan.trip, prefs, item, planned)
+                if place_id not in {candidate.place.id for candidate in ranked}:
+                    raise InvalidEdit("This place is not one of the item's alternatives.")
             place = await _active_place(session, plan.trip, place_id)
             item.place_id = place.id
             item.duration_min = place.typical_duration_min

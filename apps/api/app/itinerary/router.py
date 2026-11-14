@@ -1,9 +1,10 @@
 """Itinerary, edit and version routes API-09, API-24 to API-29 and API-35 to API-38
 (specification §6.6.5; IMD-18, IMD-23).
 
-API-09 and API-24 to API-27 are built (IMP-211, IMP-309, IMP-408, IMP-504). The others are declared
-with their final shapes and answer 501 NOT_IMPLEMENTED until their cards build them (IMD-37): IMP-505
-(API-28, API-29), IMP-609 (API-35), IMP-610 (API-36 to API-38).
+API-09 and API-24 to API-29 are built (IMP-211, IMP-309, IMP-408, IMP-504, IMP-505; API-28 and
+API-29 answer 404 while the 'alternatives' switch is off, IMD-11). The others are declared with their
+final shapes and answer 501 NOT_IMPLEMENTED until their cards build them (IMD-37): IMP-609 (API-35),
+IMP-610 (API-36 to API-38).
 API-30 and API-31 live in generation/router.py and API-32 in validation/router.py (IMD-13).
 """
 
@@ -89,8 +90,10 @@ async def delete_item(
     response_model=AlternativesOut,
     summary="API-28 List alternatives for an item",
 )
-async def list_alternatives(item_id: UUID) -> AlternativesOut:
-    raise EndpointNotImplemented()
+async def list_alternatives(
+    item_id: UUID, user: CurrentUser, session: DbSession
+) -> AlternativesOut:
+    return await edits.alternatives(session, user.user_id, item_id)
 
 
 @router.post(
@@ -98,8 +101,10 @@ async def list_alternatives(item_id: UUID) -> AlternativesOut:
     response_model=EditResultOut,
     summary="API-29 Replace an item with an alternative",
 )
-async def replace_item(item_id: UUID, body: ReplaceIn) -> EditResultOut:
-    raise EndpointNotImplemented()
+async def replace_item(
+    item_id: UUID, body: ReplaceIn, user: CurrentUser, session: DbSession
+) -> EditResultOut:
+    return await edits.replace_item(session, user.user_id, item_id, body)
 
 
 @router.get(
