@@ -2,11 +2,13 @@
 # by name: lint-types, unit, guards, attribution, audit, api. Every job installs with make setup and
 # runs Makefile targets (§4.7); no secret other than GITHUB_TOKEN is used and no provider key exists
 # in pull-request jobs (AI_PROVIDER=MOCK, APP_ENV=test, §4.5).
+# Actions minutes guardrail (IMD-183/IMD-184): a pull-request edit runs only attribution; the other
+# five jobs run for the other PR events and pushes to main. PR titles and bodies are final at creation.
 name: CI
 
 on:
   pull_request:
-    # edited re-runs the checks when the pull-request body changes (the attribution job reads it).
+    # edited re-runs only attribution when the pull-request body changes (the job reads it).
     types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
@@ -27,6 +29,7 @@ env:
 jobs:
   lint-types:
     name: lint-types
+    if: github.event.action != 'edited'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -60,6 +63,7 @@ jobs:
 
   unit:
     name: unit
+    if: github.event.action != 'edited'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -100,6 +104,7 @@ jobs:
 
   guards:
     name: guards
+    if: github.event.action != 'edited'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -159,6 +164,7 @@ jobs:
 
   audit:
     name: audit
+    if: github.event.action != 'edited'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -191,6 +197,7 @@ jobs:
 
   api:
     name: api
+    if: github.event.action != 'edited'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:

@@ -48,3 +48,26 @@
 - Trigger change: `.github/workflows/e2e.yml` no longer runs on `push` to `main` or on the nightly `schedule` (`30 20 * * *`). Only `workflow_dispatch` remains, with its `base_url` input unchanged; E2E is dispatched by hand on a pull request's branch before merge. The header comment says so. The `e2e` and `staging` jobs, their `if:` conditions (`!inputs.base_url` and `inputs.base_url`, neither refers to the push or schedule event), `permissions`, `env` and `concurrency` are unchanged.
 - Command: `apps/api/.venv/bin/python -c "import yaml,sys;d=yaml.safe_load(open('.github/workflows/e2e.yml'));print(list(d[True].keys()) if True in d else list(d['on'].keys()))"`
 - Result: `['workflow_dispatch']`
+
+## RUN-072
+
+- Run id: RUN-072
+- Owner: Kirtan (chaudhari kirtan sandipbhai), 0 points
+- Part: ci-edited
+- Status: implemented; local workflow checks passed; runtime PR-edit acceptance remains not verified
+- Base commit: a72d07a
+- Decisions: IMD-183, IMD-184; related card IMP-102
+- Files changed: `.github/workflows/ci.yml` and this record only.
+
+The `pull_request` trigger keeps `edited` because attribution checks the PR body. The five jobs `lint-types`, `unit`, `guards`, `audit` and `api` each have `if: github.event.action != 'edited'`, so an edit runs only `attribution`. The header documents the Actions minutes guardrail and that PR titles and bodies are final at creation. The six job names, push-to-main trigger, other PR events, concurrency, attribution condition and every step are unchanged.
+
+Commands and exact results:
+
+- `python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/ci.yml'))"`: no output, exit 0.
+- Parsed YAML comparison with the preceding commit, removing only the five new conditions: `CI: five edited-event guards verified; six jobs, triggers, concurrency and steps otherwise unchanged`.
+- `actionlint .github/workflows/ci.yml`: no output, exit 0.
+- `git diff --check`: no output, exit 0.
+
+Acceptance: the YAML and all five conditions are verified locally. "A PR edit runs only attribution" remains **not verified at runtime** until an actual PR edit occurs; none is allowed in this run. No workflow is dispatched for this check. The one final push and one E2E dispatch follow all three parts and local integration checks; their result is recorded in the final pull request. No contract, migration or dependency changed.
+
+Blockers: none. Proposed decisions: none; IMD-184 authorizes this change.
