@@ -69,17 +69,16 @@ describe("WarningsPanel", () => {
   it("groups by severity in the order error, warning, info, then by day", () => {
     render(<WarningsPanel findings={FINDINGS} onGoToItem={vi.fn()} />);
 
-    const groups = screen
-      .getAllByRole("region")
-      .filter((region) =>
-        /^(Error|Warning|Info)s$/.test(region.ariaLabel ?? ""),
-      )
-      .map((region) => region.ariaLabel);
-    expect(groups).toEqual(["Errors", "Warnings", "Infos"]);
+    const panel = screen.getByRole("region", { name: /Plan checks/ });
+    expect(
+      within(panel)
+        .getAllByRole("heading", { level: 3 })
+        .map((h) => h.textContent),
+    ).toEqual(["Errors", "Warnings", "Infos"]);
     const errors = screen.getByRole("region", { name: "Errors" });
     expect(
       within(errors)
-        .getAllByRole("heading", { level: 3 })
+        .getAllByRole("heading", { level: 4 })
         .map((h) => h.textContent),
     ).toEqual(["Whole trip", "Day 2"]);
   });
