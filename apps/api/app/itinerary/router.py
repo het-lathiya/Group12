@@ -10,10 +10,11 @@ API-30 and API-31 live in generation/router.py and API-32 in validation/router.p
 
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from app.auth.deps import CurrentUser, DbSession
 from app.core.errors import EndpointNotImplemented
+from app.core.rate_limit import expensive_request
 from app.itinerary import edits, service
 from app.itinerary.schemas import (
     AlternativesOut,
@@ -55,6 +56,7 @@ async def get_itinerary(
 @router.post(
     "/trips/{trip_id}/itinerary/items",
     response_model=EditResultOut,
+    dependencies=[Depends(expensive_request)],
     summary="API-25 Add a place to a day",
 )
 async def add_item(
@@ -66,6 +68,7 @@ async def add_item(
 @router.patch(
     "/itinerary/items/{item_id}",
     response_model=EditResultOut,
+    dependencies=[Depends(expensive_request)],
     summary="API-26 Move, retime, lock or unlock an item",
 )
 async def update_item(
@@ -77,6 +80,7 @@ async def update_item(
 @router.delete(
     "/itinerary/items/{item_id}",
     response_model=EditResultOut,
+    dependencies=[Depends(expensive_request)],
     summary="API-27 Remove an item",
 )
 async def delete_item(
@@ -88,6 +92,7 @@ async def delete_item(
 @router.get(
     "/itinerary/items/{item_id}/alternatives",
     response_model=AlternativesOut,
+    dependencies=[Depends(expensive_request)],
     summary="API-28 List alternatives for an item",
 )
 async def list_alternatives(
@@ -99,6 +104,7 @@ async def list_alternatives(
 @router.post(
     "/itinerary/items/{item_id}/replace",
     response_model=EditResultOut,
+    dependencies=[Depends(expensive_request)],
     summary="API-29 Replace an item with an alternative",
 )
 async def replace_item(

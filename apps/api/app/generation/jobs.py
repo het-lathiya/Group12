@@ -9,8 +9,9 @@ fires after the plan's commit changes nothing: the row stays completed with its 
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Final
 from uuid import UUID
 
@@ -85,6 +86,7 @@ SubmitDep = Annotated[Submit, Depends(get_submit)]
 
 async def reap_forever() -> None:
     """At start-up and every 60 s: fail active rows older than 150 s (§6.4)."""
+    next_purge = 0.0
     while True:
         try:
             async with transaction() as session:
@@ -93,6 +95,12 @@ async def reap_forever() -> None:
                 )
             if count:
                 logger.warning("reaper failed %d stale generations", count)
+            if time.monotonic() >= next_purge:
+                async with transaction() as session:
+                    purged = await repository.purge_expired(session, datetime.now(UTC))
+                next_purge = time.monotonic() + 86400
+                if purged:
+                    logger.info("purged %d expired generation records", purged)
         except Exception:  # the loop must survive a database outage; the next round retries
             logger.exception("generation reaper round failed")
         await asyncio.sleep(REAPER_INTERVAL_S)

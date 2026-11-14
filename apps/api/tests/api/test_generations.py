@@ -15,7 +15,7 @@ import re
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -1435,3 +1435,93 @@ async def test_tc_143_tc_144_ai_text_and_retrieved_facts_are_separate_columns_an
     )
     assert all(row.note and row.note_origin == "ai" for row in rows)
     assert all(row.cost_label in (None, "curated", "estimate", "unavailable") for row in rows)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", ["user", "global"])
+async def test_quota_tc_171_tc_172_tc_310_refuses_before_insert_and_provider_call(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    submitted: list[Job],
+    monkeypatch: pytest.MonkeyPatch,
+    scope: str,
+) -> None:
+    monkeypatch.setenv("AI_DAILY_GENERATIONS_PER_USER", "1" if scope == "user" else "100")
+    monkeypatch.setenv("AI_DAILY_GENERATIONS_GLOBAL", "1" if scope == "global" else "100")
+    provider = Logged("ok")
+    api_app.dependency_overrides[get_model_provider] = lambda: provider
+    first = await create_trip(api_client, auth_user, sampleton)
+    assert (await start(api_client, auth_user, first)).status_code == 202
+    second = await create_trip(api_client, auth_user, sampleton)
+    count = await db_session.scalar(select(func.count()).select_from(AiGeneration))
+    refused = await start(api_client, auth_user, second)
+    assert refused.status_code == 429, refused.text
+    error = refused.json()["error"]
+    assert error["code"] == "AI_QUOTA_REACHED"
+    assert {d["field"]: d["message"] for d in error["details"]}["scope"] == scope
+    assert int(refused.headers["Retry-After"]) == error["retry_after_s"]
+    assert await db_session.scalar(select(func.count()).select_from(AiGeneration)) == count
+    assert provider.calls == []
+    allowed = await start(api_client, auth_user, second, mode="rule_based")
+    assert allowed.status_code == 202, allowed.text
+    assert allowed.json()["model_id"] == "rule_based_planner_v1"
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_tc_353_does_not_insert_or_submit_again(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+) -> None:
+    api_app.state.settings.rate_limit_per_min = 1
+    assert (await start(api_client, auth_user, trip)).status_code == 202
+    before = await db_session.scalar(select(func.count()).select_from(AiGeneration))
+    refused = await start(api_client, auth_user, trip)
+    assert refused.status_code == 429
+    assert refused.json()["error"]["code"] == "RATE_LIMITED"
+    assert int(refused.headers["Retry-After"]) > 0
+    assert await db_session.scalar(select(func.count()).select_from(AiGeneration)) == before
+    assert len(submitted) == 1
+
+
+@pytest.mark.asyncio
+async def test_purge_expired_generations_keeps_plan_and_version(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    generation_id = (await start(api_client, auth_user, trip)).json()["id"]
+    done = await poll(api_client, auth_user, generation_id, submitted, sessions)
+    assert done["status"] == "completed"
+    version_id = uuid.UUID(done["itinerary_version_id"])
+    now = datetime.now(UTC)
+    await db_session.execute(
+        update(AiGeneration)
+        .where(AiGeneration.id == uuid.UUID(generation_id))
+        .values(retention_until=now - timedelta(seconds=1))
+    )
+    assert await repository.purge_expired(db_session, now) == 1
+    version = await db_session.get(ItineraryVersion, version_id, populate_existing=True)
+    assert version is not None
+    assert version.generation_id is None
+    days = list(
+        await db_session.scalars(
+            select(ItineraryDay)
+            .where(ItineraryDay.trip_id == uuid.UUID(trip))
+            .execution_options(populate_existing=True)
+        )
+    )
+    assert days
+    assert all(d.source_generation_id is None for d in days)
+    assert (
+        await api_client.get(f"/api/v1/trips/{trip}/itinerary", headers=auth_user.headers)
+    ).status_code == 200

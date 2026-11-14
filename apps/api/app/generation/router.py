@@ -8,11 +8,12 @@ same request is already active (FR-024 AC3).
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, Response, status
 
 from app.ai.factory import ModelProviderDep
 from app.auth.deps import CurrentUser, DbSession
 from app.core.errors import EndpointNotImplemented
+from app.core.rate_limit import expensive_request
 from app.generation import service
 from app.generation.jobs import SubmitDep
 from app.generation.schemas import GenerationOut, GenerationStartIn, RegenerateIn
@@ -30,6 +31,7 @@ _SAME_REQUEST_ACTIVE: dict[int | str, dict[str, Any]] = {
     response_model=GenerationOut,
     status_code=status.HTTP_202_ACCEPTED,
     responses=_SAME_REQUEST_ACTIVE,
+    dependencies=[Depends(expensive_request)],
     summary="API-22 Start generating my trip's itinerary",
 )
 async def start_generation(
@@ -65,6 +67,7 @@ async def get_generation(
     response_model=GenerationOut,
     status_code=status.HTTP_202_ACCEPTED,
     responses=_SAME_REQUEST_ACTIVE,
+    dependencies=[Depends(expensive_request)],
     summary="API-30 Regenerate one day",
 )
 async def regenerate_day(trip_id: UUID, day_number: DayNumber, body: RegenerateIn) -> GenerationOut:
@@ -76,6 +79,7 @@ async def regenerate_day(trip_id: UUID, day_number: DayNumber, body: RegenerateI
     response_model=GenerationOut,
     status_code=status.HTTP_202_ACCEPTED,
     responses=_SAME_REQUEST_ACTIVE,
+    dependencies=[Depends(expensive_request)],
     summary="API-31 Regenerate the whole itinerary",
 )
 async def regenerate_itinerary(trip_id: UUID, body: RegenerateIn) -> GenerationOut:
