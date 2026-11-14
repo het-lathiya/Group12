@@ -89,3 +89,16 @@ No fixture, component, contract or migration changed.
 ### Proposed decisions
 
 - PD-RUN-070-1: `MapPanel` sets `attributionControl: { compact: false }` without `customAttribution`, so MapLibre shows only attributions of the style's used sources. A local style with no sources would leave the control empty, so test (b) uses an empty inline GeoJSON source carrying the OpenFreeMap attribution string; this proves the control renders the style's attribution visibly, not the live wording of OpenFreeMap (still Unverified in `docs/decisions/map-tiles.md`). Proposal: accept, or add `customAttribution` with the OpenStreetMap credit in `MapPanel` so the credit does not depend on the remote style (a component change for a later run).
+
+## RUN-070b (map-e2e, owner Manasvi)
+
+- Owner: Manasvi. Base commit: 640fc89.
+- PD-RUN-070-1 resolved: `MapPanel` now passes `attributionControl: { compact: false, customAttribution: <link "© OpenStreetMap contributors" to https://www.openstreetmap.org/copyright> }`, so the credit no longer depends on the remote style; the style's own attributions are kept. Unit test asserts the option. `e2e/map.spec.ts` (b) now fulfils the style URL with a minimal source-less local style and asserts the OpenStreetMap link and href coming from MapPanel (no external network; the no-WebGL branch still asserts the list fallback). Tile terms in `docs/decisions/map-tiles.md` stay **Unverified** (not checked by a person).
+- Axe finding (E2E run 43586860101, itinerary page): `label-content-name-mismatch` (serious), 3 nodes `li:nth-child(N) > button` in `apps/web/components/map/MapListFallback.tsx`. Fixed by dropping the `aria-label`; a visually hidden "Stop " prefix plus the visible number, place and times now form the name ("Stop N <place> <times>"), so the visible text is contained in the accessible name. `map.spec.ts` (a) and the unit test now match `^Stop N <place>` by regex (same ordered numbers). Map markers keep their `Stop N: <place>` aria-label (their visible text is only the number, which that label contains).
+- Commands (apps/web):
+  - `npx vitest run tests/unit/map`: `Test Files  1 passed (1)` / `Tests  4 passed (4)`
+  - `npx eslint e2e/map.spec.ts tests/unit/map components/map`: no output, exit 0
+  - `npx prettier --check e2e/map.spec.ts tests/unit/map components/map`: `All matched files use Prettier code style!`
+  - `npm run typecheck`: `✓ Types generated successfully`, tsc exit 0
+- Acceptance: unit (credit configured; fallback names include visible text): verified. E2E map.spec and the axe re-scan: not verified, deferred to CI.
+- Proposed decision PD-RUN-070b-1: `.github/workflows/e2e.yml` runs only `make e2e ARGS='journey'`, so `map.spec.ts` (tag `@map`) did not run in CI in RUN-070. Proposal: add `@map` (map.spec) to the E2E workflow. The workflow file is outside this part and was not edited.
