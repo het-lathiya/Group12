@@ -39,3 +39,9 @@
 
 - No new contract shapes, migrations or decisions. Single-instance concurrency follows IMD-12; scale-out needs shared synchronisation.
 - API suites and real provider-account spending-limit evidence remain open.
+
+## Also in this run
+
+- RUN-069 part 6b, owner Kirtan, IMD-159: Money.currency keeps its JSON Schema pattern and maps malformed strings to exactly `Currency must be a three-letter ISO 4217 code.` through a custom validation error.
+- Files: apps/api/app/schemas/common.py and apps/api/tests/unit/core/test_money_currency.py.
+- `make test-unit ARGS='-k money_currency'`: `8 passed, 1131 deselected, 1 warning in 1.43s`. Plain-language message verified; no API shape or migration changed.
