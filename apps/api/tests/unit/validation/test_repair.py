@@ -488,3 +488,15 @@ def test_repair_the_v1_template_appends_repair_txt_on_the_repair_call() -> None:
 
     assert system_text.startswith(plain)
     assert "This is a repair call." in system_text
+
+
+@pytest.mark.parametrize(
+    "code", ["UNKNOWN_PLACE", "OUTSIDE_TRIP_DATES", "CLOSED_ON_DAY", "OUTSIDE_HOURS", "OVERLAP"]
+)
+def test_locked_tc_313_every_repair_operation_keeps_fixed_slot(code: str) -> None:
+    original = answer((1, [(FORT, "10:00", 120)]))
+    result = repair.repair(
+        original, [finding(code, "d1-i1")], scope(locked=frozenset({(1, FORT)})), {}
+    )
+    assert result.output == original
+    assert result.fixes == 0
