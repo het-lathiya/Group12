@@ -1,8 +1,8 @@
 """Trip input rules (specification §6.5 TripIn, §9.3.2; FR-007, FR-008; IMD-40).
 
 Pure: no I/O and no framework imports. Every rule returns field-level errors that the service
-turns into 422 VALIDATION_ERROR details, so one set of rules serves API-07 and, later, API-11 and
-the intake validators (IMP-510, IMP-708).
+turns into 422 VALIDATION_ERROR details, so one set of rules serves API-07, API-11 and, later,
+the intake validators (IMP-708). ``plan_affected`` is the stale-plan rule of API-11 (IMP-510).
 """
 
 import re
@@ -152,6 +152,29 @@ def validate_trip(draft: TripDraft, *, max_days: int = MAX_TRIP_DAYS) -> list[Fi
         *validate_group_needs(draft.group_needs),
         *validate_budget(draft.budget_amount, draft.budget_currency),
     ]
+
+
+PLAN_AFFECTING_FIELDS = frozenset(
+    {"start_date", "end_date", "adults", "children", "group_needs", "budget", "destination_id"}
+)
+
+
+def _plan_values(draft: TripDraft) -> dict[str, object]:
+    return {
+        "start_date": draft.start_date,
+        "end_date": draft.end_date,
+        "adults": draft.adults,
+        "children": draft.children,
+        "group_needs": frozenset(draft.group_needs),
+        "budget": (draft.budget_amount, draft.budget_currency),
+        "destination_id": draft.destination_id,
+    }
+
+
+def plan_affected(before: TripDraft, after: TripDraft) -> bool:
+    """FR-011: a change of any PLAN_AFFECTING_FIELDS value; a title or a resent value is none."""
+    old, new = _plan_values(before), _plan_values(after)
+    return any(old[name] != new[name] for name in PLAN_AFFECTING_FIELDS)
 
 
 def validate_destination(

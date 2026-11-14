@@ -1,5 +1,5 @@
-"""API-07, API-08, API-10 and API-11 (§6.6.2; FR-005, FR-007, FR-008, FR-013: TC-063, TC-068 to
-TC-073, TC-085, TC-086).
+"""API-07, API-08, API-10 and API-11 (§6.6.2; FR-005, FR-007, FR-008, FR-011, FR-013: TC-063,
+TC-068 to TC-073, TC-080, TC-081, TC-085, TC-086).
 
 Runs against the migrated test database (tests/fixtures/db.py); every test is rolled back. The
 supported destination is the Sampleton SAMPLE fixture, loaded through the seed (IMP-107).
@@ -18,7 +18,7 @@ from fixtures.db import insert_auth_user
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import BudgetSettings, Destination, Trip, TripPreferences
+from app.db.models import BudgetSettings, Destination, ItineraryDay, Trip, TripPreferences
 from app.places import seed
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -725,3 +725,152 @@ async def test_draft_archived_is_read_only_until_restored(
     assert refused.status_code == 409
     assert refused.json()["error"]["code"] == "CONFLICT"
     assert restored.json()["status"] == "draft"  # no itinerary yet (§5.4)
+
+
+# API-11 trip settings and the stale-plan flag (FR-011, IMP-510). Clearing the flag on a completed
+# generation is tests/api/test_generations.py::test_a_second_generation_replaces_the_plan_and_clears_plan_stale.
+
+
+async def with_itinerary(session: AsyncSession, trip: dict[str, Any]) -> uuid.UUID:
+    trip_id = uuid.UUID(trip["id"])
+    for day in range(1, 4):
+        session.add(
+            ItineraryDay(trip_id=trip_id, day_number=day, plan_date=START + timedelta(days=day - 1))
+        )
+    await session.flush()
+    return trip_id
+
+
+@pytest.mark.asyncio
+async def test_tc_080_changing_the_dates_of_a_planned_trip_marks_the_plan_stale(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+    await with_itinerary(db_session, trip)
+
+    response = await api_client.patch(
+        f"/api/v1/trips/{trip['id']}",
+        json={"end_date": (START + timedelta(days=3)).isoformat()},
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["plan_stale"] is True
+    assert response.json()["num_days"] == 4
+
+
+@pytest.mark.asyncio
+async def test_tc_081_a_title_only_change_leaves_the_plan_fresh_even_with_every_field_resent(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+    await with_itinerary(db_session, trip)
+    url = f"/api/v1/trips/{trip['id']}"
+
+    title_only = await api_client.patch(url, json={"title": "Renamed"}, headers=auth_user.headers)
+    # The edit page sends the whole form: unchanged values are not a change.
+    resent = await api_client.patch(
+        url, json=trip_body(sampleton, title="Renamed again"), headers=auth_user.headers
+    )
+
+    assert (title_only.status_code, resent.status_code) == (200, 200)
+    assert title_only.json()["plan_stale"] is False
+    assert (resent.json()["title"], resent.json()["plan_stale"]) == ("Renamed again", False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"start_date": (START + timedelta(days=1)).isoformat()},
+        {"adults": 3},
+        {"children": 0},
+        {"group_needs": ["children", "older_adults"]},
+        {"budget": {"amount": "20000.00", "currency": "GBP"}},
+        {"budget": None},
+    ],
+    ids=["start_date", "adults", "children", "group_needs", "budget", "budget cleared"],
+)
+async def test_each_plan_affecting_change_marks_the_plan_stale(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    change: dict[str, Any],
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+    await with_itinerary(db_session, trip)
+
+    response = await api_client.patch(
+        f"/api/v1/trips/{trip['id']}", json=change, headers=auth_user.headers
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["plan_stale"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_plan_affecting_change_without_an_itinerary_is_not_stale(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+
+    response = await api_client.patch(
+        f"/api/v1/trips/{trip['id']}", json={"adults": 4}, headers=auth_user.headers
+    )
+
+    assert response.json()["plan_stale"] is False
+
+
+@pytest.mark.asyncio
+async def test_shorter_dates_leave_the_days_outside_the_trip_for_the_validator_and_mark_stale(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+    trip_id = await with_itinerary(db_session, trip)
+
+    response = await api_client.patch(
+        f"/api/v1/trips/{trip['id']}",
+        json={"end_date": START.isoformat()},
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert (response.json()["num_days"], response.json()["plan_stale"]) == (1, True)
+    days = await db_session.scalar(
+        select(func.count()).select_from(ItineraryDay).where(ItineraryDay.trip_id == trip_id)
+    )
+    assert days == 3  # kept; OUTSIDE_TRIP_DATES is the validator's (§9.3.7)
+
+
+@pytest.mark.asyncio
+async def test_preferences_mark_the_plan_stale_only_when_they_change(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+    url = f"/api/v1/trips/{trip['id']}"
+    saved = await api_client.put(f"{url}/preferences", json=PREFERENCES, headers=auth_user.headers)
+    assert saved.status_code == 200, saved.text
+    await with_itinerary(db_session, trip)
+
+    await api_client.put(f"{url}/preferences", json=PREFERENCES, headers=auth_user.headers)
+    unchanged = (await api_client.get(url, headers=auth_user.headers)).json()
+    await api_client.put(
+        f"{url}/preferences", json=PREFERENCES | {"pace": "busy"}, headers=auth_user.headers
+    )
+    changed = (await api_client.get(url, headers=auth_user.headers)).json()
+
+    assert unchanged["plan_stale"] is False
+    assert changed["plan_stale"] is True
