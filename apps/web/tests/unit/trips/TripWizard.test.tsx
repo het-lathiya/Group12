@@ -638,3 +638,25 @@ describe("trip.ts rules mirror the server (§6.5, §7.3)", () => {
     );
   });
 });
+
+it("IMP-503: a resumed preference form posts the selected pace through API-14", async () => {
+  const user = renderWizard(TRIP_ID);
+  await screen.findByRole("heading", { name: "Your preferences" });
+  const pace = await screen.findByRole("group", { name: /^Pace/ });
+  expect(
+    within(pace).getByRole("radio", {
+      name: "Balanced",
+      checked: true,
+    }),
+  ).toBeInTheDocument();
+  await user.click(screen.getByRole("radio", { name: "Busy" }));
+  await user.click(next());
+  await screen.findByRole("heading", { name: "Must-visit places" });
+  const save = posts()[0];
+  expect(save).toMatchObject({
+    method: "PUT",
+    path: `/api/v1/trips/${TRIP_ID}/preferences`,
+    body: { pace: "busy" },
+  });
+  expect(save.body).not.toHaveProperty("plan_stale");
+});
