@@ -3930,7 +3930,7 @@ Every number carries its run metadata.
 
 - FR-062 AC1-AC2 hold (TC-202, TC-203); FR-069 AC1 holds (TC-217).
 - Two clients editing from the same revision: the second gets 409 STALE_PLAN and the database rows are byte-identical before and after (TC-217).
-- Adding a place to day 0 or day num_days+1 returns 422 INVALID_EDIT.
+- Adding a place to day 0 returns 422 VALIDATION_ERROR (schema bound); day num_days+1 returns 422 INVALID_EDIT (IMD-170).
 - The page never computes times or totals itself: after the edit it renders the server response only.
 
 **Tests**
@@ -4065,7 +4065,7 @@ Every number carries its run metadata.
 **Implementation**
 
 1. Add BF-12 to engine.py: by_day[d] = items on day d + transport allowance t + stay s for d <= N; by_category over activities, food, other, transport, accommodation; the contingency buffer is its own row in both tables so each adds up to the planning total P exactly (integer minor units inside the engine, money strings at the API edge per IMD-05).
-2. Extend CostSummaryOut of API-33 with by_day[] and by_category[] (each with low, high, label) without breaking existing fields.
+2. Extend CostSummaryOut of API-33 with by_day[] `{day_number, min, max, contingency_share}` and by_category[] `{category, min, max, label}` following §6.5 (IMD-172), without breaking existing fields.
 3. Build CostBreakdown as two accessible tables (optional simple bar chart is not required); render values from the API only; refetch on itinerary edits via the shared query invalidation.
 4. Audit every MVP screen (explore, place detail, itinerary, costs, summary) and render SourceBadge for price_label/hours_label and the travel label for travel_source (routing_api -> "Estimated travel time from a routing service", fallback_estimate -> "Estimated travel time (distance based)").
 5. Record the screen-by-screen label checklist in docs/test-reports/label-review.md and fix gaps.
@@ -4148,7 +4148,7 @@ Every number carries its run metadata.
 
 **Files**
 
-- apps/api/app/places/router.py (modify); apps/api/app/places/repository.py (modify); apps/api/app/places/schemas.py (modify); apps/web/app/(app)/trips/[tripId]/explore/page.tsx (create); apps/web/components/places/PlaceCard.tsx (create); apps/api/tests/api/test_places.py (modify); apps/web/tests/unit/places/PlaceCard.test.tsx (create)
+- apps/api/app/places/router.py (modify); apps/api/app/places/repository.py (modify); apps/api/app/places/service.py (modify); apps/api/app/places/schemas.py (modify); apps/web/app/(app)/trips/[tripId]/explore/page.tsx (create); apps/web/components/places/PlaceCard.tsx (create); apps/api/tests/api/test_places.py (modify); apps/web/tests/unit/places/PlaceCard.test.tsx (create)
 
 **Implementation**
 
