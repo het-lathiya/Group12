@@ -42,7 +42,7 @@ from app.itinerary.schemas import (
 )
 from app.places import service as places_service
 from app.rag import service as rag_service
-from app.schemas.ai import PlanFinding
+from app.schemas.ai import LockedItem, PlanFinding
 from app.trips import preference_mapping
 from app.trips import service as trips_service
 from app.trips.schemas import TripOut
@@ -79,8 +79,15 @@ async def save_generated_plan(
     trip = await repository.lock_trip(session, trip_id, user_id)
     if trip is None:
         raise NotFound()
+    prefs = await trips_service.get_preferences(session, user_id, trip_id)
     days = await repository.replace_plan(
-        session, trip_id, trip.start_date, plan, origin=origin, generation_id=generation_id
+        session,
+        trip_id,
+        trip.start_date,
+        plan,
+        origin=origin,
+        generation_id=generation_id,
+        locked_place_ids=frozenset(str(place_id) for place_id in prefs.must_visit_place_ids),
     )
     plan_revision = await repository.mark_plan_saved(session, trip_id)
     await repository.insert_warnings(session, trip_id, plan_revision, findings)
@@ -412,3 +419,21 @@ async def version_findings(
         raise NotFound()
     findings = await stored_findings(session, trip_id, version.plan_revision)
     return findings, dict(version.validation_summary)
+
+
+async def locked_constraints(
+    session: AsyncSession, user_id: UUID, trip_id: UUID, day_number: int | None = None
+) -> list[LockedItem]:
+    """Fixed destination-local slots for full or day regeneration (IMP-506, TC-313)."""
+    await trips_service.get_trip(session, user_id, trip_id)
+    days = {day.id: day.day_number for day in await repository.plan_days(session, trip_id)}
+    return [
+        LockedItem(
+            place_id=item.place_id,
+            day_number=days[item.day_id],
+            start_time=item.start_time.strftime("%H:%M"),
+            duration_min=item.duration_min,
+        )
+        for item, _, _ in await repository.plan_items(session, trip_id)
+        if item.is_locked and (day_number is None or days[item.day_id] == day_number)
+    ]

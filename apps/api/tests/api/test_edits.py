@@ -735,7 +735,6 @@ async def test_remove_and_retime_routes_refuse_a_stale_revision_or_an_active_gen
     ("body", "status_code", "code"),
     [
         ({}, 422, "INVALID_EDIT"),  # nothing to change
-        ({"is_locked": True}, 501, "NOT_IMPLEMENTED"),  # lock and unlock are IMP-506
     ],
 )
 @pytest.mark.asyncio
@@ -1437,3 +1436,110 @@ async def test_tc_372_alternative_routes_are_not_found_when_switched_off_and_the
         headers=auth_user.headers,
     )
     assert added.status_code == 200, added.text
+
+
+@pytest.mark.asyncio
+async def test_lock_tc_211_tc_212_patch_and_unlock_with_retime(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    item_id = (await items(db_session, trip_id))[0].id
+    before = await state(db_session, trip_id)
+    locked = await api_client.patch(
+        item_url(item_id),
+        json={
+            "plan_revision": before["revision"],
+            "is_locked": True,
+        },
+        headers=auth_user.headers,
+    )
+    assert locked.status_code == 200, locked.text
+    revision = locked.json()["plan_revision"]
+    assert any(
+        i["is_locked"]
+        for d in locked.json()["changed_days"]
+        for i in d["items"]
+        if i["id"] == str(item_id)
+    )
+    for change in ({"start_time": "15:00"}, {"day_number": 2}):
+        refused = await api_client.patch(
+            item_url(item_id), json={"plan_revision": revision, **change}, headers=auth_user.headers
+        )
+        assert refused.status_code == 422
+        assert refused.json()["error"]["code"] == "INVALID_EDIT"
+    unlocked = await api_client.patch(
+        item_url(item_id),
+        json={
+            "plan_revision": revision,
+            "is_locked": False,
+            "duration_min": 45,
+        },
+        headers=auth_user.headers,
+    )
+    assert unlocked.status_code == 200, unlocked.text
+    changed = next(
+        i for d in unlocked.json()["changed_days"] for i in d["items"] if i["id"] == str(item_id)
+    )
+    assert not changed["is_locked"]
+    assert changed["duration_min"] == 45
+    stale = await api_client.patch(
+        item_url(item_id),
+        json={"plan_revision": revision, "is_locked": True},
+        headers=auth_user.headers,
+    )
+    assert stale.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_lock_disabled_returns_404_and_must_visit_is_locked_on_save(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    place = await db_session.scalar(
+        select(Place)
+        .where(Place.destination_id == destination.id, Place.is_active.is_(True))
+        .order_by(Place.name)
+    )
+    assert place is not None
+    place_id = place.id
+    trip_id = await planned_trip(
+        api_client, db_session, jobs_queue, auth_user, destination, must_visit=(place_id,)
+    )
+    locked = next(i for i in await items(db_session, trip_id) if i.place_id == place_id)
+    assert locked.is_locked
+    from app.generation import request_builder
+
+    request = await request_builder.build(
+        db_session,
+        trip_id=trip_id,
+        user_id=auth_user.user_id,
+        prompt_template_id="itinerary_generate",
+        prompt_version="v1",
+    )
+    assert any(
+        i.place_id == place_id and i.start_time == locked.start_time.strftime("%H:%M")
+        for i in request.locked_items
+    )
+    item_id = locked.id
+    revision = (await state(db_session, trip_id))["revision"]
+    monkeypatch.setenv("FEATURES_DISABLED", "locks")
+    get_settings.cache_clear()
+    refused = await api_client.patch(
+        item_url(item_id),
+        json={"plan_revision": revision, "is_locked": False},
+        headers=auth_user.headers,
+    )
+    assert refused.status_code == 404
+    removed = await api_client.delete(
+        item_url(item_id), params={"plan_revision": revision}, headers=auth_user.headers
+    )
+    assert removed.status_code == 200
+    assert any(f["code"] == "MUST_VISIT_MISSING" for f in removed.json()["findings"])
