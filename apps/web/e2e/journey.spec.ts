@@ -166,11 +166,25 @@ test(
     console.log(`generation: ${summary}`);
     if (!STAGING) {
       expect(generation.provider).toBe("MOCK");
-      expect(generation.outcome).toBe("model");
+      // IMP-501: curated hours now exercise deterministic repair of the MOCK proposal.
+      expect(generation.outcome).toBe("model_repaired");
+      expect(generation.deterministic_repairs).toBeGreaterThan(0);
+      expect(generation.repair_attempts).toBeLessThanOrEqual(1);
     }
 
     await expect(page).toHaveURL(`/trips/${tripId}/itinerary`);
-    const days = ((await (await firstRead).json()) as Itinerary).days;
+    const saved = (await (await firstRead).json()) as Itinerary;
+    const days = saved.days;
+    expect(
+      saved.findings.filter((finding) =>
+        [
+          "UNKNOWN_PLACE",
+          "OUTSIDE_TRIP_DATES",
+          "OVERLAP",
+          "CLOSED_ON_DAY",
+        ].includes(finding.code),
+      ),
+    ).toEqual([]);
     expect(days.flatMap((day) => day.items).length).toBeGreaterThan(0);
     await expectSavedDays(page, days);
     await checkA11y(page);
