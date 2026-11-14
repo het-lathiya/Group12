@@ -484,14 +484,16 @@ async def plan_findings(
     names = await places_service.active_place_names(
         session, request.trip.destination_id, [UUID(place_id) for place_id in sorted(ids)]
     )
-    limits = request.limits
+    timezone, hours = await itinerary_service.validation_hours(session, request.trip.destination_id)
     ctx = ValidationContext(
         start_date=request.trip.start_date,
         end_date=request.trip.end_date,
         places={str(place_id): name for place_id, name in names.items()},
         must_visit_ids=frozenset(must_visit),
         shortlist_ids=frozenset(request.shortlist_ids()),
-        pace_limits=(limits.max_items_per_day, limits.max_active_minutes_per_day),
+        pace=request.preferences.pace,
+        timezone=timezone,
+        opening_hours=hours,
     )
     findings = validate(plan, ctx)
     if not any(finding.code == "MUST_VISIT_MISSING" for finding in findings):

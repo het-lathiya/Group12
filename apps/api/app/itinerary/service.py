@@ -40,14 +40,14 @@ from app.itinerary.schemas import (
     Totals,
     ValidateOut,
 )
+from app.places import repository as places_repository
 from app.places import service as places_service
 from app.rag import service as rag_service
 from app.schemas.ai import LockedItem, PlanFinding
-from app.trips import preference_mapping
 from app.trips import service as trips_service
 from app.trips.schemas import TripOut
 from app.validation import validator
-from app.validation.rules import ValidationContext
+from app.validation.rules import HoursInfo, OpeningRow, ValidationContext
 from app.validation.schemas import Finding, ValidationSummary
 
 SNAPSHOT_SCHEMA = "snap-1"
@@ -362,12 +362,19 @@ async def validation_context(
     prefs = await trips_service.get_preferences(session, user_id, trip.id)
     ids = {UUID(place_id) for place_id in place_ids} | set(prefs.must_visit_place_ids)
     names = await places_service.active_place_names(session, trip.destination_id, sorted(ids))
+    timezone, hours = await validation_hours(session, trip.destination_id)
+    day_dates = {
+        day.day_number: day.plan_date for day in await repository.plan_days(session, trip.id)
+    }
     return ValidationContext(
         start_date=trip.start_date,
         end_date=trip.end_date,
         places={str(place_id): name for place_id, name in names.items()},
         must_visit_ids=frozenset(str(place_id) for place_id in prefs.must_visit_place_ids),
-        pace_limits=preference_mapping.PACE_LIMITS[preference_mapping.Pace(prefs.pace)],
+        pace=prefs.pace.value,
+        timezone=timezone,
+        opening_hours=hours,
+        day_dates=day_dates,
     )
 
 
@@ -437,3 +444,28 @@ async def locked_constraints(
         for item, _, _ in await repository.plan_items(session, trip_id)
         if item.is_locked and (day_number is None or days[item.day_id] == day_number)
     ]
+
+
+async def validation_hours(
+    session: AsyncSession, destination_id: UUID
+) -> tuple[str, dict[str, HoursInfo] | None]:
+    """Read the authoritative weekly hours for generation, edits and API-32 (IMP-501)."""
+    destination = await places_repository.destination_by_id(session, destination_id)
+    if destination is None:
+        raise NotFound()
+    return destination.timezone, {
+        str(place.id): HoursInfo(
+            place.hours_label,
+            [
+                OpeningRow(
+                    row.weekday,
+                    row.is_closed,
+                    row.open_time.strftime("%H:%M") if row.open_time else None,
+                    row.close_time.strftime("%H:%M") if row.close_time else None,
+                    row.closes_next_day,
+                )
+                for row in rows
+            ],
+        )
+        for place, rows in await places_repository.candidates(session, destination_id)
+    }
