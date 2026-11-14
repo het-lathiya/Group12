@@ -78,3 +78,17 @@ none
 
 - The E2E additions are untested until the journey runs in CI. Watch for the new skip-link and keyboard-move steps and the new scans in the first run.
 - Focus after a move to another day below 768 px finds the target tab by its text "Day N". That text comes from the itinerary page's tab labels.
+
+## RUN-070b
+
+Owner: Krrish. Base commit: 640fc89.
+
+- PD-IMP-513-1 resolved. `WarningsPanel.tsx`: each severity group now has a visible heading (Errors / Warnings / Infos) at level 3, labelling its section; the day heading moved from `h3` to `h4`. The outline is page `h1`, "Plan checks" `h2`, severity `h3`, day `h4`, with no skipped level. The polite live region for the counts is unchanged. `WarningsPanel.test.tsx` now expects the three level-3 headings in order and the day headings at level 4; no assertion was removed.
+- Journey focus failure (E2E run 43586860101, all projects): step "Day to move X to" select, Tab, "Move X to day N" button focused, `e2e/journey.spec.ts`, itinerary page. Cause: the test. Playwright's `selectOption` does not move keyboard focus to the select, so Tab started elsewhere. `MoveControls.tsx` keeps the same `select` mounted on change (controlled state only), so the component was not at fault. Fix: `await daySelect.focus()` before `selectOption`; the Tab-lands-on-Move assertion and the announcement and focus assertions after the move are unchanged.
+- Other findings, not fixed here: 3 serious `label-content-name-mismatch` nodes on the itinerary page (MapListFallback stop buttons) are owned by Manasvi in a parallel part. `/dashboard` `color-contrast` (1 node, first attempts only, target not captured) is outside this part and has no owner yet.
+- Commands (from `apps/web`):
+  - `npx vitest run tests/unit/itinerary/WarningsPanel.test.tsx`: `Tests  9 passed (9)`
+  - `npx eslint` on the three changed files: no output (clean)
+  - `npx prettier --check` on the three changed files: `All matched files use Prettier code style!`
+  - `npm run typecheck`: `tsc --noEmit` finished with no errors
+- Acceptance: TC-280 warnings read in order with severity headings: verified (unit). Journey focus step: fixed in the test, E2E deferred to the lead's new E2E run. Axe scans: not verified (deferred).
