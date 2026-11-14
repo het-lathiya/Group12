@@ -25,6 +25,8 @@ export type MapPanelProps = {
   onSelectItem: (itemId: string) => void;
 };
 
+const OSM_CREDIT =
+  '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>';
 const LINE = "visit-order";
 // The primary token (guide §2): map paint cannot read the CSS theme variables.
 const LINE_COLOR = "#0F766E";
@@ -88,7 +90,11 @@ function LiveMap({
       instance = new MapLibreMap({
         container: container.current,
         style: OPENFREEMAP_STYLE_URL,
-        attributionControl: { compact: false },
+        // The credit is ours, not the remote style's; the style's own attributions stay.
+        attributionControl: {
+          compact: false,
+          customAttribution: OSM_CREDIT,
+        },
       });
     } catch {
       fail();

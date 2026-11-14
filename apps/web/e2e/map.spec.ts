@@ -4,7 +4,7 @@ import type { components } from "../lib/api/schema";
 import { expect, test, type TestUsers } from "./fixtures/users";
 
 // IMD-173 (FR-080 AC3, TC-240; IMP-508): with the OpenFreeMap style and tiles aborted, the map
-// gives way to the numbered list; with a local style the attribution control is visible. Local:
+// gives way to the numbered list; with a local style the OpenStreetMap credit is visible. Local:
 // the local stack, `make seed` (Sampleton) and the API with AI_PROVIDER=MOCK. No request leaves
 // for OpenFreeMap: every request to its host is aborted or answered here.
 
@@ -14,27 +14,16 @@ type Itinerary = components["schemas"]["ItineraryOut"];
 const OPENFREEMAP = "https://tiles.openfreemap.org/**";
 const STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 
-// The attribution the OpenFreeMap style's vector source carries (docs/decisions/map-tiles.md);
-// MapLibre shows only attributions of sources a layer uses, so the local style needs one.
-const ATTRIBUTION =
-  '<a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> <a href="https://www.openmaptiles.org/" target="_blank">&copy; OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>';
-
+// A minimal style with no sources: the credit under test comes from MapPanel (customAttribution).
 const LOCAL_STYLE = {
   version: 8,
-  sources: {
-    base: {
-      type: "geojson",
-      data: { type: "FeatureCollection", features: [] },
-      attribution: ATTRIBUTION,
-    },
-  },
+  sources: {},
   layers: [
     {
       id: "background",
       type: "background",
       paint: { "background-color": "#F1F5F9" },
     },
-    { id: "base", type: "fill", source: "base" },
   ],
 };
 
@@ -99,8 +88,11 @@ async function expectListFallback(page: Page, stops: Item[]) {
   const entries = page.getByRole("list", { name: "Stops" }).getByRole("button");
   await expect(entries).toHaveCount(stops.length);
   for (const [index, item] of stops.entries()) {
+    // The visible text forms the name: "Stop N <place> <times>".
     await expect(entries.nth(index)).toHaveAccessibleName(
-      `Stop ${index + 1}: ${item.place.name}`,
+      new RegExp(
+        `^Stop\\s*${index + 1}\\s*${item.place.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+      ),
     );
   }
 }
@@ -141,7 +133,9 @@ test(
     const attribution = page.locator(".maplibregl-ctrl-attrib");
     await expect(attribution).toBeVisible();
     await expect(attribution).toContainText("OpenStreetMap");
-    await expect(attribution).toContainText("OpenFreeMap");
+    await expect(
+      attribution.getByRole("link", { name: "© OpenStreetMap contributors" }),
+    ).toHaveAttribute("href", "https://www.openstreetmap.org/copyright");
     await expect(
       page.getByText("Map unavailable; list view shown"),
     ).toHaveCount(0);
