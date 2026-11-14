@@ -3,11 +3,16 @@
 The default provider in ``local`` and ``test``. It makes no network call and imports no HTTP
 client or vendor SDK. ``generate_itinerary`` builds io-1 only from the gr-1 request:
 
-- the candidates (``shortlist``) in their given order are spread over the requested days
-  (``trip.num_days``, or the one day of a ``day`` scope), at most ``limits.max_items_per_day``
-  per day, filling the first days first;
-- the first item of a day starts at 09:00 and each next one at the previous start +
-  ``typical_duration_min`` + 30 minutes; ``duration_min`` is the candidate's typical duration;
+- ``ok``: each requested day (``trip.num_days``, or the one day of a ``day`` scope) takes, in
+  shortlist order, every remaining candidate that fits: the day starts at ``limits.day_start``,
+  each next item after the fallback travel estimate plus its buffer (as step 9 recalculates it),
+  at most ``limits.max_items_per_day`` items and ``limits.max_active_minutes_per_day`` active
+  minutes, ending by ``limits.day_end`` and inside the day's ``hours_summary`` hours when it has
+  any; a candidate that fits no day is left out, and when none fits the plain spread is used;
+- ``flawed`` and ``unknown_place`` start from the plain spread: the candidates in order, at most
+  ``limits.max_items_per_day`` per day, first days first, the first item at 09:00 and each next
+  one at the previous start + ``typical_duration_min`` + 30 minutes;
+- ``duration_min`` is the candidate's typical duration;
 - themes and notes are written into io-1's model-text fields and start with ``SAMPLE``;
 - for a gr-2 request the answer is io-2 and an item cites the place passage of its place, if any.
 
@@ -25,7 +30,7 @@ import re
 import time
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final, Literal, get_args
 
 from app.ai.errors import (
@@ -39,6 +44,7 @@ from app.ai.errors import (
 )
 from app.ai.providers.base import check_embed_input, l2_normalised
 from app.core.config import AppEnv, MockScenario, get_settings
+from app.routing.estimate import BUFFER_MIN, estimate
 from app.schemas.ai import (
     EMBEDDING_DIMENSIONS,
     EditOperations,
@@ -70,6 +76,9 @@ DAY_START_MIN: Final = 9 * 60
 GAP_MIN: Final = 30
 LAST_START_MIN: Final = 23 * 60 + 59
 THEME_MAX: Final = 80
+WEEKDAYS: Final = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")  # ISO weekdays 1 to 7
+# One part of the request builder's hours_summary, for example "Fri 09:00-17:00" or "Mon closed".
+_HOURS_PART: Final = re.compile(r"(\w{3}) (?:closed|(\d\d:\d\d)-(\d\d:\d\d))")
 # Namespace of the deterministic out-of-shortlist ID of the unknown_place scenario.
 _UNKNOWN_PLACE_NAMESPACE: Final = uuid.UUID("5a3e1c00-0000-4000-8000-00000000a207")
 
@@ -118,6 +127,63 @@ def _build_days(
     return days
 
 
+def _windows(summary: str, weekday: str) -> list[tuple[int, int]] | None:
+    """Opening intervals of ``weekday`` in minutes (overnight past 1440); [] when closed, None
+    when the summary has no stored hours for that day (nothing to fit)."""
+    parts = [m for m in map(_HOURS_PART.fullmatch, summary.split("; ")) if m and m[1] == weekday]
+    if not parts:
+        return None
+    windows = []
+    for part in (m for m in parts if m[2] and m[3]):
+        opened, closed = _minutes(part[2]), _minutes(part[3])
+        windows.append((opened, closed + 1440 if closed <= opened else closed))
+    return windows
+
+
+def _fitted_days(request: GenerationRequest) -> list[ItineraryDayOutput]:
+    """The ok plan: each day takes, in shortlist order, the remaining candidates that fit."""
+    limits, mode = request.limits, request.preferences.transport_pref
+    day_start, day_end = _minutes(limits.day_start), _minutes(limits.day_end)
+    remaining = list(request.shortlist)
+    days: list[ItineraryDayOutput] = []
+    for day_number in _day_numbers(request):
+        weekday = WEEKDAYS[(request.trip.start_date + timedelta(days=day_number - 1)).weekday()]
+        items: list[ItineraryItemOutput] = []
+        names: list[str] = []
+        clock, active, previous = day_start, 0, None
+        for place in list(remaining):
+            if len(items) >= limits.max_items_per_day:
+                break
+            travel = 0
+            if previous is not None:
+                travel = estimate(previous.lat, previous.lon, place.lat, place.lon, mode).minutes
+            start = clock + (travel + BUFFER_MIN["fallback_estimate"] if previous else 0)
+            end = start + place.typical_duration_min
+            windows = _windows(place.hours_summary, weekday)
+            if (
+                end > day_end
+                or active + travel + place.typical_duration_min > limits.max_active_minutes_per_day
+                or (windows is not None and not any(o <= start and end <= c for o, c in windows))
+            ):
+                continue
+            items.append(
+                ItineraryItemOutput(
+                    place_id=str(place.place_id),
+                    start_time=_hhmm(start),
+                    duration_min=place.typical_duration_min,
+                    slot_type="meal" if place.category == "food" else "activity",
+                    note=f"SAMPLE note from the mock provider: visit {place.name}."[:200],
+                )
+            )
+            names.append(place.name)
+            remaining.remove(place)
+            clock, active, previous = end, active + travel + place.typical_duration_min, place
+        if items:
+            theme = f"SAMPLE day {day_number}: {names[0]}"[:THEME_MAX]
+            days.append(ItineraryDayOutput(day_number=day_number, theme=theme, items=items))
+    return days
+
+
 def _output(days: list[ItineraryDayOutput]) -> ItineraryOutput:
     if not days:
         # io-1 needs at least one day with one item; an empty shortlist cannot give one.
@@ -147,7 +213,7 @@ def _flawed(request: GenerationRequest) -> ItineraryOutput:
 
 
 def _unknown_place(request: GenerationRequest) -> ItineraryOutput:
-    """The ok plan with its last item's place_id replaced by one outside the candidates."""
+    """The plain spread with its last item's place_id replaced by one outside the candidates."""
     output = _output(_build_days(request, list(request.shortlist)))
     shortlisted = request.shortlist_ids()
     unknown = uuid.uuid5(_UNKNOWN_PLACE_NAMESPACE, str(request.request_id))
@@ -241,7 +307,9 @@ class MockProvider:
             case "unknown_place":
                 output = _unknown_place(request)
             case _:
-                output = _output(_build_days(request, list(request.shortlist)))
+                # Nothing fits (for example every visit outlasts the day): the plain spread.
+                fitted = _fitted_days(request)
+                output = _output(fitted or _build_days(request, list(request.shortlist)))
         if isinstance(request, GroundedGenerationRequest):
             output = _cited(request, output)
         return ProviderResult[ItineraryOutput](

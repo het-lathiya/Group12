@@ -162,12 +162,12 @@ async def test_us_153_the_saved_plan_is_returned_in_order(
     assert body["plan_revision"] == generation["plan_revision"] == 1
     assert body["version_id"] == generation["itinerary_version_id"]
     assert (body["is_current"], body["plan_stale"]) == (True, False)
-    assert Counter(f["code"] for f in body["findings"]) == {
-        "OUTSIDE_HOURS": 5,
-        "DAY_TOO_LONG": 2,
-        "COST_INCOMPLETE": 1,
+    # PD-RUN-069-1: nothing outside the curated hours; unpriced places and one without hours.
+    assert {f["code"]: f["severity"] for f in body["findings"]} == {
+        "HOURS_UNVERIFIED": "info",
+        "COST_INCOMPLETE": "warning",
     }
-    assert all(f["severity"] == "warning" for f in body["findings"])
+    assert len(body["findings"]) == 2
     assert body["source"] == {
         "generation_id": generation["id"],
         "provider": "MOCK",
@@ -292,13 +292,11 @@ async def test_findings_are_the_warnings_of_the_current_revision_only(
     assert response.status_code == 200, response.text
     current = response.json()["findings"]
     assert Counter(f["code"] for f in current) == {
-        "OUTSIDE_HOURS": 5,
-        "DAY_TOO_LONG": 2,
-        "HOURS_UNVERIFIED": 1,
+        "HOURS_UNVERIFIED": 2,  # the generation's (a place without stored hours) and this one
         "COST_INCOMPLETE": 1,
     }
     assert all(f["message"] != "From an older revision." for f in current)
-    (finding,) = [f for f in current if f["code"] == "HOURS_UNVERIFIED"]
+    (finding,) = [f for f in current if f["message"] == "Opening hours unavailable."]
     assert uuid.UUID(finding.pop("id"))
     assert finding == {
         "code": "HOURS_UNVERIFIED",
@@ -508,10 +506,9 @@ async def test_tc_194_api_32_revalidates_and_replaces_the_warnings_of_the_revisi
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["plan_revision"] == revision
-    assert body["validation_summary"] == {"errors": 1, "warnings": 8, "infos": 0}
+    assert body["validation_summary"] == {"errors": 1, "warnings": 1, "infos": 1}
     assert Counter(f["code"] for f in body["findings"]) == {
-        "OUTSIDE_HOURS": 5,
-        "DAY_TOO_LONG": 2,
+        "HOURS_UNVERIFIED": 1,
         "MUST_VISIT_MISSING": 1,
         "COST_INCOMPLETE": 1,
     }
@@ -524,9 +521,8 @@ async def test_tc_194_api_32_revalidates_and_replaces_the_warnings_of_the_revisi
     assert await warning_rows(db_session, trip_id) == [
         (revision - 1, "COST_INCOMPLETE"),
         (revision, "COST_INCOMPLETE"),
-        *[(revision, "DAY_TOO_LONG")] * 2,
+        (revision, "HOURS_UNVERIFIED"),
         (revision, "MUST_VISIT_MISSING"),
-        *[(revision, "OUTSIDE_HOURS")] * 5,
     ]
     trip = await db_session.get(Trip, uuid.UUID(trip_id))
     assert trip is not None
@@ -629,8 +625,7 @@ async def test_tc_193_a_saved_version_returns_its_warnings_and_repair_summary(
     )
 
     assert Counter(f.code for f in findings) == {
-        "OUTSIDE_HOURS": 5,
-        "DAY_TOO_LONG": 2,
+        "HOURS_UNVERIFIED": 1,
         "MUST_VISIT_MISSING": 1,
         "COST_INCOMPLETE": 1,
     }

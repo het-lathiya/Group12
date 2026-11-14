@@ -166,9 +166,9 @@ test(
     console.log(`generation: ${summary}`);
     if (!STAGING) {
       expect(generation.provider).toBe("MOCK");
-      // IMP-501: curated hours now exercise deterministic repair of the MOCK proposal.
-      expect(generation.outcome).toBe("model_repaired");
-      expect(generation.deterministic_repairs).toBeGreaterThan(0);
+      // PD-RUN-069-1: the MOCK proposal fits the curated hours, so nothing is repaired.
+      expect(generation.outcome).toBe("model");
+      expect(generation.deterministic_repairs).toBe(0);
       expect(generation.repair_attempts).toBeLessThanOrEqual(1);
     }
 
