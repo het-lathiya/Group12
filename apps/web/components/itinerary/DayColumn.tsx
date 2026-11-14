@@ -32,6 +32,8 @@ export function DayColumn({ day, id, edit }: DayColumnProps) {
       <h2 tabIndex={-1} className="flex flex-col outline-none">
         <span className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
           Day {day.day_number}
+          {/* Read as "Day N, <date>" (IMP-513 step 3); the comma is not shown. */}
+          <span className="sr-only">,</span>
         </span>{" "}
         <span className="text-xl font-semibold tracking-[-0.01em]">
           {formatDayDate(day.date)}

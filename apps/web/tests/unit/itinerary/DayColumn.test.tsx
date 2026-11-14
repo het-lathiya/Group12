@@ -1,11 +1,17 @@
-import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useState } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DayColumn } from "@/components/itinerary/DayColumn";
+import { MoveDndContext } from "@/components/itinerary/MoveControls";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CURRENT_VERSION, queryKeys, useItinerary } from "@/lib/api/queries";
 import type { components } from "@/lib/api/schema";
 import { formatDayDate } from "@/lib/format";
 
-import { ITEM } from "./fixtures";
+import { ITEM, ITEM_B, planWith, TRIP_ID } from "./fixtures";
 
 // FR-059 (TC-196): a day shows its number, its date, its theme and its items in the order API-24
 // sent them, each estimated cost with its label.
@@ -36,7 +42,7 @@ describe("DayColumn", () => {
     render(<DayColumn day={DAY} />);
 
     expect(
-      screen.getByRole("heading", { level: 2, name: "Day 1 Sat 14 Nov" }),
+      screen.getByRole("heading", { level: 2, name: "Day 1, Sat 14 Nov" }),
     ).toBeInTheDocument();
     const items = within(screen.getByRole("list")).getAllByRole("listitem");
     expect(items.map((item) => item.textContent)).toEqual([
@@ -107,5 +113,190 @@ describe("DayColumn", () => {
   it("reads the date-only string without a time-zone shift", () => {
     expect(formatDayDate("2026-11-14")).toBe("Sat 14 Nov");
     expect(formatDayDate("2027-01-01")).toBe("Fri 1 Jan");
+  });
+});
+
+// IMP-513 (FR-115, TC-280): focus and announcements after an edit, through the real hooks, the
+// edit context and DayColumn as the itinerary page renders them (as in the RUN-063b case of
+// ItemEditor.test.tsx). The fake server answers each edit after the page re-reads API-24.
+vi.mock("@/lib/auth/supabase", () => ({
+  getSupabase: () => ({
+    auth: {
+      getSession: async () => ({ data: { session: { access_token: "t" } } }),
+    },
+  }),
+}));
+vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "http://api.test/api/v1");
+
+type Itinerary = components["schemas"]["ItineraryOut"];
+type Item = components["schemas"]["Item"];
+
+describe("DayColumn focus and announcements (IMP-513)", () => {
+  let after: Itinerary; // the plan the server holds after the edit
+  let changed: number[]; // the day numbers the edit answer carries
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", async (request: Request) => {
+      if (request.method === "GET") {
+        // Network time of the re-read: in a browser the edited card unmounts meanwhile.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return Response.json(after);
+      }
+      return Response.json({
+        plan_revision: after.plan_revision,
+        changed_days: after.days.filter((d) => changed.includes(d.day_number)),
+        totals: after.totals,
+        findings: [],
+      });
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** The itinerary page's day list: every day, or below 768 px (`tabs`) one day tab at a time. */
+  function renderPlan(before: Itinerary, tabs = false) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    client.setQueryData(queryKeys.itinerary(TRIP_ID, CURRENT_VERSION), before);
+    function Plan() {
+      const { data } = useItinerary(TRIP_ID);
+      const [tab, setTab] = useState("day-1");
+      if (!data) return null;
+      const edit = {
+        tripId: TRIP_ID,
+        planRevision: data.plan_revision,
+        dayNumbers: data.days.map((d) => d.day_number),
+      };
+      const columns = data.days.map((day) => (
+        <DayColumn key={day.day_number} day={day} edit={edit} />
+      ));
+      return (
+        <MoveDndContext tripId={TRIP_ID} planRevision={data.plan_revision}>
+          {tabs ? (
+            <Tabs value={tab} onValueChange={setTab}>
+              <TabsList aria-label="Days">
+                {data.days.map((day) => (
+                  <TabsTrigger
+                    key={day.day_number}
+                    value={`day-${day.day_number}`}
+                  >
+                    Day {day.day_number}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {data.days.map((day, index) => (
+                <TabsContent
+                  key={day.day_number}
+                  value={`day-${day.day_number}`}
+                >
+                  {columns[index]}
+                </TabsContent>
+              ))}
+            </Tabs>
+          ) : (
+            columns
+          )}
+        </MoveDndContext>
+      );
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Plan />
+      </QueryClientProvider>,
+    );
+    return userEvent.setup();
+  }
+
+  async function removeByKeyboard(
+    user: ReturnType<typeof userEvent.setup>,
+    name: string,
+  ) {
+    screen.getByRole("button", { name: `Remove ${name}` }).focus();
+    await user.keyboard("{Enter}");
+    within(await screen.findByRole("dialog"))
+      .getByRole("button", { name: "Remove" })
+      .focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { level: 3, name }),
+      ).not.toBeInTheDocument(),
+    );
+  }
+
+  it("after removing the last item, moves focus to the previous card (FR-061, FR-115)", async () => {
+    after = planWith([[ITEM]], 8);
+    changed = [1];
+    const user = renderPlan(planWith([[ITEM, ITEM_B]], 7));
+
+    await removeByKeyboard(user, ITEM_B.place.name);
+
+    await waitFor(() =>
+      expect(document.getElementById(`item-${ITEM.id}`)).toHaveFocus(),
+    );
+  });
+
+  it("after removing the only item, moves focus to the day heading (FR-061, FR-115)", async () => {
+    after = planWith([[]], 8);
+    changed = [1];
+    const user = renderPlan(planWith([[ITEM]], 7));
+
+    await removeByKeyboard(user, ITEM.place.name);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { level: 2, name: "Day 1, Sat 14 Nov" }),
+      ).toHaveFocus(),
+    );
+    expect(
+      screen.getByText("Nothing planned for this day."),
+    ).toBeInTheDocument();
+  });
+
+  const movedToDay2 = (item: Item) => {
+    after = planWith([[ITEM_B], [{ ...item, position: 1 }]], 8);
+    changed = [1, 2];
+  };
+
+  it("TC-280: announces a move to another day and keeps focus on the item's controls", async () => {
+    movedToDay2(ITEM);
+    const user = renderPlan(planWith([[ITEM, ITEM_B], []], 7));
+
+    screen
+      .getByRole("button", { name: `Move ${ITEM.place.name} to day 2` })
+      .focus();
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText(`Moved ${ITEM.place.name} to day 2 position 1`),
+    ).toHaveAttribute("aria-live", "polite");
+    const day2 = screen.getByRole("region", { name: "Day 2" });
+    await waitFor(() =>
+      expect(
+        within(day2).getByRole("button", {
+          name: `Move ${ITEM.place.name} to day 1`,
+        }),
+      ).toHaveFocus(),
+    );
+  });
+
+  it("below 768 px, a move to another day announces it and focuses that day's tab, which opens it", async () => {
+    movedToDay2(ITEM);
+    const user = renderPlan(planWith([[ITEM, ITEM_B], []], 7), true);
+
+    screen
+      .getByRole("button", { name: `Move ${ITEM.place.name} to day 2` })
+      .focus();
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText(`Moved ${ITEM.place.name} to day 2 position 1`),
+    ).toBeInTheDocument();
+    const tab = screen.getByRole("tab", { name: "Day 2" });
+    await waitFor(() => expect(tab).toHaveFocus());
+    expect(tab).toHaveAttribute("aria-selected", "true");
+    expect(
+      screen.getByRole("heading", { level: 3, name: ITEM.place.name }),
+    ).toBeInTheDocument();
   });
 });
