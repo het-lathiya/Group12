@@ -35,3 +35,15 @@
 
 - No contract or migration change; no new proposed decisions.
 - Database verification remains open; pure contexts can omit hours when testing unrelated rules, production always loads them.
+
+## Integration fix (RUN-069, I-6)
+
+- CI run 43570568677: `5 failed, 459 passed, 1 warning in 259.54s (0:04:19)`. Existing itinerary/generation tests assumed validation emitted no findings before IMP-501. With hours/day-length enabled, the pinned SAMPLE fixture has exactly five OUTSIDE_HOURS warnings, two DAY_TOO_LONG warnings and one COST_INCOMPLETE warning for its two genuinely unavailable prices. The budget-category classification issue is corrected separately by Manal.
+- Updated test_itinerary.py to assert those exact codes/counts, preserve exact current-revision filtering, preserve the missing must-visit reference, preserve old/new revision isolation, and keep all repair-count and stored-plan assertions. No finding is ignored or suppressed.
+- Necessary minimal integration test files outside the original list: tests/api/test_generations.py now asserts the exact eight warnings and zero errors/infos; apps/web/e2e/journey.spec.ts now requires the observed model_repaired outcome, positive deterministic repairs, at most one provider repair call and no blocking findings. It still verifies every edit/reload/grounding/accessibility step. The new E2E expectation is exact rather than allowing extra outcomes.
+- E2E run 43570502335 before the fix: `4 failed`, each at the obsolete exact model outcome. The new hours checks repair the curated-hours MOCK proposal; returned plans remain model-origin.
+- `make test-unit`: `1140 passed, 1 warning in 22.08s`. Scoped ruff: `All checks passed!`.
+- `make lint`: `All matched files use Prettier code style!` (existing navigation warning only). `make typecheck`: `Success: no issues found in 122 source files`; `✓ Types generated successfully`. `make openapi-check`: `openapi-check: contracts/ and apps/web/lib/api/schema.d.ts are up to date`.
+- PostgreSQL and browser reruns await CI; this is this part's one integration fix.
+
+- Before the integration rerun completed, corrected the expected total to retain COST_INCOMPLETE for SAMPLE sample-007 and sample-017. The budget fix removes spurious ESTIMATE_USED for known estimates and reduces the incomplete-item count from 15 to the two truly unknown prices; it does not remove the real incomplete-cost warning. The latest Junaid fix commit was amended before approval to preserve the one-fix limit.
