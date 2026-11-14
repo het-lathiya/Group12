@@ -120,6 +120,13 @@ MATRIX: tuple[RouteCase, ...] = (
     RouteCase("API-09", "GET", "/api/v1/itineraries/latest", "scoped"),
     RouteCase("API-24", "GET", "/api/v1/trips/{trip_id}/itinerary", "foreign"),
     RouteCase(
+        "API-25",
+        "POST",
+        "/api/v1/trips/{trip_id}/itinerary/items",
+        "foreign",
+        body=lambda owned: {"plan_revision": 1, "day_number": 1, "place_id": str(owned.place_id)},
+    ),
+    RouteCase(
         "API-26",
         "PATCH",
         "/api/v1/itinerary/items/{item_id}",
