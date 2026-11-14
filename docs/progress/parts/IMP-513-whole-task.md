@@ -92,3 +92,15 @@ Owner: Krrish. Base commit: 640fc89.
   - `npx prettier --check` on the three changed files: `All matched files use Prettier code style!`
   - `npm run typecheck`: `tsc --noEmit` finished with no errors
 - Acceptance: TC-280 warnings read in order with severity headings: verified (unit). Journey focus step: fixed in the test, E2E deferred to the lead's new E2E run. Axe scans: not verified (deferred).
+
+## RUN-071
+
+Owner: Krrish. Part: PD-RUN-070b-2 (axe-targets). Base commit: aec7caa. File changed: `apps/web/e2e/axe.ts` (plus this record).
+
+- `checkA11y` now writes every violation of any impact on every scan, before the `expect`, pass or fail: rule id, impact, page URL, and for each node its target selectors and `failureSummary`. The same list goes to the console and to the test as a JSON attachment named `axe-<scan number>-<pathname>`, so several scans in one test do not collide. A scan with no violations attaches an empty list.
+- Unchanged: the serious annotation and console summary, the critical-only `expect(..., "critical axe violations (NFR-025)").toEqual([])`, `LAYOUT_RULES`, and which pages are scanned. No rule was excluded and no threshold changed.
+- Commands (from `apps/web`):
+  - `npx eslint e2e/axe.ts`: no output (exit 0)
+  - `npx prettier --check e2e/axe.ts`: `All matched files use Prettier code style!`
+  - `npm run typecheck`: `next typegen && tsc --noEmit` finished with no errors (exit 0)
+- Acceptance: targets logged and attached on every attempt: not verified in CI (code path only; proof pending the lead's E2E dispatch). Threshold unchanged: verified by diff (the `expect` and the serious block are untouched apart from reusing the hoisted `where`).
