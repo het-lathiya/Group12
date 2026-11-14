@@ -39,3 +39,12 @@
 
 - The `map` filter is a regular expression on the spec path; today only `e2e/map.spec.ts` matches. A future spec whose path contains "map" would also run in this step.
 - If the dispatched run shows the map specs failing for a reason in `map.spec.ts`, that is outside this part.
+
+## RUN-071c
+
+- Run id: RUN-071c
+- Owner: Kirtan
+- Decision: IMD-183 (Actions minutes guardrail)
+- Trigger change: `.github/workflows/e2e.yml` no longer runs on `push` to `main` or on the nightly `schedule` (`30 20 * * *`). Only `workflow_dispatch` remains, with its `base_url` input unchanged; E2E is dispatched by hand on a pull request's branch before merge. The header comment says so. The `e2e` and `staging` jobs, their `if:` conditions (`!inputs.base_url` and `inputs.base_url`, neither refers to the push or schedule event), `permissions`, `env` and `concurrency` are unchanged.
+- Command: `apps/api/.venv/bin/python -c "import yaml,sys;d=yaml.safe_load(open('.github/workflows/e2e.yml'));print(list(d[True].keys()) if True in d else list(d['on'].keys()))"`
+- Result: `['workflow_dispatch']`
