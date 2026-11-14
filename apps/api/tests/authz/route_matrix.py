@@ -146,7 +146,10 @@ MATRIX: tuple[RouteCase, ...] = (
         "POST",
         "/api/v1/itinerary/items/{item_id}/replace",
         "foreign",
-        body=lambda owned: {"plan_revision": 1, "place_id": str(owned.place_id)},
+        # A's item already visits owned.place_id (its must-visit place), and Owned names no
+        # alternative, so A's control call uses revision 0: 409 STALE_PLAN proves the request is
+        # well formed and reaches A's item, while B still gets 404 before the revision check.
+        body=lambda owned: {"plan_revision": 0, "place_id": str(owned.place_id)},
     ),
     RouteCase(
         "API-32",
