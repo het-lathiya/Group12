@@ -39,13 +39,16 @@ async def verified_claims(
 
 
 async def db_session() -> AsyncIterator[AsyncSession]:
-    """One transaction per request for the auth module: committed after the handler, rolled back
-    if it raises. Tests override this dependency with their rolled-back session."""
+    """One transaction per request: committed before sending the response, rolled back on error.
+
+    Function scope also lets commit failures reach the error handlers before any response starts.
+    Tests can override this dependency with their rolled-back session.
+    """
     async with transaction() as session:
         yield session
 
 
-DbSession = Annotated[AsyncSession, Depends(db_session)]
+DbSession = Annotated[AsyncSession, Depends(db_session, scope="function")]
 
 
 async def current_user(
