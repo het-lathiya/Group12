@@ -22,7 +22,7 @@ from app.ai.prompts import registry
 from app.ai.providers.base import ModelProvider
 from app.core.logging import redact_text
 from app.db.models import PlaceOpeningHours
-from app.generation import records, repository, retrieval
+from app.generation import grouping, presets, records, repository, retrieval
 from app.places.schemas import PlaceSummary
 from app.rag.constants import RAG_MAX_PASSAGES, RAG_TOP_K_PLACE
 from app.rag.mmr import RetrievedChunk
@@ -45,7 +45,6 @@ from app.schemas.ai import (
     Travellers,
     TripContext,
 )
-from app.trips import preference_mapping
 from app.trips import service as trips_service
 from app.trips.schemas import PreferencesOut, TripOut
 
@@ -127,10 +126,9 @@ def build_generation_request(
     shortlist: Sequence[ShortlistPlace],
     settings: RequestSettings,
 ) -> GenerationRequest:
-    """The gr-1 fields; ``shortlist`` is in rank order, best first. Nothing here reads a row."""
-    max_items, max_minutes = preference_mapping.PACE_LIMITS[
-        preference_mapping.Pace(preferences.pace)
-    ]
+    """The gr-1 fields; ``shortlist`` is in rank order, best first. Nothing here reads a row.
+    ``day_hints`` come from the grouping, at most the pace maximum of items per day (IMP-503)."""
+    pace = presets.pace_limits(preferences.pace)
     return GenerationRequest(
         request_id=uuid.uuid4(),
         trip=TripContext(
@@ -158,10 +156,10 @@ def build_generation_request(
         ),
         must_visit_place_ids=list(must_visit),
         shortlist=list(shortlist),
-        day_hints=[],
+        day_hints=grouping.group_days(shortlist, must_visit, trip.num_days, pace.max_items_per_day),
         limits=Limits(
-            max_items_per_day=max_items,
-            max_active_minutes_per_day=max_minutes,
+            max_items_per_day=pace.max_items_per_day,
+            max_active_minutes_per_day=pace.max_active_minutes_per_day,
             day_start=DAY_START,
             day_end=DAY_END,
             meal_slots=MEAL_SLOTS,

@@ -76,6 +76,7 @@ source_modules =
     app.validation.rules
     app.validation.validator
     app.generation.fallback_planner
+    app.generation.grouping
     app.evaluation.retrieval_metrics
 forbidden_modules =
     fastapi
