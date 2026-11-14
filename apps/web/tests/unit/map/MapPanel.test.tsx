@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MapPanel } from "@/components/map/MapPanel";
@@ -12,7 +12,7 @@ type Item = components["schemas"]["Item"];
 // §9: MapLibre is mocked; the fake records what the panel draws and lets a test fire map events.
 const fake = vi.hoisted(() => ({
   maps: [] as {
-    options: { style: string };
+    options: { style: string; attributionControl?: unknown };
     handlers: Record<string, ((...args: unknown[]) => void)[]>;
     line: unknown;
     removed: boolean;
@@ -24,8 +24,8 @@ vi.mock("maplibre-gl", () => {
     handlers: Record<string, ((...args: unknown[]) => void)[]> = {};
     line: unknown = null;
     removed = false;
-    options: { style: string };
-    constructor(options: { style: string }) {
+    options: { style: string; attributionControl?: unknown };
+    constructor(options: { style: string; attributionControl?: unknown }) {
       this.options = options;
       fake.maps.push(this);
     }
@@ -110,7 +110,7 @@ function renderPanel(selectedItemId: string | null = null) {
 
 const stopNames = () =>
   screen
-    .getAllByRole("button", { name: /^Stop / })
+    .getAllByRole("button", { name: /^Stop/ })
     .map((b) => b.getAttribute("aria-label"));
 
 beforeEach(() => {
@@ -125,6 +125,19 @@ describe("MapPanel", () => {
   it("TC-238: shows one numbered marker per stop in visit order, joined in that order", () => {
     renderPanel();
     expect(fake.maps[0].options.style).toBe(OPENFREEMAP_STYLE_URL);
+    expect(fake.maps[0].options.attributionControl).toMatchObject({
+      compact: false,
+      customAttribution: expect.stringContaining(
+        'href="https://www.openstreetmap.org/copyright"',
+      ),
+    });
+    expect(
+      (
+        fake.maps[0].options.attributionControl as {
+          customAttribution: string;
+        }
+      ).customAttribution,
+    ).toContain("OpenStreetMap contributors");
     emit("load");
 
     expect(stopNames()).toEqual([
@@ -134,7 +147,7 @@ describe("MapPanel", () => {
     ]);
     expect(
       screen
-        .getAllByRole("button", { name: /^Stop / })
+        .getAllByRole("button", { name: /^Stop/ })
         .map((b) => b.textContent),
     ).toEqual(["1", "2", "3"]);
     expect(fake.maps[0].line).toMatchObject({
@@ -184,15 +197,22 @@ describe("MapPanel", () => {
     expect(fake.maps[0].removed).toBe(true);
     const list = screen.getByRole("list", { name: "Stops" });
     expect(list).toHaveTextContent("13:00–13:45");
-    expect(stopNames()).toEqual([
-      "Stop 1: Old Mill Museum (sample)",
-      "Stop 2: Harbour Steps (sample)",
-      "Stop 3: Lantern Market (sample)",
-    ]);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Stop 3: Lantern Market (sample)" }),
+    const entries = within(list).getAllByRole("button");
+    expect(entries[0]).toHaveAccessibleName(
+      /^Stop\s*1\s*Old Mill Museum \(sample\)/,
     );
+    expect(entries[1]).toHaveAccessibleName(
+      /^Stop\s*2\s*Harbour Steps \(sample\)/,
+    );
+    expect(entries[2]).toHaveAccessibleName(
+      /^Stop\s*3\s*Lantern Market \(sample\)/,
+    );
+    // WCAG 2.5.3: the visible text is part of the accessible name.
+    entries.forEach((b) => {
+      expect(b).not.toHaveAttribute("aria-label");
+    });
+
+    fireEvent.click(entries[2]);
     expect(onSelectItem).toHaveBeenCalledWith(ITEMS[2].id);
   });
 

@@ -30,13 +30,11 @@ export function MapListFallback({ items, onSelectItem }: MapListFallbackProps) {
             <button
               type="button"
               onClick={() => onSelectItem(item.id)}
-              aria-label={`Stop ${index + 1}: ${item.place.name}`}
               className="flex min-h-11 w-full items-center gap-3 rounded-lg px-2 text-left text-sm transition-colors outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              <span
-                aria-hidden="true"
-                className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground tabular-nums"
-              >
+              {/* The visible text forms the name ("Stop 1 <place> <times>"), so WCAG 2.5.3 holds. */}
+              <span className="sr-only">Stop </span>
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground tabular-nums">
                 {index + 1}
               </span>
               <span className="min-w-0 flex-1 font-medium">
