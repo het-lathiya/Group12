@@ -1,0 +1,96 @@
+{
+  "adapter_version": "mock-1",
+  "case_count": 15,
+  "dataset_id": "trips",
+  "dataset_sha256": "8e0bde49e0bd37e0d42a1f558baa2a287a69a0c53d53b8801288ff8c9439b450",
+  "dataset_version": "v1",
+  "ended_at": "2026-11-14T05:58:41.433892+00:00",
+  "failures": [],
+  "generation_settings": {},
+  "git_commit": "3796b05fc39dc2973e979a19a267741241475605",
+  "input_schema_version": "gr-1",
+  "metrics": {
+    "attempts": 45,
+    "avg_daily_travel_min": 160.8,
+    "counts": {
+      "place_ids_valid": {
+        "k": 45,
+        "n": 45
+      },
+      "schema_valid": {
+        "k": 45,
+        "n": 45
+      },
+      "usable": {
+        "k": 45,
+        "n": 45
+      }
+    },
+    "metrics_version": "v1",
+    "numbered": {
+      "1": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "10": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "11": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "12": {
+        "status": "null: no dated price table exists (\u00a78.16)",
+        "value": null
+      },
+      "13": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "2": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "3": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "4": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "5": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "6": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "7": {
+        "status": "not computed in v1 (IMP-413 card)",
+        "value": null
+      },
+      "8": {
+        "status": "Release 2 (\u00a78.17)",
+        "value": null
+      },
+      "9": {
+        "status": "not computed in v1 (IMP-413 card)",
+        "value": null
+      }
+    }
+  },
+  "metrics_definition_sha256": "6060ade359148c99990cb2349cf619a412b20ff113aaca37b0ece117e0e3bd89",
+  "metrics_version": "v1",
+  "model_id": "mock-v1",
+  "model_version": null,
+  "output_schema_version": "io-1",
+  "prompt_template_id": "itinerary_generate",
+  "prompt_version": "v1",
+  "provider": "MOCK",
+  "repeats": 3,
+  "run_id": "20261114T055841Z-mock",
+  "started_at": "2026-11-14T05:58:41.383999+00:00"
+}
