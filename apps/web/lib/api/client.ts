@@ -19,6 +19,8 @@ type ErrorEnvelope = components["schemas"]["ErrorEnvelope"];
 export const OFFLINE_MESSAGE =
   "The server could not be reached. Check your connection and try again.";
 
+export const STALE_PLAN_MESSAGE = "This plan changed since you opened it";
+
 /** A non-2xx answer, parsed from the §6.3 error envelope. */
 export class ApiError extends Error {
   constructor(
