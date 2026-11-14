@@ -47,6 +47,7 @@ from app.ai.errors import (
     ProviderTimeout,
     ProviderUnavailable,
 )
+from app.ai.limits import enforce_input_limit
 from app.ai.prompts import registry
 from app.ai.providers.base import check_embed_input, l2_normalised
 from app.core.config import (
@@ -396,6 +397,7 @@ class GeminiProvider:
             raise ProviderAuthError("GEMINI_API_KEY is not set")
         if not self._model_id:
             raise ProviderBadRequest("GEMINI_MODEL_ID is not set")
+        request, _ = enforce_input_limit(request, self._max_input_tokens)
         try:
             template = registry.load(request.prompt_template_id, request.prompt_version)
             system_text, user_text = template.prompt(request)

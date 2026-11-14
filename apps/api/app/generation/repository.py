@@ -10,11 +10,11 @@ AC3). ``cost_estimate_usd`` and ``cost_basis`` stay null until a dated cost basi
 """
 
 from collections.abc import Mapping
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFound
@@ -271,3 +271,30 @@ async def lock_trip(session: AsyncSession, trip_id: UUID, user_id: UUID) -> None
     await session.execute(
         select(Trip.id).where(Trip.id == trip_id, Trip.user_id == user_id).with_for_update()
     )
+
+
+async def daily_usage(
+    session: AsyncSession, user_id: UUID, start: datetime, end: datetime
+) -> tuple[int, int]:
+    """All attempts in the UTC day, excluding explicit rule-based runs (IMD-43)."""
+    row = (
+        await session.execute(
+            select(
+                func.count().filter(AiGeneration.user_id == user_id),
+                func.count(),
+            ).where(
+                AiGeneration.created_at >= start,
+                AiGeneration.created_at < end,
+                AiGeneration.model_id != "rule_based_planner_v1",
+            )
+        )
+    ).one()
+    return int(row[0]), int(row[1])
+
+
+async def purge_expired(session: AsyncSession, now: datetime) -> int:
+    """The existing foreign keys set plan/version generation references null (IMD-31)."""
+    removed = await session.scalars(
+        delete(AiGeneration).where(AiGeneration.retention_until < now).returning(AiGeneration.id)
+    )
+    return len(removed.all())

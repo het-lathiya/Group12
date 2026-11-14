@@ -345,3 +345,42 @@ describe("GenerationProgress", () => {
     expect(generateButton()).toBeDisabled();
   });
 });
+
+it("IMP-511: a daily cap shows reset and starts an explicit rule-based plan", async () => {
+  const modes: string[] = [];
+  vi.stubGlobal("fetch", async (request: Request) => {
+    if (request.method === "GET")
+      return json({ ai_notice_ack_at: "2026-11-01T10:00:00Z" });
+    const body = await request.json();
+    modes.push(body.mode);
+    if (body.mode === "ai")
+      return json(
+        {
+          error: {
+            code: "AI_QUOTA_REACHED",
+            message: "Daily limit reached.",
+            request_id: "request",
+            details: [
+              { field: "scope", message: "global" },
+              { field: "reset_at", message: "2026-11-15T00:00:00Z" },
+              { field: "mode", message: "rule_based" },
+            ],
+            retry_after_s: 60,
+          },
+        },
+        429,
+      );
+    return json(generation(GEN_ID, "queued", { mode: "rule_based" }), 202);
+  });
+  renderPage();
+  fireEvent.click(generateButton());
+  const button = await screen.findByRole("button", {
+    name: "Build a rule-based plan",
+  });
+  expect(
+    screen.getByText(/Daily limit resets at 2026-11-15/),
+  ).toBeInTheDocument();
+  fireEvent.click(button);
+  await screen.findByText("Elapsed 0:00");
+  expect(modes).toEqual(["ai", "rule_based"]);
+});

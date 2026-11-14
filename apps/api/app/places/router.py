@@ -12,10 +12,11 @@ API-17 (IMP-604) and API-19 to API-21 (IMP-605) are declared with their final sh
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.auth.deps import DbSession
 from app.core.errors import EndpointNotImplemented
+from app.core.rate_limit import expensive_request
 from app.places import service
 from app.places.schemas import Destination, PlaceOut, PlaceSummary
 from app.places.vocabulary import OfferedCategory
@@ -33,7 +34,12 @@ async def list_destinations(session: DbSession) -> list[Destination]:
     return await service.list_destinations(session)
 
 
-@router.get("/places", response_model=Page[PlaceSummary], summary="API-16 Search places")
+@router.get(
+    "/places",
+    response_model=Page[PlaceSummary],
+    summary="API-16 Search places",
+    dependencies=[Depends(expensive_request)],
+)
 async def search_places(
     session: DbSession,
     destination_id: UUID,
