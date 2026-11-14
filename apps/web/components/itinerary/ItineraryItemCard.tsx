@@ -1,11 +1,18 @@
 "use client";
 
+import { useIsMutating } from "@tanstack/react-query";
+import { Lock, Unlock } from "lucide-react";
+
 import { AlternativesDialog } from "@/components/itinerary/AlternativesDialog";
 import { ItemEditor } from "@/components/itinerary/ItemEditor";
 import { ItemSources } from "@/components/itinerary/ItemSources";
 import { MoveControls } from "@/components/itinerary/MoveControls";
 import { AiBadge } from "@/components/labels/AiBadge";
 import { SourceBadge } from "@/components/labels/SourceBadge";
+import { Button } from "@/components/ui/button";
+import { describeError } from "@/lib/api/errors";
+import { editKey, useLockItem } from "@/lib/api/queries";
+import { isEnabled } from "@/lib/flags";
 import type { components } from "@/lib/api/schema";
 
 type Item = components["schemas"]["Item"];
@@ -134,6 +141,17 @@ export function ItineraryItemCard({
             </p>
           )}
           {item.note_origin === "ai" && <ItemSources sources={item.sources} />}
+          {isEnabled("locks") &&
+            (edit ? (
+              <LockToggle item={item} edit={edit} />
+            ) : (
+              item.is_locked && (
+                <span className="mt-2 inline-flex items-center gap-1 text-sm">
+                  <Lock aria-hidden="true" className="size-4" />
+                  Locked
+                </span>
+              )
+            ))}
           {edit && (
             <>
               <ItemEditor
@@ -152,6 +170,37 @@ export function ItineraryItemCard({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function LockToggle({ item, edit }: { item: Item; edit: ItemEditContext }) {
+  const lock = useLockItem(edit.tripId);
+  const busy = useIsMutating({ mutationKey: editKey(edit.tripId) }) > 0;
+  const Icon = item.is_locked ? Lock : Unlock;
+  return (
+    <div className="mt-3">
+      <Button
+        variant="outline"
+        aria-pressed={item.is_locked}
+        aria-label={`${item.is_locked ? "Unlock" : "Lock"} ${item.place.name}`}
+        disabled={busy}
+        onClick={() =>
+          lock.mutate({
+            itemId: item.id,
+            plan_revision: edit.planRevision,
+            is_locked: !item.is_locked,
+          })
+        }
+      >
+        <Icon aria-hidden="true" />
+        {item.is_locked ? "Locked" : "Lock"}
+      </Button>
+      {lock.error && (
+        <p role="alert" className="mt-2 text-sm text-destructive">
+          {describeError(lock.error).what}. {describeError(lock.error).next}
+        </p>
+      )}
     </div>
   );
 }
