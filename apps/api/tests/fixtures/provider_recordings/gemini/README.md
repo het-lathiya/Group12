@@ -16,3 +16,5 @@ Each file is `{"http_status", "headers", "body"}` and is replayed through a fake
 | `rate_limited_429.json` | HTTP 429 `rate_limit_exceeded` with `Retry-After` |
 | `quota_429.json` | HTTP 429 `quota_exceeded` |
 | `unavailable_503.json` | HTTP 503 `service_unavailable` |
+| `permission_denied_403.json` | HTTP 403 `permission_denied` (the provider contract suite's auth case, IMP-512) |
+| `model_not_found_404.json` | HTTP 404 `model_not_found` (the provider contract suite's bad-request case, IMP-512) |
