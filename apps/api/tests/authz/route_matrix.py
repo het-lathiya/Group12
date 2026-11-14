@@ -131,7 +131,7 @@ MATRIX: tuple[RouteCase, ...] = (
         "PATCH",
         "/api/v1/itinerary/items/{item_id}",
         "foreign",
-        body=lambda _: {"plan_revision": 1, "duration_min": 60},
+        body=lambda _: {"plan_revision": 1, "duration_min": 60, "is_locked": False},
     ),
     RouteCase(
         "API-27",
