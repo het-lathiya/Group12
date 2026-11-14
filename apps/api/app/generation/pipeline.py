@@ -203,8 +203,17 @@ async def assess(job: Job, request: GenerationRequest, answer: ItineraryOutput) 
     if not checked.output.days:
         return Assessed(None, [], checked.findings, step8, dropped)
     plan, findings = await evaluate(job, request, checked.output)
+    scope = repair.scope_for(request)
+    # Only a must-visit place that lacked room is inserted; one with a filter conflict or closed
+    # every day stays MUST_VISIT_MISSING with its reason (FR-034).
+    conflicted = {
+        str(f.place_id)
+        for f in findings
+        if f.code == "MUST_VISIT_MISSING" and f.suggested_fix != retrieval.NO_ROOM[1]
+    }
+    scope = replace(scope, must_visit_ids=[p for p in scope.must_visit_ids if p not in conflicted])
     repaired = repair.repair(
-        checked.output, findings, repair.scope_for(request), repair.travel_gaps(plan)
+        repair.retimed(checked.output, plan), findings, scope, repair.travel_gaps(plan)
     )
     if repaired.output is None:
         return Assessed(None, [], findings, step8, dropped + repaired.fixes)

@@ -798,12 +798,11 @@ async def test_tc_191_repair_fixes_the_overlap_deterministically_without_a_model
 
     done = await poll(api_client, auth_user, generation_id, submitted, sessions)
 
-    assert len(provider.calls) == 1  # FR-057 AC1
-    assert (done["status"], done["outcome"]) == ("completed", "model_repaired")
-    assert done["deterministic_repairs"] >= 1
-    assert done["repair_attempts"] == 0
+    # FR-057 AC1: step 9 re-times the overlap in code; nothing is left to repair, no model call.
+    assert len(provider.calls) == 1
+    assert (done["status"], done["outcome"]) == ("completed", "model")
+    assert (done["deterministic_repairs"], done["repair_attempts"]) == (0, 0)
     body = await itinerary(api_client, auth_user, trip)
-    assert body["source"]["outcome"] == "model_repaired"
     assert [f for f in body["findings"] if f["code"] == "OVERLAP"] == []
 
 
@@ -1342,7 +1341,8 @@ async def test_must_visit_place_is_forced_into_the_shortlist_beyond_the_cap(
     generation_id = (await start(api_client, auth_user, trip_id)).json()["id"]
     await poll(api_client, auth_user, generation_id, submitted, sessions)
 
-    [request] = sent
+    request = sent[0]  # a repair call may follow when no day has room for it (IMP-502)
+    assert request.repair_context is None
     assert abbey in request.shortlist_ids()
     assert [str(i) for i in request.must_visit_place_ids] == [abbey]
 
