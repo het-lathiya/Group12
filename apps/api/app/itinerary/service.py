@@ -133,10 +133,7 @@ async def _summary(
     days: list[ItineraryDay],
     rows: list[tuple[ItineraryItem, Place, bool]],
 ) -> tuple[engine.CostSummary, int]:
-    settings = await budget_repository.get_settings(session, trip.id)
-    pct = int(settings.contingency_pct) if settings else DEFAULT_CONTINGENCY_PCT
-    if not is_enabled(get_settings(), "contingency"):
-        pct = 0  # BF-08
+    inputs = await validation_cost_inputs(session, trip)
 
     def minor(amount: Decimal | None) -> int | None:
         return None if amount is None else engine.to_minor(amount)
@@ -154,18 +151,9 @@ async def _summary(
             )
             for item, place, _ in rows
         ],
-        engine.CostInputs(
-            num_days=trip.num_days,
-            adults=trip.adults,
-            children=trip.children,
-            currency=trip_currency(trip),
-            budget=minor(trip.budget.amount) if trip.budget else None,
-            transport_per_day=minor(settings.transport_allowance_per_day) if settings else None,
-            stay_per_night=minor(settings.stay_budget_per_night) if settings else None,
-            contingency_pct=pct,
-        ),
+        inputs,
     )
-    return summary, pct
+    return summary, inputs.contingency_pct
 
 
 async def cost_summary(session: AsyncSession, trip: TripOut) -> tuple[engine.CostSummary, int]:
@@ -373,6 +361,7 @@ async def validation_context(
         must_visit_ids=frozenset(str(place_id) for place_id in prefs.must_visit_place_ids),
         pace=prefs.pace.value,
         timezone=timezone,
+        cost_inputs=await validation_cost_inputs(session, trip),
         opening_hours=hours,
         day_dates=day_dates,
     )
@@ -469,3 +458,23 @@ async def validation_hours(
         )
         for place, rows in await places_repository.candidates(session, destination_id)
     }
+
+
+async def validation_cost_inputs(session: AsyncSession, trip: TripOut) -> engine.CostInputs:
+    """One input frame for API totals and generation/edit/validate budget rules (BF-11)."""
+    settings = await budget_repository.get_settings(session, trip.id)
+    pct = int(settings.contingency_pct) if settings else DEFAULT_CONTINGENCY_PCT
+
+    def minor(amount: Decimal | None) -> int | None:
+        return None if amount is None else engine.to_minor(amount)
+
+    return engine.CostInputs(
+        num_days=trip.num_days,
+        adults=trip.adults,
+        children=trip.children,
+        currency=trip_currency(trip),
+        budget=minor(trip.budget.amount) if trip.budget else None,
+        transport_per_day=minor(settings.transport_allowance_per_day) if settings else None,
+        stay_per_night=minor(settings.stay_budget_per_night) if settings else None,
+        contingency_pct=pct if is_enabled(get_settings(), "contingency") else 0,
+    )
