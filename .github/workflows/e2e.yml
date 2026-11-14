@@ -1,7 +1,8 @@
-# End-to-end journey (IMP-216, IMP-414; specification §13, TC-369, TC-370). Runs on a push to main,
-# nightly and by hand; never on pull requests, so it is not one of the six required checks.
-# Run by hand with base_url, only the "staging" job runs, against that deployment (IMD-137: only
-# inside a staging window); it never runs automatically.
+# End-to-end journey (IMP-216, IMP-414; specification §13, TC-369, TC-370). Runs only by manual
+# dispatch (workflow_dispatch) on a pull request's branch before it is merged; there is no push,
+# nightly or pull_request trigger (Actions minutes guardrail, IMD-183), so it is not one of the six
+# required checks. Dispatched with base_url, only the "staging" job runs, against that deployment
+# (IMD-137: only inside a staging window).
 #
 # It starts the Supabase CLI local stack, migrates and seeds it, builds and starts the API with
 # AI_PROVIDER=MOCK and the web app, and runs the journey. No provider key exists here. The local
@@ -10,10 +11,6 @@
 name: E2E
 
 on:
-  push:
-    branches: [main]
-  schedule:
-    - cron: "30 20 * * *"
   workflow_dispatch:
     inputs:
       base_url:
