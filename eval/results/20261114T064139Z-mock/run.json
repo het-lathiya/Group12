@@ -4,10 +4,10 @@
   "dataset_id": "trips",
   "dataset_sha256": "8e0bde49e0bd37e0d42a1f558baa2a287a69a0c53d53b8801288ff8c9439b450",
   "dataset_version": "v1",
-  "ended_at": "2026-11-14T05:58:41.433892+00:00",
+  "ended_at": "2026-11-14T06:41:39.702127+00:00",
   "failures": [],
   "generation_settings": {},
-  "git_commit": "3796b05fc39dc2973e979a19a267741241475605",
+  "git_commit": "4c6c6938bc6f6a55690a3dd96a7e3573398a4d6f",
   "input_schema_version": "gr-1",
   "metrics": {
     "attempts": 45,
@@ -91,6 +91,6 @@
   "prompt_version": "v1",
   "provider": "MOCK",
   "repeats": 3,
-  "run_id": "20261114T055841Z-mock",
-  "started_at": "2026-11-14T05:58:41.383999+00:00"
+  "run_id": "20261114T064139Z-mock",
+  "started_at": "2026-11-14T06:41:39.630461+00:00"
 }
