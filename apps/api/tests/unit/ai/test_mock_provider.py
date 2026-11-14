@@ -1,6 +1,7 @@
 """Mock adapter (app/ai/providers/mock.py; §8.4, FR-042, IMD-27, IMD-28: TC-033 to TC-036).
 
-No database and no network: every request here is SAMPLE data built from tests/fixtures/ai.py.
+No database and no network: every request here is SAMPLE data built from tests/fixtures/ai.py, or
+from the SAMPLE fixture destination (data/fixtures/sampleton) read from its files.
 """
 
 import ast
@@ -9,6 +10,8 @@ import inspect
 import json
 import re
 import socket
+import uuid
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, get_args
 
@@ -29,6 +32,13 @@ from app.ai.errors import (
 from app.ai.providers import mock
 from app.ai.providers.mock import MockProvider
 from app.core.config import ConfigError, MockScenario, load_settings
+from app.db.models import Destination, Place, PlaceOpeningHours
+from app.generation import ranking, request_builder, schedule
+from app.generation.retrieval import Candidate
+from app.places.import_pipeline import prepare
+from app.places.schemas import PlaceSummary
+from app.routing.estimate import TravelEstimate, TravelMode
+from app.routing.service import RoutablePlace, travel_time
 from app.schemas.ai import (
     GenerationRequest,
     GroundedGenerationRequest,
@@ -36,6 +46,10 @@ from app.schemas.ai import (
     ItineraryOutput,
     ModificationRequest,
 )
+from app.trips import preference_mapping
+from app.validation import repair
+from app.validation.rules import HoursInfo, OpeningRow, ValidationContext
+from app.validation.validator import validate
 
 IO_1_SCHEMA = json.loads(
     (Path(__file__).resolve().parents[5] / "contracts" / "ai" / "io-1.schema.json").read_text(
@@ -147,9 +161,10 @@ def test_candidates_keep_their_order_and_follow_the_timing_rule() -> None:
         [THALI],
     ]
     day_1 = output.days[0].items
+    # One place's coordinates: 0 min of travel plus the 15-min fallback buffer, as step 9 adds.
     assert [(item.start_time, item.duration_min) for item in day_1] == [
         ("09:00", 120),
-        ("11:30", 60),
+        ("11:15", 60),
     ]
     assert output.days[1].items[0].start_time == "09:00"
     assert output.unknown_place_ids(sample_request()) == []
@@ -165,6 +180,25 @@ def test_the_pace_item_limit_and_the_day_count_bound_the_plan() -> None:
     all_in_one = generate(ok())  # five items per day: every candidate fits on day 1
     assert [day.day_number for day in all_in_one.days] == [1]
     assert all_in_one.place_ids() == [FORT, MARKET, THALI]
+
+
+def test_a_candidate_goes_to_the_first_day_it_fits_or_is_left_out() -> None:
+    data = sample_request_data()
+    data["shortlist"][0]["hours_summary"] = "Tue closed; Wed 09:00-17:00"  # FORT: day 2 only
+    data["shortlist"][1]["hours_summary"] = "Tue 18:00-02:00; Wed closed"  # MARKET: evening only
+    data["shortlist"][2]["hours_summary"] = "hours unavailable"  # THALI: nothing to fit
+    output = generate(ok(), GenerationRequest.model_validate(data))
+    assert [[item.place_id for item in day.items] for day in output.days] == [[THALI], [FORT]]
+
+    late = generate(ok(), request_with(limits__day_end="11:00"))  # THALI never ends by 11:00
+    assert [[item.place_id for item in day.items] for day in late.days] == [[FORT], [MARKET]]
+    short = generate(ok(), request_with(limits__max_active_minutes_per_day=130))
+    assert [[item.place_id for item in day.items] for day in short.days] == [
+        [FORT],
+        [MARKET, THALI],
+    ]
+    nothing_fits = generate(ok(), request_with(limits__day_end="09:30"))
+    assert nothing_fits.place_ids() == [FORT, MARKET, THALI]  # the plain spread
 
 
 def test_a_day_scope_plans_only_that_day() -> None:
@@ -285,6 +319,128 @@ def test_unknown_place_returns_exactly_one_id_outside_the_candidates() -> None:
     assert len(unknown) == 1
     assert unknown[0] not in request.shortlist_ids()
     assert generate(ok(scenario="unknown_place"), request) == output
+
+
+# ---------- PD-RUN-069-1: the ok answer fits the SAMPLE fixture's curated hours ----------
+
+SAMPLETON = Path(__file__).resolve().parents[5] / "data" / "fixtures" / "sampleton"
+
+
+class FallbackRouting:
+    """Step 9 without a route cache or OpenRouteService: the distance estimate, as in API tests."""
+
+    async def travel(
+        self, origin: RoutablePlace, target: RoutablePlace, mode: TravelMode | str
+    ) -> TravelEstimate:
+        return await travel_time(origin, target, mode)
+
+
+def sampleton_request(start: date) -> tuple[GenerationRequest, dict[str, HoursInfo], str]:
+    """The pinned API-test trip (3 days, 2 adults, museum and food, balanced, walking), with the
+    shortlist ranked by the generation code from the fixture files instead of the database."""
+    prepared = prepare(SAMPLETON)
+    weekdays = [(start + timedelta(days=offset)).isoweekday() for offset in range(3)]
+    candidates, hours = [], {}
+    for row in prepared.accepted:
+        values = dict(row.result.values)
+        place = Place(**values, id=uuid.uuid5(uuid.NAMESPACE_URL, str(values["external_ref"])))
+        rows = [
+            PlaceOpeningHours(
+                place_id=place.id,
+                weekday=weekday,
+                is_closed=closed,
+                open_time=opened,
+                close_time=closes,
+                closes_next_day=next_day,
+            )
+            for weekday, closed, opened, closes, next_day in row.result.hours
+        ]
+        hours[str(place.id)] = HoursInfo(
+            place.hours_label,
+            [
+                OpeningRow(
+                    h.weekday,
+                    h.is_closed,
+                    h.open_time.strftime("%H:%M") if h.open_time else None,
+                    h.close_time.strftime("%H:%M") if h.close_time else None,
+                    h.closes_next_day,
+                )
+                for h in rows
+            ],
+        )
+        if not set(weekdays) <= {h.weekday for h in rows if h.is_closed}:  # the closed filter
+            candidates.append(Candidate(place, tuple(rows), False, None, None))
+    mapped = preference_mapping.map_preferences(
+        preference_mapping.Preferences(interests=["museum", "food"]),
+        preference_mapping.TripFacts(),
+        semantic=False,  # no RAG index in the API tests: lexical ranking
+    )
+    destination = Destination(**prepared.destination)
+    context = ranking.build_context(
+        candidates,
+        mapped,
+        destination,
+        num_days=3,
+        meal_slots_per_day=len(request_builder.MEAL_SLOTS),
+        activity_budget=None,
+    )
+    data = sample_request_data()
+    data["trip"] |= {
+        "start_date": start.isoformat(),
+        "end_date": (start + timedelta(days=2)).isoformat(),
+        "num_days": 3,
+        "budget": None,
+    }
+    data["preferences"] |= {"interests": ["museum", "food"], "transport_pref": "walking"}
+    data["must_visit_place_ids"], data["day_hints"] = [], []
+    data["shortlist"] = [
+        request_builder.shortlist_place(
+            PlaceSummary.from_row(entry.candidate.place),
+            request_builder.hours_summary(entry.candidate.hours, list(dict.fromkeys(weekdays))),
+        ).model_dump(mode="json")
+        for entry in ranking.rank_shortlist(candidates, context).entries
+    ]
+    return GenerationRequest.model_validate(data), hours, str(prepared.destination["timezone"])
+
+
+@pytest.mark.parametrize("offset", range(7))  # 4 December 2026 (the pinned trip) and each weekday
+def test_the_ok_answer_for_the_sample_trip_needs_no_repair_and_fits_the_hours(offset: int) -> None:
+    start = date(2026, 12, 4) + timedelta(days=offset)
+    request, hours, timezone = sampleton_request(start)
+    output = generate(ok(), request)
+    places = {str(place.place_id): place for place in request.shortlist}
+
+    plan = asyncio.run(
+        schedule.recalculate(output.days, places, FallbackRouting(), "balanced", mode="walking")
+    )
+    findings = validate(
+        plan,
+        ValidationContext(
+            start_date=start,
+            end_date=start + timedelta(days=2),
+            places={place_id: place.name for place_id, place in places.items()},
+            shortlist_ids=frozenset(places),
+            pace="balanced",
+            timezone=timezone,
+            opening_hours=hours,
+        ),
+    )
+    repaired = repair.repair(
+        repair.retimed(output, plan), findings, repair.scope_for(request), repair.travel_gaps(plan)
+    )
+
+    # Prices are not loaded here, so COST_INCOMPLETE (sample-007, sample-017) is not checked.
+    # sample-026 has no stored hours: an info, never a repair, and never OUTSIDE_HOURS.
+    assert [(f.code, f.severity) for f in findings if f.code != "HOURS_UNVERIFIED"] == []
+    assert {f.severity for f in findings} <= {"info"}
+    if offset == 0:  # the pinned trip: exactly one unverified visit
+        assert [f.code for f in findings] == ["HOURS_UNVERIFIED"]
+    assert repaired.fixes == 0
+    assert [day.day_number for day in output.days] == [1, 2, 3]
+    # Step 9 keeps the mock's own times: nothing for the deterministic repair to shift.
+    assert [(i.start_time, i.duration_min) for d in output.days for i in d.items] == [
+        (i.start_time, i.duration_min) for d in plan for i in d.items
+    ]
 
 
 # ---------- MOCK_PROVIDER_SCENARIO and APP_ENV (IMD-27) ----------
