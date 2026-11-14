@@ -1673,6 +1673,7 @@ Duplicates in `interests` or `must_visit_place_ids` answer 422; they are not rem
 | verification_status | enum | `unverified`, `curated_checked`, `imported_osm`, `estimated` | same |
 | suitability | object | `{step_free, child_friendly, indoor}`, each true, false or null (unknown, FR-019 AC2) | same |
 | distance_m (summary, optional) | int | only when `near_lat`/`near_lon` given | derived |
+| source_name (summary, optional) | str or null | source name, filled by API-16 (IMD-174) | `data_sources.name` |
 | description, address, website_url, booking_url (detail) | str or null | | same |
 | hours (detail) | object[] | `{weekday 1-7, is_closed, open_time, close_time, closes_next_day}` | `place_opening_hours` |
 | hours_checked_on (detail) | date or null | | same |

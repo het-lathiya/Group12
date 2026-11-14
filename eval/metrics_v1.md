@@ -36,3 +36,7 @@ The numbered metrics are those of blueprint §21.4. The blueprint is not in the 
 | 12 | null: no dated price table exists (§8.16) |
 
 Each is written to the run record with `value: null` and this status.
+
+## Supplementary metric (IMD-169)
+
+`avg_daily_travel_min` is the mean over every planned day of all attempts of that day's summed travel minutes (`daily_travel_min`), rounded to one decimal place; it is null when there are no planned days. It is computed by `apps/api/app/evaluation/metrics.py`. This supplements v1; the three v1 counts above are unchanged (IMD-144).
