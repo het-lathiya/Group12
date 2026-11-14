@@ -97,9 +97,12 @@ class PlaceSummary(BaseModel):
     hours_label: SourceLabel
     verification_status: VerificationStatus
     suitability: Suitability
+    source_name: str | None = Field(
+        None, description="Name of the place's data source; always set by API-16 (FR-016 AC2)"
+    )
 
     @classmethod
-    def from_row(cls, row: PlaceRow) -> "PlaceSummary":
+    def from_row(cls, row: PlaceRow, source_name: str | None = None) -> "PlaceSummary":
         price = None
         if row.price_min is not None and row.price_currency is not None:
             price = PlacePrice(
@@ -123,6 +126,7 @@ class PlaceSummary(BaseModel):
             suitability=Suitability(
                 step_free=row.step_free, child_friendly=row.child_friendly, indoor=row.indoor
             ),
+            source_name=source_name,
         )
 
 
