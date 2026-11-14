@@ -4064,7 +4064,7 @@ Every number carries its run metadata.
 
 **Implementation**
 
-1. Add BF-12 to engine.py: by_day[d] = items on day d + transport allowance t + stay s for d <= N; by_category over activities, food, other, transport, accommodation; the contingency buffer is its own row in both tables so each adds up to the planning total P exactly (integer minor units inside the engine, money strings at the API edge per IMD-05).
+1. Add BF-12 to engine.py: by_day[d] = items on day d + transport allowance t + stay s for d <= N; by_category over activities, food, other, transport, accommodation; the contingency buffer is split into contingency_share per day and is its own category row, following §6.5 and IMD-172, so each breakdown adds up to the planning total P exactly (integer minor units inside the engine, money strings at the API edge per IMD-05).
 2. Extend CostSummaryOut of API-33 with by_day[] `{day_number, min, max, contingency_share}` and by_category[] `{category, min, max, label}` following §6.5 (IMD-172), without breaking existing fields.
 3. Build CostBreakdown as two accessible tables (optional simple bar chart is not required); render values from the API only; refetch on itinerary edits via the shared query invalidation.
 4. Audit every MVP screen (explore, place detail, itinerary, costs, summary) and render SourceBadge for price_label/hours_label and the travel label for travel_source (routing_api -> "Estimated travel time from a routing service", fallback_estimate -> "Estimated travel time (distance based)").
