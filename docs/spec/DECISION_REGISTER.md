@@ -130,6 +130,7 @@ Amendment A1 (2 November 2026) added IMD-99 to IMD-116 (AWS hosting and the RAG 
 | IMD-164 | CI secrets for the staging journey account | CI secrets `E2E_STAGING_EMAIL` and `E2E_STAGING_PASSWORD` hold the staging test account of IMD-163 (PD-IMP-414-2) | Team decision of 12–13 November 2026 (operator het-lathiya) | Kirtan |
 | IMD-165 | Staging journey switches on the staging secrets | The staging differences of the journey (sign in instead of sign up, 180 s generation wait) switch on the presence of the staging secrets; the AI provider is a property of staging, not chosen by the test (PD-IMP-414-3) | Team decision of 12–13 November 2026 (operator het-lathiya) | Krrish |
 | IMD-166 | API-16 answers 404 for an unknown destination | API-16 answers 404 `NOT_FOUND` for an unknown destination as for an inactive one (§6.2 "invisible (404)"); the answer does not reveal inactive destinations (RUN-059 destination-404) | Team decision of 12–13 November 2026 (operator het-lathiya) | Malhar |
+| IMD-167 | No cut-list switch at SG-4 | PD-IMP-499-1 confirmed 14 Nov 2026: no cut-list switch at SG-4; all Sprint 5 MVP cards proceed; EXT cards stay cut (IMD-65). `FEATURES_DISABLED` is unchanged | SG-4 cut-list checkpoint (IMP-499, `docs/decisions/cut-list-checkpoint.md`); team decision of 14 November 2026 (operator het-lathiya) | Kirtan |
 
 ## Provisional defaults adopted for implementation (team may change them)
 
