@@ -7,7 +7,7 @@ API-22 in mode rule_based (no provider call) with the MOCK job path, as in test_
 """
 
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import time
 from pathlib import Path
@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.factory import get_model_provider
 from app.ai.providers.base import ModelProvider
 from app.ai.providers.mock import MockProvider
+from app.core.config import get_settings
 from app.core.errors import GenerationInProgress, InvalidEdit, NotFound, StalePlan
 from app.db.models import (
     Destination,
@@ -1166,3 +1167,273 @@ async def test_add_place_route_refuses_an_active_generation_and_another_users_tr
     assert busy.status_code == 409, busy.text
     assert busy.json()["error"]["code"] == "GENERATION_IN_PROGRESS"
     assert await state(db_session, trip_id) == before
+
+
+# API-28 and API-29: ranked alternatives and replace (IMP-505; FR-065; IMD-11)
+
+
+def alternatives_url(item_id: Any) -> str:
+    return f"{item_url(item_id)}/alternatives"
+
+
+def replace_url(item_id: Any) -> str:
+    return f"{item_url(item_id)}/replace"
+
+
+def first_activity(itinerary: dict[str, Any]) -> dict[str, Any]:
+    return next(
+        item
+        for day in itinerary["days"]
+        for item in day["items"]
+        if item["slot_type"] == "activity"
+    )
+
+
+@pytest.fixture
+def alternatives_off(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setenv("FEATURES_DISABLED", "alternatives")
+    get_settings.cache_clear()
+    yield
+    monkeypatch.undo()
+    get_settings.cache_clear()
+
+
+# FR-065 AC1, TC-208
+
+
+@pytest.mark.asyncio
+async def test_tc_208_alternatives_route_lists_up_to_three_ranked_places_with_deltas(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    before = await state(db_session, trip_id)
+    itinerary = await route_state(api_client, auth_user, trip_id)
+    item = first_activity(itinerary)
+    planned = {i["place"]["id"] for day in itinerary["days"] for i in day["items"]}
+
+    response = await api_client.get(alternatives_url(item["id"]), headers=auth_user.headers)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["item_id"] == item["id"]
+    assert 1 <= len(body["alternatives"]) <= 3
+    assert body["message"] is None
+    for alternative in body["alternatives"]:
+        assert alternative["place"]["id"] not in planned
+        assert alternative["place"]["category"] != "food"  # an activity slot takes no food place
+        assert set(alternative["cost_delta"]) == {"min", "max"}
+        for amount in alternative["cost_delta"].values():
+            assert isinstance(amount, str)
+            assert len(amount.split(".")[1]) == 2  # IMD-05 money strings
+        assert isinstance(alternative["time_delta_min"], int)
+        assert alternative["reason"]
+    again = await api_client.get(alternatives_url(item["id"]), headers=auth_user.headers)
+    assert again.json() == body  # same inputs, same ranking
+    assert await state(db_session, trip_id) == before  # read only
+
+
+# FR-065 AC2, TC-209
+
+
+@pytest.mark.asyncio
+async def test_tc_209_replace_route_applies_an_alternative_keeping_the_start_time(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    before = await route_state(api_client, auth_user, trip_id)
+    item = first_activity(before)
+    listed = await api_client.get(alternatives_url(item["id"]), headers=auth_user.headers)
+    chosen = listed.json()["alternatives"][0]["place"]
+
+    response = await api_client.post(
+        replace_url(item["id"]),
+        json={"plan_revision": before["plan_revision"], "place_id": chosen["id"]},
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["plan_revision"] == before["plan_revision"] + 1
+    replaced = next(i for d in result["changed_days"] for i in d["items"] if i["id"] == item["id"])
+    assert replaced["place"]["id"] == chosen["id"]
+    assert replaced["start_time"] == item["start_time"]
+    assert replaced["duration_min"] == chosen["typical_duration_min"]
+    assert (replaced["origin"], replaced["sources"]) == ("user", [])  # A1 §6.10
+    assert_matches_itinerary(result, await route_state(api_client, auth_user, trip_id))
+
+
+@pytest.mark.parametrize("case", ["not_an_alternative", "stale"])
+@pytest.mark.asyncio
+async def test_replace_route_refuses_a_non_alternative_or_a_stale_revision(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+    case: str,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    itinerary = await route_state(api_client, auth_user, trip_id)
+    item = first_activity(itinerary)
+    listed = await api_client.get(alternatives_url(item["id"]), headers=auth_user.headers)
+    alternative = listed.json()["alternatives"][0]["place"]["id"]
+    planned_elsewhere = next(
+        i["place"]["id"]
+        for day in itinerary["days"]
+        for i in day["items"]
+        if i["place"]["id"] != item["place"]["id"]
+    )
+    before = await state(db_session, trip_id)
+    body = (
+        {"plan_revision": before["revision"], "place_id": planned_elsewhere}
+        if case == "not_an_alternative"
+        else {"plan_revision": before["revision"] - 1, "place_id": alternative}
+    )
+
+    response = await api_client.post(replace_url(item["id"]), json=body, headers=auth_user.headers)
+
+    expected = (422, "INVALID_EDIT") if case == "not_an_alternative" else (409, "STALE_PLAN")
+    assert (response.status_code, response.json()["error"]["code"]) == expected
+    assert await state(db_session, trip_id) == before
+
+
+# FR-065 AC3, TC-210
+
+
+@pytest.mark.asyncio
+async def test_tc_210_alternatives_route_says_none_fit_when_no_place_is_left(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    item = first_activity(await route_state(api_client, auth_user, trip_id))
+    planned = select(ItineraryItem.place_id).where(ItineraryItem.trip_id == trip_id)
+    await db_session.execute(
+        update(Place)
+        .where(Place.destination_id == destination.id, Place.id.not_in(planned))
+        .values(is_active=False)
+    )
+
+    response = await api_client.get(alternatives_url(item["id"]), headers=auth_user.headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "item_id": item["id"],
+        "alternatives": [],
+        "message": "No alternative fits",
+    }
+
+
+@pytest.mark.asyncio
+async def test_alternatives_of_a_locked_item_are_empty_and_its_replace_is_invalid(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    item = first_activity(await route_state(api_client, auth_user, trip_id))
+    newcomer = (await unplanned_place(db_session, trip_id)).id
+    # API-26 locking is IMP-506 (IMD-158), so the core locks the item.
+    await edit(db_session, auth_user, trip_id, Lock(uuid.UUID(item["id"]), True))
+    before = await state(db_session, trip_id)
+
+    listed = await api_client.get(alternatives_url(item["id"]), headers=auth_user.headers)
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["alternatives"] == []
+    assert "locked" in listed.json()["message"]
+
+    replaced = await api_client.post(
+        replace_url(item["id"]),
+        json={"plan_revision": before["revision"], "place_id": str(newcomer)},
+        headers=auth_user.headers,
+    )
+    assert replaced.status_code == 422, replaced.text
+    assert replaced.json()["error"]["code"] == "INVALID_EDIT"
+    assert await state(db_session, trip_id) == before
+
+
+@pytest.mark.asyncio
+async def test_alternatives_routes_answer_not_found_for_another_users_item(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    item = (await items(db_session, trip_id))[0]
+    newcomer = (await unplanned_place(db_session, trip_id)).id
+    other = AuthUser(user_id=uuid.uuid4(), email="other@example.test")
+    await insert_auth_user(db_session, other.user_id)
+    before = await state(db_session, trip_id)
+
+    listed = await api_client.get(alternatives_url(item.id), headers=other.headers)
+    replaced = await api_client.post(
+        replace_url(item.id),
+        json={"plan_revision": before["revision"], "place_id": str(newcomer)},
+        headers=other.headers,
+    )
+
+    for response in (listed, replaced):
+        assert response.status_code == 404, response.text
+        assert response.json()["error"]["code"] == "NOT_FOUND"
+    assert await state(db_session, trip_id) == before
+
+
+# IMD-11 cut-list item 6, TC-372 (API side): switched off, both routes are 404 and the floor
+# journey (remove an activity, add another place) still works.
+
+
+@pytest.mark.asyncio
+async def test_tc_372_alternative_routes_are_not_found_when_switched_off_and_the_floor_works(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+    alternatives_off: None,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    before = await route_state(api_client, auth_user, trip_id)
+    item = first_activity(before)
+    newcomer = await unplanned_place(db_session, trip_id)
+
+    listed = await api_client.get(alternatives_url(item["id"]), headers=auth_user.headers)
+    replaced = await api_client.post(
+        replace_url(item["id"]),
+        json={"plan_revision": before["plan_revision"], "place_id": str(newcomer.id)},
+        headers=auth_user.headers,
+    )
+    for response in (listed, replaced):
+        assert response.status_code == 404, response.text
+        assert response.json()["error"]["code"] == "NOT_FOUND"
+
+    removed = await api_client.delete(
+        item_url(item["id"]),
+        params={"plan_revision": before["plan_revision"]},
+        headers=auth_user.headers,
+    )
+    assert removed.status_code == 200, removed.text
+    added = await api_client.post(
+        add_url(trip_id),
+        json={
+            "plan_revision": removed.json()["plan_revision"],
+            "day_number": 1,
+            "place_id": str(newcomer.id),
+        },
+        headers=auth_user.headers,
+    )
+    assert added.status_code == 200, added.text
