@@ -1,8 +1,9 @@
-"""Place routes API-06 and API-16 (basic) (specification §6.6.3; FR-007, FR-016, FR-019).
+"""Place routes API-06 and API-16 (specification §6.6.3; FR-007, FR-016, FR-019).
 
 Mounted under /api/v1, whose router requires CurrentUser (IMP-108): reference data still needs a
-token (§6.2). API-16 has the basic filters the must-visit picker needs (destination_id, q,
-category, paging); IMP-509 and IMP-604 add the others. The handlers only call places/service.py.
+token (§6.2). API-16 has the filters the must-visit picker needs (destination_id, q, category,
+paging) and names each place's source for the explore page (IMP-509); IMP-604 adds the others.
+The handlers only call places/service.py.
 
 API-17 (IMP-604) and API-19 to API-21 (IMP-605) are declared with their final shapes and answer
 501 NOT_IMPLEMENTED until those cards build them (IMD-37).

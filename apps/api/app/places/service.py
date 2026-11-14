@@ -36,7 +36,7 @@ async def search_places(
     limit: int,
     offset: int,
 ) -> Page[PlaceSummary]:
-    """API-16 basic: active places of an active destination by name, category and page.
+    """API-16: active places of an active destination by name, category and page.
 
     An inactive or unknown destination is 404 NOT_FOUND: §6.2 makes inactive destinations
     invisible, so they answer like a missing one (IMD-127).
@@ -53,7 +53,10 @@ async def search_places(
         offset=offset,
     )
     return Page[PlaceSummary](
-        items=[PlaceSummary.from_row(row) for row in rows], total=total, limit=limit, offset=offset
+        items=[PlaceSummary.from_row(row, source) for row, source in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
     )
 
 
