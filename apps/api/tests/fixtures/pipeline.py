@@ -145,6 +145,7 @@ class Journal:
         monkeypatch.setattr(pipeline.request_builder, "build", build)
         monkeypatch.setattr(pipeline.itinerary_service, "save_generated_plan", save)
         monkeypatch.setattr(pipeline.itinerary_service, "validation_hours", validation_hours)
+        monkeypatch.setattr(pipeline.itinerary_service, "validation_cost_inputs", nothing)
         monkeypatch.setattr(pipeline.places_service, "active_place_names", active_place_names)
         monkeypatch.setattr(pipeline.retrieval, "must_visit_reasons", reasons)
         monkeypatch.setattr(pipeline.trips_service, "get_trip", nothing)

@@ -11,8 +11,10 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from typing import Final, Protocol
+from uuid import NAMESPACE_URL, uuid5
 from zoneinfo import ZoneInfo
 
+from app.budget import engine
 from app.generation.presets import pace_limits
 from app.routing.estimate import BUFFER_MIN
 from app.schemas.ai import MAX_TRIP_DAYS, FindingCode, PlanFinding, Severity
@@ -92,6 +94,7 @@ class ValidationContext:
     timezone: str = "UTC"
     day_dates: Mapping[int, date] = field(default_factory=dict)
     opening_hours: Mapping[str, HoursInfo] | None = None
+    cost_inputs: engine.CostInputs | None = None
 
     @property
     def num_days(self) -> int:
@@ -326,12 +329,62 @@ def day_length(plan: Sequence[PlanDay], ctx: ValidationContext) -> list[Finding]
     ]
 
 
+def budget_conflicts(plan: Sequence[PlanDay], ctx: ValidationContext) -> list[Finding]:
+    """BF-11 and BF-04: use the pure engine's totals and alerts, never sum prices here."""
+    if ctx.cost_inputs is None:
+        return []
+    costs = []
+    estimates = []
+    incomplete_count = 0
+    for day in plan:
+        for position, item in enumerate(day.items, 1):
+            ref = item_ref(day.day_number, position)
+            low, high = getattr(item, "cost_min", None), getattr(item, "cost_max", None)
+            label = getattr(item, "cost_label", None) or "unavailable"
+            costs.append(
+                engine.CostedItem(
+                    uuid5(NAMESPACE_URL, ref),
+                    day.day_number,
+                    "other",
+                    None if low is None else engine.to_minor(low),
+                    None if high is None else engine.to_minor(high),
+                    label,
+                )
+            )
+            if label in {"unavailable", "estimate"} or low is None:
+                incomplete_count += 1
+            if label == "estimate":
+                estimates.append(
+                    finding(
+                        "ESTIMATE_USED",
+                        "This item uses a category price estimate.",
+                        day_number=day.day_number,
+                        item_ref=ref,
+                    )
+                )
+    summary = engine.compute_costs(costs, ctx.cost_inputs)
+    found = [
+        finding(alert.code, alert.message)
+        for alert in summary.alerts
+        if alert.code != "COST_INCOMPLETE"
+    ]
+    if incomplete_count:
+        found.append(
+            finding(
+                "COST_INCOMPLETE",
+                f"{incomplete_count} planned items have unavailable or estimated prices; the total is incomplete.",
+            )
+        )
+    return [*found, *estimates]
+
+
 # The order of the §8.12 table.
 RULES: Final[tuple[Rule, ...]] = (
     overlap,
     transfer_too_short,
     opening_hours,
     day_length,
+    budget_conflicts,
     must_visit_missing,
     unknown_place,
     outside_trip_dates,
