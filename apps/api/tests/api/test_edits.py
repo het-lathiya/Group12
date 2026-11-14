@@ -914,3 +914,255 @@ async def test_move_route_refuses_an_invalid_move_with_invalid_edit(
     assert response.status_code == 422, response.text
     assert response.json()["error"]["code"] == "INVALID_EDIT"
     assert await state(db_session, trip_id) == before
+
+
+# API-25 add a place (IMP-504; FR-062, FR-069; IMD-152)
+
+
+def add_url(trip_id: uuid.UUID) -> str:
+    return f"/api/v1/trips/{trip_id}/itinerary/items"
+
+
+def clock_minutes(value: str) -> int:
+    return minutes(time.fromisoformat(value))
+
+
+# FR-062 AC1, TC-202
+
+
+@pytest.mark.asyncio
+async def test_tc_202_add_place_route_inserts_at_a_feasible_time_and_revalidates(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    newcomer = await unplanned_place(db_session, trip_id)
+    before = await route_state(api_client, auth_user, trip_id)
+    day_one = before["days"][0]["items"]
+
+    response = await api_client.post(
+        add_url(trip_id),
+        json={
+            "plan_revision": before["plan_revision"],
+            "day_number": 1,
+            "place_id": str(newcomer.id),
+        },
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["plan_revision"] == before["plan_revision"] + 1
+    assert [day["day_number"] for day in result["changed_days"]] == [1]
+    day = result["changed_days"][0]["items"]
+    assert [item["id"] for item in day[:-1]] == [item["id"] for item in day_one]
+    added, previous = day[-1], day[-2]
+    assert added["place"]["id"] == str(newcomer.id)
+    assert (added["position"], added["origin"]) == (len(day), "user")
+    assert added["duration_min"] == newcomer.typical_duration_min
+    # Earliest feasible time: previous end + travel (+ the buffer of that travel source).
+    leg = added["travel_from_previous"]
+    assert leg is not None
+    assert clock_minutes(added["start_time"]) >= (
+        clock_minutes(previous["end_time"]) + leg["minutes"]
+    )
+    assert_matches_itinerary(result, await route_state(api_client, auth_user, trip_id))
+
+
+# FR-062 AC2, TC-203
+
+
+@pytest.mark.asyncio
+async def test_tc_203_add_place_route_keeps_a_conflicting_addition_and_reports_it(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    before = await route_state(api_client, auth_user, trip_id)
+    first = before["days"][0]["items"][0]
+
+    response = await api_client.post(  # the same place again, at the same time: no silent merge
+        add_url(trip_id),
+        json={
+            "plan_revision": before["plan_revision"],
+            "day_number": 1,
+            "place_id": first["place"]["id"],
+            "start_time": first["start_time"],
+        },
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 200, response.text  # kept, never refused
+    result = response.json()
+    day = result["changed_days"][0]["items"]
+    assert len(day) == len(before["days"][0]["items"]) + 1
+    twins = [item for item in day if item["place"]["id"] == first["place"]["id"]]
+    assert len(twins) == 2
+    added = next(item for item in twins if item["id"] != first["id"])
+    assert added["start_time"] == first["start_time"]
+    assert [f for f in result["findings"] if f["code"] == "OVERLAP" and f["day_number"] == 1]
+    assert_matches_itinerary(result, await route_state(api_client, auth_user, trip_id))
+
+
+@pytest.mark.parametrize(
+    ("day_number", "place", "code"),
+    [
+        (4, "new", "INVALID_EDIT"),  # num_days + 1 (3-day trip)
+        (1, "unknown", "INVALID_EDIT"),
+        (0, "new", "VALIDATION_ERROR"),  # PD-IMP-504-2: the contract bounds day_number to >= 1
+    ],
+)
+@pytest.mark.asyncio
+async def test_add_place_route_refuses_a_day_outside_the_trip_or_an_unknown_place(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+    day_number: int,
+    place: str,
+    code: str,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    newcomer = (await unplanned_place(db_session, trip_id)).id
+    before = await state(db_session, trip_id)
+
+    response = await api_client.post(
+        add_url(trip_id),
+        json={
+            "plan_revision": before["revision"],
+            "day_number": day_number,
+            "place_id": str(newcomer if place == "new" else uuid.uuid4()),
+        },
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == code
+    assert await state(db_session, trip_id) == before
+
+
+@pytest.mark.asyncio
+async def test_add_place_route_creates_the_row_of_a_trip_day_without_items(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    """IMD-152 (PD-IMP-407-2): the save writes only days with items; the first add makes the row."""
+    trip_id = await planned_trip(
+        api_client, db_session, jobs_queue, auth_user, destination, end_date="2026-12-13"
+    )
+    before = await route_state(api_client, auth_user, trip_id)
+    planned = {day["day_number"] for day in before["days"]}
+    empty = min(set(range(1, 11)) - planned)  # the 10-day SAMPLE plan leaves days without rows
+    newcomer = await unplanned_place(db_session, trip_id)
+
+    response = await api_client.post(
+        add_url(trip_id),
+        json={
+            "plan_revision": before["plan_revision"],
+            "day_number": empty,
+            "place_id": str(newcomer.id),
+        },
+        headers=auth_user.headers,
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    [day] = result["changed_days"]
+    assert day["day_number"] == empty
+    assert day["date"] == f"2026-12-{3 + empty:02d}"
+    assert [item["place"]["id"] for item in day["items"]] == [str(newcomer.id)]
+    assert day["items"][0]["start_time"] == "09:00"  # §8.6 day start on an empty day
+    current = await route_state(api_client, auth_user, trip_id)
+    assert {d["day_number"] for d in current["days"]} == planned | {empty}
+    assert_matches_itinerary(result, current)
+
+
+# FR-069 AC1, TC-217
+
+
+@pytest.mark.asyncio
+async def test_tc_217_stale_edit_from_a_second_client_is_refused_and_rows_stay_identical(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    opened = await route_state(api_client, auth_user, trip_id)  # both tabs load this revision
+    newcomer = await unplanned_place(db_session, trip_id)
+    body = {"plan_revision": opened["plan_revision"], "day_number": 1, "place_id": str(newcomer.id)}
+
+    first = await api_client.post(add_url(trip_id), json=body, headers=auth_user.headers)
+    assert first.status_code == 200, first.text
+    after_first = await state(db_session, trip_id)
+    read_after_first = await route_state(api_client, auth_user, trip_id)
+    item_id = opened["days"][0]["items"][0]["id"]
+
+    second_tab = [
+        api_client.post(add_url(trip_id), json=body, headers=auth_user.headers),
+        api_client.patch(
+            item_url(item_id),
+            json={"plan_revision": opened["plan_revision"], "duration_min": 60},
+            headers=auth_user.headers,
+        ),
+        api_client.delete(
+            item_url(item_id),
+            params={"plan_revision": opened["plan_revision"]},
+            headers=auth_user.headers,
+        ),
+    ]
+    for request in second_tab:
+        response = await request
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "STALE_PLAN"
+
+    assert await state(db_session, trip_id) == after_first
+    assert await route_state(api_client, auth_user, trip_id) == read_after_first
+
+
+@pytest.mark.asyncio
+async def test_add_place_route_refuses_an_active_generation_and_another_users_trip(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    newcomer = await unplanned_place(db_session, trip_id)
+    before = await state(db_session, trip_id)
+    body = {"plan_revision": before["revision"], "day_number": 1, "place_id": str(newcomer.id)}
+    other = AuthUser(user_id=uuid.uuid4(), email="other@example.test")
+    await insert_auth_user(db_session, other.user_id)
+
+    foreign = await api_client.post(add_url(trip_id), json=body, headers=other.headers)
+    assert foreign.status_code == 404, foreign.text
+    assert foreign.json()["error"]["code"] == "NOT_FOUND"
+
+    await generation_repository.create_queued(
+        db_session,
+        trip_id=trip_id,
+        user_id=auth_user.user_id,
+        provider="MOCK",
+        model_id="mock-v1",
+        prompt_template_id="itinerary_generate",
+        prompt_version="v1",
+        mapping_version="pm-2",
+        scope="full",
+        request_hash=records.request_hash({"trip_id": str(trip_id), "mode": "ai"}),
+    )
+    busy = await api_client.post(add_url(trip_id), json=body, headers=auth_user.headers)
+    assert busy.status_code == 409, busy.text
+    assert busy.json()["error"]["code"] == "GENERATION_IN_PROGRESS"
+    assert await state(db_session, trip_id) == before
