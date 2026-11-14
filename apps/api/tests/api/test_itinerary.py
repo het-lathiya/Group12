@@ -32,6 +32,7 @@ from app.db.models import (
     ItineraryVersion,
     ItineraryWarning,
     Place,
+    PlaceOpeningHours,
     Trip,
 )
 from app.db.models.rag import RagChunk
@@ -933,3 +934,44 @@ async def test_a_fallback_plan_is_saved_without_an_ai_note_or_citation(
 
     [stored] = days[0]["items"]
     assert (stored["note"], stored["note_origin"], stored["source_chunk_ids"]) == (None, "none", [])
+
+
+@pytest.mark.asyncio
+async def test_tc_180_validate_persists_closed_hours(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, destination)
+    generation = await generate(api_client, db_session, jobs_queue, auth_user, trip_id)
+    plan = (
+        await api_client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=auth_user.headers)
+    ).json()
+    day = plan["days"][0]
+    place_id = uuid.UUID(day["items"][0]["place"]["id"])
+    await db_session.execute(
+        update(Place)
+        .where(Place.id == place_id)
+        .values(hours_label="curated", hours_checked_on=date(2026, 11, 14))
+    )
+    await db_session.execute(
+        update(PlaceOpeningHours)
+        .where(PlaceOpeningHours.place_id == place_id)
+        .values(is_closed=True, open_time=None, close_time=None, closes_next_day=False)
+    )
+    await db_session.flush()
+    result = await api_client.post(
+        f"/api/v1/trips/{trip_id}/itinerary/validate",
+        json={"plan_revision": generation["plan_revision"]},
+        headers=auth_user.headers,
+    )
+    assert result.status_code == 200, result.text
+    assert any(
+        f["code"] == "CLOSED_ON_DAY" and f["severity"] == "error" for f in result.json()["findings"]
+    )
+    read = (
+        await api_client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=auth_user.headers)
+    ).json()
+    assert any(f["code"] == "CLOSED_ON_DAY" for f in read["findings"])

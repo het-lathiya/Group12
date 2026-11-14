@@ -31,6 +31,8 @@ def test_reference_rules_follow_the_schedule_rules_in_the_table_order() -> None:
     assert (
         rules.overlap,
         rules.transfer_too_short,
+        rules.opening_hours,
+        rules.day_length,
         rules.must_visit_missing,
         rules.unknown_place,
         rules.outside_trip_dates,
