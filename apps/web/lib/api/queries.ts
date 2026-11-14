@@ -461,3 +461,38 @@ export function usePlacesPage(
     placeholderData: keepPreviousData,
   });
 }
+
+// IMP-505
+/** API-28: the current ranked alternatives for an open dialog. */
+export function useAlternatives(itemId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["alternatives", itemId],
+    enabled,
+    queryFn: async () =>
+      unwrap(
+        await api().GET("/api/v1/itinerary/items/{item_id}/alternatives", {
+          params: { path: { item_id: itemId } },
+        }),
+      ),
+  });
+}
+/** API-29 uses the same cache replacement and stale handling as every item edit. */
+export function useReplaceItem(tripId: string) {
+  return useItemEdit(
+    tripId,
+    async ({
+      itemId,
+      ...body
+    }: {
+      itemId: string;
+      place_id: string;
+      plan_revision: number;
+    }) =>
+      unwrap(
+        await api().POST("/api/v1/itinerary/items/{item_id}/replace", {
+          params: { path: { item_id: itemId } },
+          body,
+        }),
+      ),
+  );
+}
