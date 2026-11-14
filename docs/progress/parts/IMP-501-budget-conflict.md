@@ -32,3 +32,11 @@
 - No new decisions, external contract changes or migrations.
 - IMD-124 B6 still applies: there is no category estimate dataset. ESTIMATE_USED is covered for estimated input and does not invent estimate data.
 - API integration awaits CI.
+
+## Integration fix (RUN-069, I-6)
+
+- CI run 43570568677: `5 failed, 459 passed, 1 warning in 259.54s (0:04:19)`. The API fixture revealed that known SAMPLE prices labelled estimate were being mistaken for BF-04 category substitutions. This incorrectly added COST_INCOMPLETE/ESTIMATE_USED despite every numeric price being present.
+- Fixed only rules.py, this part's day_length_budget test and this record: category substitutions require explicit internal category_estimate_refs; IMD-124 B6 still supplies none in production because no category-estimate data exists. Known estimated prices keep their Estimate label and do not become missing costs. No column or API field is needed.
+- Added a regression for a known estimated price and kept the explicit category-substitution case, unavailable costs, exact budget thresholds and no-dropping repair tests.
+- `make test-unit ARGS='-k "day_length or budget"'`: `99 passed, 1041 deselected, 1 warning in 1.47s`.
+- The remaining old no-hours-finding API assertions are updated in hours-checks; database rerun awaits CI. This is this part's one integration fix.
