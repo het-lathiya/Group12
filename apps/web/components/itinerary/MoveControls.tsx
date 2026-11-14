@@ -72,13 +72,16 @@ function useMove(tripId: string, planRevision: number) {
       { itemId: item.id, plan_revision: planRevision, ...target },
       {
         onSuccess: (result) => {
-          for (const day of result.changed_days) {
-            const moved = day.items.find(({ id }) => id === item.id);
-            const region = document.getElementById(ANNOUNCER_ID);
-            if (moved && region)
-              region.textContent = `Moved ${item.place.name} to day ${day.day_number} position ${moved.position}`;
-          }
-          requestAnimationFrame(() => focusControls(item.id, action));
+          const day = result.changed_days.find((d) =>
+            d.items.some(({ id }) => id === item.id),
+          );
+          const moved = day?.items.find(({ id }) => id === item.id);
+          const region = document.getElementById(ANNOUNCER_ID);
+          if (day && moved && region)
+            region.textContent = `Moved ${item.place.name} to day ${day.day_number} position ${moved.position}`;
+          requestAnimationFrame(() =>
+            focusControls(item.id, action, day?.day_number),
+          );
         },
         onError: (error) => {
           const { what, next } = describeError(error);
@@ -88,11 +91,23 @@ function useMove(tripId: string, planRevision: number) {
     );
 }
 
-function focusControls(itemId: string, action: Action) {
+// One move function per plan, owned by MoveDndContext: it stays mounted when a move to another day
+// unmounts the item's own controls, so the answer is still announced and focus still moves.
+type Move = ReturnType<typeof useMove>;
+const MoveContext = createContext<Move | null>(null);
+
+function focusControls(itemId: string, action: Action, dayNumber?: number) {
   const group = document.querySelector(`[data-move-for="${itemId}"]`);
-  const buttons = [
-    ...(group?.querySelectorAll<HTMLButtonElement>("button") ?? []),
-  ];
+  if (!group) {
+    // Below 768 px the item's new day is a closed tab: focusing that tab opens it (automatic
+    // activation), so focus is never lost to the page body.
+    const tab = [
+      ...document.querySelectorAll<HTMLElement>('[role="tab"]'),
+    ].find((t) => t.textContent?.trim() === `Day ${dayNumber}`);
+    tab?.focus();
+    return;
+  }
+  const buttons = [...group.querySelectorAll<HTMLButtonElement>("button")];
   const same = buttons.find((b) => b.dataset.action === action && !b.disabled);
   (same ?? buttons.find((b) => !b.disabled))?.focus();
 }
@@ -132,7 +147,7 @@ export function MoveDndContext({
       collisionDetection={closestCorners}
       onDragEnd={onDragEnd}
     >
-      {children}
+      <MoveContext.Provider value={move}>{children}</MoveContext.Provider>
       <p
         id={ANNOUNCER_ID}
         role="status"
@@ -229,7 +244,7 @@ export type MoveControlsProps = {
 };
 
 /**
- * MoveControls (§7; FR-060, IMP-409): a drag grip plus Move up, Move down and Move to day, the
+ * MoveControls (§7; FR-060, IMP-409): a drag grip plus Move up, Move down and Move (to the chosen day), the
  * keyboard and single-pointer equivalent of every drag (WCAG 2.2). Each calls API-26; the server's
  * answer replaces the plan, and any new conflict shows in WarningsPanel.
  */
@@ -241,7 +256,8 @@ export function MoveControls({
   itemCount,
   dayNumbers,
 }: MoveControlsProps) {
-  const move = useMove(tripId, planRevision);
+  const ownMove = useMove(tripId, planRevision);
+  const move = useContext(MoveContext) ?? ownMove;
   const busy = useIsMutating({ mutationKey: editKey(tripId) }) > 0;
   const grip = useContext(GripContext);
   const otherDays = dayNumbers.filter((n) => n !== dayNumber);
@@ -320,7 +336,8 @@ export function MoveControls({
             aria-label={`Move ${name} to day ${day}`}
             onClick={() => move(item, { day_number: Number(day) }, "day")}
           >
-            Move to day
+            {/* Visible text inside the accessible name (axe label-content-name-mismatch). */}
+            Move
           </Button>
         </span>
       )}

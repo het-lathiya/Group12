@@ -11,6 +11,9 @@ import { randomPassword, stagingAccount, uniqueEmail } from "./fixtures/users";
 // and retime another, reload, open latest, and see the edits and the server totals persist. Local:
 // the local stack, `make seed` (Sampleton) and the API with AI_PROVIDER=MOCK. TC-370: the same spec
 // against BASE_URL=<staging> with E2E_STAGING_EMAIL and E2E_STAGING_PASSWORD set.
+// TC-374, TC-279, TC-383 (IMP-513): every control of the journey is activated from the keyboard
+// (Enter on a focused control, typing into native fields), the skip link and the focus moves are
+// checked, a move to another day is made by keyboard and announced, and axe scans each core page.
 
 // Staging signs in with its pre-created account instead of signing up, and may run Gemini, which
 // needs a longer wait for completed; the provider is a property of staging, not of the test.
@@ -30,6 +33,23 @@ type EditResult = components["schemas"]["EditResultOut"];
 /** A date from today, so the nightly e2e run never reaches a fixed date. */
 const daysFromNow = (days: number) =>
   new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * TC-383: axe on the page as it is now. checkA11y fails on critical violations and records serious
+ * ones as an "axe-serious" annotation; IMP-513 step 5 fails on serious ones too.
+ */
+async function scan(page: Page) {
+  const before = test.info().annotations.length;
+  await checkA11y(page);
+  expect(
+    test
+      .info()
+      .annotations.slice(before)
+      .filter((annotation) => annotation.type === "axe-serious")
+      .map((annotation) => annotation.description),
+    "serious axe violations (TC-383)",
+  ).toEqual([]);
+}
 
 const stepHeading = (page: Page, name: string) =>
   page.getByRole("heading", { level: 2, name });
@@ -75,19 +95,24 @@ test(
     if (STAGING) {
       await page.goto("/sign-in?next=%2Fdashboard");
       await page.getByLabel("Email").fill(STAGING.email);
+      await scan(page);
       await page.getByLabel("Password", { exact: true }).fill(STAGING.password);
-      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await page
+        .getByRole("button", { name: "Sign in", exact: true })
+        .press("Enter");
     } else {
       const email = uniqueEmail("journey");
       users.track(email);
       await page.goto("/sign-up");
       await page.getByLabel("Email").fill(email);
+      await scan(page);
       await page.getByLabel("Password", { exact: true }).fill(randomPassword());
-      await page.getByRole("button", { name: "Create account" }).click();
+      await page.getByRole("button", { name: "Create account" }).press("Enter");
     }
     await expect(
       page.getByRole("heading", { level: 1, name: "Your trips" }),
     ).toBeVisible();
+    await scan(page);
     trips.useSessionOf(await apiCall);
     // Reset: the account starts with no trips (a new local account has none).
     await trips.deleteAll();
@@ -104,22 +129,32 @@ test(
     await page.getByLabel("Start date").fill(daysFromNow(30));
     await page.getByLabel("End date").fill(daysFromNow(32));
     await page.getByLabel("Adults").fill("2");
+    await scan(page);
     const created = page.waitForResponse(
       (r) =>
         r.url().endsWith("/api/v1/trips") && r.request().method() === "POST",
     );
-    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Next", exact: true })
+      .press("Enter");
     expect((await created).status()).toBe(201);
     const tripId = (await (await created).json()).id as string;
 
     // Steps 2 to 4: preferences, must-visit places (none chosen), review.
     await expect(stepHeading(page, "Your preferences")).toBeFocused();
-    await page.getByRole("button", { name: "Museums" }).click();
-    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await scan(page);
+    await page.getByRole("button", { name: "Museums" }).press("Enter");
+    await page
+      .getByRole("button", { name: "Next", exact: true })
+      .press("Enter");
     await expect(stepHeading(page, "Must-visit places")).toBeFocused();
-    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await scan(page);
+    await page
+      .getByRole("button", { name: "Next", exact: true })
+      .press("Enter");
     await expect(stepHeading(page, "Review your trip")).toBeFocused();
-    await page.getByRole("link", { name: "Generate itinerary" }).click();
+    await scan(page);
+    await page.getByRole("link", { name: "Generate itinerary" }).press("Enter");
     await expect(page).toHaveURL(`/trips/${tripId}/generate`);
 
     // Generate: API-22, then API-23 until completed, then the itinerary page reads API-24.
@@ -148,7 +183,7 @@ test(
       await expect(notice.or(yourItinerary)).toBeVisible({
         timeout: GENERATION_TIMEOUT_MS,
       });
-      if (await notice.isVisible()) await notice.click();
+      if (await notice.isVisible()) await notice.press("Enter");
     } else {
       await expect(
         page.getByRole("heading", {
@@ -156,7 +191,8 @@ test(
           name: "Before your first AI-written plan",
         }),
       ).toBeFocused();
-      await notice.click();
+      await scan(page);
+      await notice.press("Enter");
     }
 
     const generation = await (await completed).json();
@@ -187,7 +223,7 @@ test(
     ).toEqual([]);
     expect(days.flatMap((day) => day.items).length).toBeGreaterThan(0);
     await expectSavedDays(page, days);
-    await checkA11y(page);
+    await scan(page);
 
     // Edit: remove the day's first item (API-27, after the confirm dialog) and retime its last
     // (API-26). Each answer carries the server's recalculated totals.
@@ -206,7 +242,7 @@ test(
 
     await column
       .getByRole("button", { name: `Remove ${removed.place.name}` })
-      .click();
+      .press("Enter");
     const dialog = page.getByRole("dialog", {
       name: `Remove ${removed.place.name} from day ${dayNumber}?`,
     });
@@ -215,7 +251,7 @@ test(
         new URL(r.url()).pathname === `/api/v1/itinerary/items/${removed.id}` &&
         r.request().method() === "DELETE",
     );
-    await dialog.getByRole("button", { name: "Remove" }).click();
+    await dialog.getByRole("button", { name: "Remove" }).press("Enter");
     expect((await removal).status()).toBe(200);
     await expect(page.getByText(`Removed ${removed.place.name}`)).toBeVisible();
     // Focus moves to the next card of the day (IMP-408).
@@ -228,7 +264,7 @@ test(
         : retimed.duration_min - 15;
     await column
       .getByRole("button", { name: `Edit time of ${retimed.place.name}` })
-      .click();
+      .press("Enter");
     const form = column.getByRole("form", {
       name: `Edit time of ${retimed.place.name}`,
     });
@@ -238,7 +274,7 @@ test(
         new URL(r.url()).pathname === `/api/v1/itinerary/items/${retimed.id}` &&
         r.request().method() === "PATCH",
     );
-    await form.getByRole("button", { name: "Save" }).click();
+    await form.getByRole("button", { name: "Save" }).press("Enter");
     expect((await retime).status()).toBe(200);
     const edited = (await (await retime).json()) as EditResult;
     await expect(form).toBeHidden();
@@ -263,14 +299,75 @@ test(
 
     // Open latest (API-09, IMP-410) reopens the same saved plan.
     await page.goto("/dashboard");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Your trips" }),
+    ).toBeVisible();
+    // TC-279: on a fresh page the first Tab reaches the skip link, which moves focus to the main
+    // content.
+    await page.keyboard.press("Tab");
+    const skip = page.getByRole("link", { name: "Skip to content" });
+    await expect(skip).toBeFocused();
+    await expect(skip).toBeInViewport();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("main")).toBeFocused();
     const latestRead = page.waitForResponse(isItineraryRead(tripId));
-    await page.getByRole("button", { name: "Open latest" }).click();
+    await page.getByRole("button", { name: "Open latest" }).press("Enter");
     await expect(page).toHaveURL(`/trips/${tripId}/itinerary`);
     const latest = (await (await latestRead).json()) as Itinerary;
     expectEditsSaved(latest);
     await expectSavedDays(page, latest.days);
     column = await openDay(page, dayNumber);
     await expect(goneHeading(column)).toHaveCount(0);
+
+    // TC-374, TC-280: move an item to another day by keyboard. The move is announced in the polite
+    // live region; focus stays on the item's controls in its new day, or below 768 px (day tabs)
+    // goes to the new day's tab, which opens it.
+    const from = latest.days.find((d) => d.items.length > 0)!;
+    const to = latest.days.find((d) => d.day_number !== from.day_number);
+    expect(to, "a second day to move to").toBeDefined();
+    const mover = from.items[from.items.length - 1];
+    column = await openDay(page, from.day_number);
+    await column
+      .getByLabel(`Day to move ${mover.place.name} to`)
+      .selectOption(String(to!.day_number));
+    const moveButton = column.getByRole("button", {
+      name: `Move ${mover.place.name} to day ${to!.day_number}`,
+    });
+    await page.keyboard.press("Tab");
+    await expect(moveButton).toBeFocused();
+    const moved = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === `/api/v1/itinerary/items/${mover.id}` &&
+        r.request().method() === "PATCH",
+    );
+    await page.keyboard.press("Enter");
+    expect((await moved).status()).toBe(200);
+    await expect(
+      page.getByRole("status").filter({
+        hasText: `Moved ${mover.place.name} to day ${to!.day_number} position`,
+      }),
+    ).toHaveAttribute("aria-live", "polite");
+    if ((page.viewportSize()?.width ?? 0) < 768) {
+      const dayTab = page.getByRole("tab", { name: `Day ${to!.day_number}` });
+      await expect(dayTab).toBeFocused();
+      await expect(dayTab).toHaveAttribute("aria-selected", "true");
+    } else {
+      await expect(
+        page
+          .getByRole("region", { name: `Day ${to!.day_number}` })
+          .locator(`[data-move-for="${mover.id}"] [data-action="day"]`),
+      ).toBeFocused();
+    }
+    await expect(
+      page
+        .getByRole("region", { name: `Day ${to!.day_number}` })
+        .getByRole("heading", {
+          level: 3,
+          name: mover.place.name,
+          exact: true,
+        }),
+    ).toBeVisible();
+    await scan(page);
 
     // IMP-309: no horizontal scroll at the card's widths, and the evidence screenshots.
     for (const width of [375, 1280]) {
@@ -292,6 +389,17 @@ test(
         });
       }
     }
+
+    // Costs: the last core page, reached from the main navigation by keyboard.
+    await page
+      .getByRole("navigation", { name: "Main" })
+      .getByRole("link", { name: "Costs" })
+      .press("Enter");
+    await expect(page).toHaveURL(`/trips/${tripId}/costs`);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Trip costs" }),
+    ).toBeVisible();
+    await scan(page);
 
     expect(
       [...hosts].filter((host) => host.includes("generativelanguage")),
