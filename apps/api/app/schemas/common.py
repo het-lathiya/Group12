@@ -1,12 +1,14 @@
 """Common API types: the error envelope of specification §6.3 and the shared Money, Page and
 timestamp types of §6.1 and §6.5."""
 
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, PlainSerializer
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, PlainSerializer, field_validator
+from pydantic_core import PydanticCustomError
 
 TWO_PLACES = Decimal("0.01")
 
@@ -41,6 +43,15 @@ class Money(BaseModel):
     currency: str = Field(
         pattern=r"^[A-Z]{3}$", description="ISO 4217 code, three upper-case letters"
     )
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def currency_message(cls, value: object) -> object:
+        if isinstance(value, str) and re.fullmatch(r"[A-Z]{3}", value) is None:
+            raise PydanticCustomError(
+                "currency_format", "Currency must be a three-letter ISO 4217 code."
+            )
+        return value
 
 
 class Page[T](BaseModel):
