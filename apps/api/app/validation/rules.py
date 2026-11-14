@@ -9,9 +9,11 @@ module imports no other module's schemas.
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from typing import Final, Protocol
+from zoneinfo import ZoneInfo
 
+from app.generation.presets import pace_limits
 from app.routing.estimate import BUFFER_MIN
 from app.schemas.ai import MAX_TRIP_DAYS, FindingCode, PlanFinding, Severity
 
@@ -58,6 +60,21 @@ class PlanDay(Protocol):
 
 
 @dataclass(frozen=True)
+class OpeningRow:
+    weekday: int
+    is_closed: bool
+    open_time: str | None = None
+    close_time: str | None = None
+    closes_next_day: bool = False
+
+
+@dataclass(frozen=True)
+class HoursInfo:
+    label: str
+    rows: Sequence[OpeningRow] = ()
+
+
+@dataclass(frozen=True)
 class ValidationContext:
     """What the rules know besides the plan. Travel times are on the items (step 9 stored them).
 
@@ -71,6 +88,10 @@ class ValidationContext:
     must_visit_ids: frozenset[str] = frozenset()
     shortlist_ids: frozenset[str] | None = None
     pace_limits: tuple[int, int] | None = None
+    pace: str | None = None
+    timezone: str = "UTC"
+    day_dates: Mapping[int, date] = field(default_factory=dict)
+    opening_hours: Mapping[str, HoursInfo] | None = None
 
     @property
     def num_days(self) -> int:
@@ -216,10 +237,101 @@ def outside_trip_dates(plan: Sequence[PlanDay], ctx: ValidationContext) -> list[
     ]
 
 
+def opening_hours(plan: Sequence[PlanDay], ctx: ValidationContext) -> list[Finding]:
+    """§9.3.6: six decisions on destination-local wall times, including overnight intervals."""
+    if ctx.opening_hours is None:
+        return []  # Pure callers may supply schedule-only context; services load hours.
+    found = []
+    for day in plan:
+        plan_date = ctx.day_dates.get(
+            day.day_number, ctx.start_date + timedelta(days=day.day_number - 1)
+        )
+        for position, item in enumerate(day.items, 1):
+            info = ctx.opening_hours.get(item.place_id, HoursInfo("unavailable"))
+            local = datetime.combine(
+                plan_date, time.fromisoformat(item.start_time), ZoneInfo(ctx.timezone)
+            )
+            weekday = local.isoweekday()
+            start = local.hour * 60 + local.minute
+            end = start + item.duration_min
+            code: FindingCode | None = None
+            if info.label == "unavailable" or not info.rows:
+                code = "HOURS_UNVERIFIED"
+            else:
+
+                def covers(
+                    row: OpeningRow, offset: int = 0, visit_start: int = start, visit_end: int = end
+                ) -> bool:
+                    if row.is_closed or row.open_time is None or row.close_time is None:
+                        return False
+                    opened = minutes(row.open_time) + offset
+                    closed = minutes(row.close_time) + offset + (1440 if row.closes_next_day else 0)
+                    return opened <= visit_start and visit_end <= closed
+
+                previous = (weekday - 2) % 7 + 1
+                if any(
+                    row.weekday == previous and row.closes_next_day and covers(row, -1440)
+                    for row in info.rows
+                ):
+                    continue
+                today = [row for row in info.rows if row.weekday == weekday]
+                if not today:
+                    code = "HOURS_UNVERIFIED"
+                elif all(row.is_closed for row in today):
+                    code = "CLOSED_ON_DAY"
+                elif not any(covers(row) for row in today):
+                    code = "OUTSIDE_HOURS"
+            if code is not None:
+                message = {
+                    "HOURS_UNVERIFIED": "Opening hours are unavailable for this visit; check before going.",
+                    "CLOSED_ON_DAY": "This place is closed on the planned day.",
+                    "OUTSIDE_HOURS": "This visit falls outside the place's opening hours.",
+                }[code]
+                result = finding(
+                    code,
+                    message,
+                    day_number=day.day_number,
+                    item_ref=item_ref(day.day_number, position),
+                )
+                if code == "OUTSIDE_HOURS" and info.label == "estimate":
+                    result = result.model_copy(update={"severity": "warning"})
+                found.append(result)
+    return found
+
+
+def day_length(plan: Sequence[PlanDay], ctx: ValidationContext) -> list[Finding]:
+    """Active minutes include visits and transfers; the pace accessor owns every threshold."""
+    if ctx.pace is not None:
+        preset = pace_limits(ctx.pace)
+        max_items, max_minutes = preset.max_items_per_day, preset.max_active_minutes_per_day
+    elif ctx.pace_limits is not None:
+        max_items, max_minutes = ctx.pace_limits
+    else:
+        return []
+    return [
+        finding(
+            "DAY_TOO_LONG",
+            f"Day {day.day_number} has {len(day.items)} items and {active} active min; "
+            f"the pace limits are {max_items} items and {max_minutes} active min.",
+            day_number=day.day_number,
+        )
+        for day in plan
+        if (
+            active := sum(
+                item.duration_min + (item.travel_from_prev_min or 0) for item in day.items
+            )
+        )
+        > max_minutes
+        or len(day.items) > max_items
+    ]
+
+
 # The order of the §8.12 table.
 RULES: Final[tuple[Rule, ...]] = (
     overlap,
     transfer_too_short,
+    opening_hours,
+    day_length,
     must_visit_missing,
     unknown_place,
     outside_trip_dates,

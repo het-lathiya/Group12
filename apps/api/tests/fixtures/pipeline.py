@@ -102,6 +102,9 @@ class Journal:
         async def reasons(*args: Any) -> dict[str, tuple[str, str]]:
             return self.reasons
 
+        async def validation_hours(*args: Any) -> tuple[str, None]:
+            return "UTC", None  # This stand-in has no database hours; boundaries have pure tests.
+
         async def nothing(*args: Any) -> None:
             return None
 
@@ -141,6 +144,7 @@ class Journal:
         monkeypatch.setattr(pipeline.request_builder, "retrieve", retrieve)
         monkeypatch.setattr(pipeline.request_builder, "build", build)
         monkeypatch.setattr(pipeline.itinerary_service, "save_generated_plan", save)
+        monkeypatch.setattr(pipeline.itinerary_service, "validation_hours", validation_hours)
         monkeypatch.setattr(pipeline.places_service, "active_place_names", active_place_names)
         monkeypatch.setattr(pipeline.retrieval, "must_visit_reasons", reasons)
         monkeypatch.setattr(pipeline.trips_service, "get_trip", nothing)
