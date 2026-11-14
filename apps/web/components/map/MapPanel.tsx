@@ -7,12 +7,13 @@ import {
   LngLatBounds,
   Map as MapLibreMap,
   Marker,
+  setWorkerUrl,
 } from "maplibre-gl";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { MapListFallback } from "@/components/map/MapListFallback";
 import type { components } from "@/lib/api/schema";
-import { OPENFREEMAP_STYLE_URL } from "@/lib/map";
+import { MAPLIBRE_WORKER_URL, OPENFREEMAP_STYLE_URL } from "@/lib/map";
 
 type Item = components["schemas"]["Item"];
 
@@ -87,6 +88,7 @@ function LiveMap({
     if (!container.current) return;
     let instance: MapLibreMap;
     try {
+      setWorkerUrl(MAPLIBRE_WORKER_URL);
       instance = new MapLibreMap({
         container: container.current,
         style: OPENFREEMAP_STYLE_URL,
