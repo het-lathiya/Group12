@@ -17,7 +17,7 @@ from app.generation.fallback_planner import (
     _minutes,
     plan_rule_based,
 )
-from app.generation.presets import LUNCH_MIN_ACTIVE_MIN, MEAL_WINDOWS, meal_slots
+from app.generation.presets import MEAL_WINDOWS, meal_slots
 from app.schemas.ai import GenerationRequest, ItineraryOutput
 from app.validation.output_check import MEAL_NOT_FOOD_MESSAGE, check_output, without_meals
 
@@ -28,16 +28,16 @@ def test_meal_windows_are_the_card_constants() -> None:
         "lunch": ("12:00", "14:00"),
         "dinner": ("18:30", "20:30"),
     }
-    assert LUNCH_MIN_ACTIVE_MIN == 360
 
 
-@pytest.mark.parametrize(
-    ("pace", "expected"), [("relaxed", []), ("balanced", ["lunch"]), ("busy", ["lunch"])]
-)
-def test_meal_a_day_longer_than_six_active_hours_gets_lunch(pace: str, expected: list[str]) -> None:
-    long_day = presets.pace_limits(pace).max_active_minutes_per_day > LUNCH_MIN_ACTIVE_MIN
-    assert meal_slots(pace) == expected
-    assert bool(expected) is long_day
+@pytest.mark.parametrize("pace", ["relaxed", "balanced", "busy"])
+def test_meal_imd_189_every_pace_gets_a_lunch_slot(pace: str) -> None:
+    assert meal_slots(pace) == ["lunch"]
+
+
+def test_meal_slots_reject_an_unknown_pace() -> None:
+    with pytest.raises(ValueError, match="frantic"):
+        meal_slots("frantic")
 
 
 @pytest.mark.parametrize("pace", ["relaxed", "balanced", "busy"])
@@ -72,6 +72,20 @@ def test_meal_tc_243_fallback_fills_the_lunch_slot_from_a_food_place() -> None:
     assert [item.place_id for item in meals] == [THALI]
     assert LUNCH_FROM <= _minutes(meals[0].start_time) <= LUNCH_TO
     assert NO_FOOD_NOTE not in day.theme
+
+
+def test_meal_imd_189_a_relaxed_full_day_gets_lunch_from_a_food_place() -> None:
+    request = _request(meal_slots("relaxed"))
+    relaxed = presets.pace_limits("relaxed")
+    for place in request.shortlist[:3]:
+        place.typical_duration_min = 90  # two visits reach the lunch window within 300 minutes
+    request.limits.max_items_per_day = relaxed.max_items_per_day
+    request.limits.max_active_minutes_per_day = relaxed.max_active_minutes_per_day
+    (day,) = plan_rule_based(request).days
+    meals = [item for item in day.items if item.slot_type == "meal"]
+    assert [item.place_id for item in meals] == [THALI]
+    assert LUNCH_FROM <= _minutes(meals[0].start_time) <= LUNCH_TO
+    assert len(day.items) <= relaxed.max_items_per_day
 
 
 def test_meal_tc_243_no_food_place_leaves_the_slot_empty_with_a_day_note() -> None:

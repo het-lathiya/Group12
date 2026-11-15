@@ -126,8 +126,8 @@ def test_request_builder_output_keeps_to_the_gr_1_schema_fields() -> None:
 def test_request_builder_pace_limits(pace: str, items: int, minutes: int) -> None:
     limits = build(prefs=prefs(pace=pace)).limits
     assert (limits.max_items_per_day, limits.max_active_minutes_per_day) == (items, minutes)
-    # IMP-606: a day longer than six active hours gets a lunch slot.
-    assert limits.meal_slots == (["lunch"] if minutes > 360 else [])
+    # IMD-189: every pace gets a lunch slot, relaxed included.
+    assert limits.meal_slots == ["lunch"]
 
 
 def test_request_builder_meal_tc_372_switch_off_requests_no_meal_slots() -> None:
