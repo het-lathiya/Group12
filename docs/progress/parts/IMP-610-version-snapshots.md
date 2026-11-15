@@ -47,3 +47,8 @@ Database: a throwaway local PostgreSQL 16.2 + pgvector on 127.0.0.1:55432 (datab
 
 - A version preview shows no travel lines: snap-1 holds no travel (§5.2) and a read must write nothing, so routing (which writes the route cache) is not called; a restore recalculates travel.
 - The versions tab link in the trip navigation is for the lead (shared navigation).
+
+## Integration wiring (RUN-075, same owner)
+
+- `apps/web/components/shell/AppShell.tsx`: "Versions" trip tab to `/trips/<tripId>/versions`, left out of the navigation when the `versions` switch is off (IMD-11).
+- `tests/unit/shell/AppShell.test.tsx`: the open-trip case also checks the Versions link.
