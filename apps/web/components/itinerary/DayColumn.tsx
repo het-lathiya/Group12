@@ -1,8 +1,10 @@
 import { ItineraryItemCard } from "@/components/itinerary/ItineraryItemCard";
 import { SortableDay, SortableItem } from "@/components/itinerary/MoveControls";
 import { AiBadge } from "@/components/labels/AiBadge";
+import { Button } from "@/components/ui/button";
 import type { components } from "@/lib/api/schema";
 import { formatDayDate } from "@/lib/format";
+import { isEnabled } from "@/lib/flags";
 
 type Day = components["schemas"]["Day"];
 
@@ -14,13 +16,17 @@ export type DayColumnProps = {
   id?: string;
   /** Set where the plan can be edited (IMP-408, IMP-409); without it the day is read-only. */
   edit?: { tripId: string; planRevision: number; dayNumbers: number[] };
+  regeneration?: {
+    onRegenerate: (dayNumber: number) => void;
+    disabled: boolean;
+  };
 };
 
 /**
  * One day of the itinerary (§7.5.7; guide §14): the day number, its date, its theme and its items
  * in the order API-24 returns them, with each item's edit controls when `edit` is set.
  */
-export function DayColumn({ day, id, edit }: DayColumnProps) {
+export function DayColumn({ day, id, edit, regeneration }: DayColumnProps) {
   return (
     <section
       id={id}
@@ -39,6 +45,23 @@ export function DayColumn({ day, id, edit }: DayColumnProps) {
           {formatDayDate(day.date)}
         </span>
       </h2>
+      {regeneration && isEnabled("regeneration") && (
+        <Button
+          variant="outline"
+          className="mt-3 min-h-touch"
+          aria-label={`Regenerate day ${day.day_number}`}
+          disabled={regeneration.disabled}
+          aria-busy={regeneration.disabled}
+          onClick={() => regeneration.onRegenerate(day.day_number)}
+        >
+          {regeneration.disabled ? (
+            <Loader2 aria-hidden="true" className="motion-safe:animate-spin" />
+          ) : (
+            <RotateCw aria-hidden="true" />
+          )}
+          Regenerate day
+        </Button>
+      )}
       {day.theme && (
         <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <span className="min-w-0">{day.theme}</span>
@@ -81,3 +104,4 @@ export function DayColumn({ day, id, edit }: DayColumnProps) {
     </section>
   );
 }
+import { Loader2, RotateCw } from "lucide-react";
