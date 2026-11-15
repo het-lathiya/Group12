@@ -409,7 +409,114 @@ Closed since SG-3: AWS staging set-up and first deploy (Deploy staging green, `/
 
 ## SG-5 end of week 5: trip management (IMP-599)
 
-Status: not run
+Status: **pass with listed gaps** (IMD-186)
+
+- Run: IMP-599 whole-task, owner Kirtan, 15 November 2026. Index: [sprint-5.md](sprint-5.md).
+- Gate commit: the head of this PR (`chore/IMP-599-sg5-gate`); base `43a4240` (`main` after #279). The PR adds only this documentation commit. No `.env` file was read, and no staging URL, AWS, database or Gemini call was made in this run.
+- Scope of this result: everything that can be shown in CI on the local stack with MOCK, by API tests and by the recorded Gemini baseline is shown below. Staging was off during this gate (IMD-137), so every staging criterion is **not verifiable** and is an open item for the staging window of Wednesday 18 November 2026 (IMD-186). No staging criterion is claimed as passed.
+- Sprint 5 cards: all 22 parts on 14 cards (59 points) are merged (#275 to #279). IMP-515 (extension, 4 points) is cut (IMD-65, IMD-186); a switched-off extension counts as satisfied for the gate card (specification §11.2).
+- Decisions used: IMD-65 (extensions cut), IMD-137 (staging off between windows), IMD-167 (no cut-list switch at SG-4), IMD-177 to IMD-184 (Sprint 5 fix decisions), IMD-185 (public repository; E2E on every push to main and by dispatch on each pull request) and IMD-186 (SG-5 passes with listed gaps), both recorded in `docs/spec/DECISION_REGISTER.md` in this pull request.
+
+### Criteria
+
+| # | Criterion (card IMP-599 acceptance and steps) | Result | Evidence |
+| --- | --- | --- | --- |
+| 1 | Step 1: every Sprint 5 task done or explicitly carried over in `sprint-5.md` with evidence links | PASS | [sprint-5.md](sprint-5.md): 22 parts merged, each row links its part record; IMP-515 listed as cut; carried-over items listed with owners and due dates |
+| 2a | Acceptance 1 / step 2: `make check` green on the gate commit | PASS on `main` at the base; PR run pending | CI run on this PR (to be read on the PR before merge). `main` at the base: [CI 43601520229](https://github.com/het-lathiya/Group12/actions/runs/43601520229) (CI, push, 14 Nov 2026) on `43a4240`: `lint-types`, `unit`, `guards`, `audit`, `api` success (`attribution` skipped on push). This PR changes only `docs/progress/` |
+| 2b | Acceptance 1 / step 2: `make e2e` green on the gate commit | PASS | Gate E2E dispatch on this PR's branch (E2E by dispatch on each pull request, IMD-185): run 43721801253 (workflow_dispatch on `3b038f2`, the gate commit before this cell was filled in; success). Journey: `4 passed (34.4s)`; map specs: `8 passed (19.4s)`; staging job skipped. Earlier E2E successes on the last Sprint 5 merges, all `workflow_dispatch`, success, steps "Run the journey" and "Run the map specs": [43600301340](https://github.com/het-lathiya/Group12/actions/runs/43600301340) (#279, head `663895a`), [43597245631](https://github.com/het-lathiya/Group12/actions/runs/43597245631) (#278, `a3338e0`), [43588206273](https://github.com/het-lathiya/Group12/actions/runs/43588206273) (#277, `4ecf7f9`) |
+| 3 | Acceptance 2 / step 3: staging journey with GEMINI, end to end with all Sprint 5 functions (generate, add a place, replace an activity, lock an item, costs breakdown, map); outcome labels shown | NOT VERIFIABLE (staging off) | Open item, Kirtan and Het (Gemini key), due Wed 18 Nov 2026 (IMD-186). Existing evidence below the staging level: the MOCK E2E journey ([43600301340](https://github.com/het-lathiya/Group12/actions/runs/43600301340)) at four widths (360, 768, 1280, 1920) covers sign-up, trip creation, generation, remove, retime, reload, Open latest, skip link, keyboard move and the Costs page, and the map spec covers the map and its list fallback. **Add place, replace, lock, browse places and trip edit are not in the E2E journey**; they are covered by API tests in the CI `api` job (#275, #276) and by component tests ([sprint-5.md](sprint-5.md)). Gemini quality on dataset `trips` v1: usable outputs 44 / 45 ([baseline-1.md](../../eval/reports/baseline-1.md), run record `eval/results/20261114T104200Z-gemini/run.json`: provider GEMINI, model `gemini-3.5-flash-lite`, prompt v1, 15 cases × 3 repeats, git commit `15475eb`) |
+| 4 | Step 3: `make smoke URL=<staging api>` (including the new cases of `apps/api/tests/smoke/test_deployed.py`) | NOT VERIFIABLE (staging off) | Not run. Open item, Kirtan, due Wed 18 Nov 2026 |
+| 5 | Step 4: provider failure on staging (`AI_PROVIDER=MOCK`, `MOCK_PROVIDER_SCENARIO=timeout`, IMD-33): labelled fallback and repair outcome recorded | NOT VERIFIABLE (staging off) | Open item, Kirtan, due Wed 18 Nov 2026. API-level evidence in CI: repair and fallback tests of IMP-502 (TC-190, TC-191, TC-192, TC-011, TC-313; [record](parts/IMP-502-whole-task.md)) in #275, and the IMP-403 failure tests (SG-4 row 2), all in the `api` job of [CI 43601520229](https://github.com/het-lathiya/Group12/actions/runs/43601520229) |
+| 6 | Step 5: a user at the cap gets 429 `AI_QUOTA_REACHED` without a provider call | NOT VERIFIABLE on staging | Open item, Kirtan, due Wed 18 Nov 2026. API-level evidence: TC-171, TC-172, TC-173, TC-310, TC-311, TC-353 in `apps/api/tests/api/test_generations.py` and TC-294 in `apps/api/tests/unit/core/test_rate_limit.py` (IMP-511, #276), run in the CI `api` and `unit` jobs; the part record itself marks the API cases not verified in its run ([record](parts/IMP-511-whole-task.md)) |
+| 7 | Acceptance 3 / step 6: no open blocker-severity defect; known defects listed with severity and owner | PASS on the listed basis | Defect list below. No blocker-severity (severity 1) defect is known in the local and CI scope. The staging Gemini `config_error` is major but staging-only, and staging evidence is moved to 18 Nov 2026 by IMD-186 |
+| 8 | Step 6: cut-list flags currently disabled recorded | recorded | See "Cut-list flags" below: **no flag is disabled in any configuration in the repository**; `ranking_explain` is not yet in the default list |
+| 9 | Acceptance 5 / step 7: IMP-515 done with TC-399 to TC-401, or `ranking_explain` switched off with a recorded decision | PASS (cut) | IMP-515 cut by IMD-65 and IMD-186; API-63 and the "Why this place?" panel are not built (no route in `apps/api/app`). Gap: `ranking_explain` is off by decision, not yet by configuration (see below) |
+| 10 | Acceptance 4: gate decision and evidence recorded in `gates.md` | PASS | This entry |
+| 11 | §14.1 SG-5 tests: provider contract suite for MOCK and recorded GEMINI | PASS | IMP-512 ([record](parts/IMP-512-whole-task.md)): TC-156 to TC-158, TC-001 to TC-005, TC-008 at contract level for `mock` and `gemini_recorded`, no network; `make test-contract` is part of the `unit` job of [CI 43601520229](https://github.com/het-lathiya/Group12/actions/runs/43601520229). The recordings are still hand-written fixtures (open item) |
+| 12 | §14.1 SG-5 evidence: baseline run record (dataset, provider, SHA) | PASS | `eval/results/20261114T104200Z-gemini/run.json`: dataset `trips` v1, provider GEMINI, `git_commit` `15475eb`; note [baseline-1.md](../../eval/reports/baseline-1.md) (44 / 45 usable) ([IMP-514 gemini-baseline](parts/IMP-514-gemini-baseline.md)) |
+
+Card tests: `make e2e` by dispatch on this PR (row 2b); `make smoke URL=<staging api url>` **not run** (staging off). No command was run locally in this run: it changes only two documentation files, and the gate's evidence is CI.
+
+### Known defects
+
+Severity per IMD-41 (§14.1): 1 blocks a journey or exposes data; 2 breaks a requirement with no workaround; 3 has a workaround; 4 cosmetic.
+
+| Defect | Severity | Owner | Source |
+| --- | --- | --- | --- |
+| Gemini generations on staging end `failed` / `config_error` (SG-4 operator run of 13 Nov 2026); local `make live-smoke` and the baseline run succeed | major, staging only (would be severity 2 if staging were in this gate's scope) | Kirtan, Het | SG-4 open items |
+| Destructive Button hover about 4.40:1 over the page background (PD-RUN-071b-1); hover only, not scanned by axe | minor (severity 3) | Manasvi | IMD-183, deferred to Sprint 6 |
+| The model writes "AI-written" into its own notes (492 of 557) and reuses places for meals (88 items) | minor (severity 3) | Manya (prompt v2), Nidhi | IMD-180, IMD-181; [baseline-1.md](../../eval/reports/baseline-1.md); Sprint 6 |
+| TC-385 live-stack label review and screenshots not done | minor (severity 4, evidence gap) | Manasvi | [IMP-507 costs-page](parts/IMP-507-costs-page.md) |
+| Provider spending limit is Awaiting validation | minor (risk, no defect observed) | Kirtan | [IMP-511](parts/IMP-511-whole-task.md) |
+| CI: a pull-request edit should run only `attribution`; verified locally, not yet observed at runtime | minor (severity 4) | Kirtan | RUN-072, IMD-184 |
+
+No blocker-severity defect is known. The Sprint 5 defects found in E2E (map worker in the production build, Button fade contrast, focus after a move, the 409 after an edit caused by the commit order) were fixed in RUN-071b, RUN-071c and RUN-072 and passed in [E2E 43600301340](https://github.com/het-lathiya/Group12/actions/runs/43600301340).
+
+### Cut-list flags
+
+- `FEATURES_DISABLED` default: `""` (`apps/api/app/core/config.py`, `features_disabled: str = ""`).
+- `.env.example`: `FEATURES_DISABLED=` and `NEXT_PUBLIC_FEATURES_DISABLED=` (both empty).
+- CI and E2E workflows: `NEXT_PUBLIC_FEATURES_DISABLED: ""`. Staging takes the repository variable `STAGING_FEATURES_DISABLED`, whose value is not in the repository and was not read (`infra/aws/env.sh.example` leaves it empty).
+- So **no cut-list switch and no extension switch is disabled** in any configuration held in the repository. No MVP cut-list switch is applied (IMD-167; none added at SG-5).
+- Switched off by decision, not by configuration: the nine extensions (IMD-65), among them `ranking_explain` (IMP-515, IMD-186) and IMP-612 `optimise_order`. Their routes and screens are not built. **`ranking_explain` is not yet in the default list**; adding it is a follow-up (open item). The configuration was not changed in this run.
+
+### Gate decision
+
+**Pass with listed gaps** (IMD-186). IMP-612 stays cut. The SG-5 restore decision point is closed. Sprint 6 starts. Every staging criterion is an open item due Wednesday 18 November 2026.
+
+### Working-agreement audit (IMD-68)
+
+From `gh pr view <n> --json reviewDecision,reviews,mergedBy,statusCheckRollup`. All were merged by the operator account `het-lathiya`.
+
+| PR | reviewDecision | Approving reviewer | Check runs in the rollup | Meets the agreement |
+| --- | --- | --- | --- | --- |
+| #275 | none | none | 6 success | **no**: no approval |
+| #276 | none | none | 8 success, 4 cancelled (superseded runs) | **no**: no approval |
+| #277 | none | none | 11 success, 1 cancelled | **no**: no approval |
+| #278 | none | none | 12 success | **no**: no approval |
+| #279 | none | none | 6 success | **no**: no approval |
+
+Summary: 5 merged, 0 with an approval. As at SG-3 and SG-4, no merged pull request meets the working agreement in full. Nothing was changed on these pull requests.
+
+### Open items
+
+| Item | Owner | Due | Source |
+| --- | --- | --- | --- |
+| Gate E2E dispatch on this PR: fill in the run id and the journey/map result line in row 2b | Kirtan | before merge of this PR | IMP-599 step 2 |
+| Staging GEMINI journey with all Sprint 5 functions (generate, add, replace, lock, costs, map) and outcome labels; includes TC-370 with MOCK and Gemini (fresh staging account, IMD-163, IMD-164) | Kirtan, Het (Gemini key) | Wed 18 November 2026 | SG-5 rows 3; SG-4 |
+| `make smoke` against staging with the new smoke cases, TC-433 to TC-435, Supabase redirect URLs, IMD-139 alarm output, staging stop/start log | Kirtan | Wed 18 November 2026 | SG-5 row 4; SG-4 |
+| `MOCK_PROVIDER_SCENARIO=timeout` fallback on staging with the repair outcome recorded, with screenshot (IMD-33) | Kirtan | Wed 18 November 2026 | SG-5 row 5; SG-4 |
+| Generation cap on staging: 429 `AI_QUOTA_REACHED` with no provider call | Kirtan | Wed 18 November 2026 | SG-5 row 6 |
+| Gemini `config_error` on staging: compare the key in SSM with the working local key, then redeploy | Kirtan, Het | Wed 18 November 2026 | SG-4 |
+| Edit an item on staging and confirm the totals change in one response | Kirtan | Wed 18 November 2026 | SG-4 |
+| Staging RAG index line (including the per-minute limit finding of SG-3 row 6) | Kirtan | Wed 18 November 2026 | SG-4 |
+| ACC-19 on staging | Het | Wed 18 November 2026 | SG-4 |
+| NFR-050 p95 over 10 staging generations | Het | Wed 18 November 2026 | SG-4 |
+| Carried from SG-3: TC-438 forced failure, CORS on staging, IMP-216 staging walk-through, IMP-206 staging load | Kirtan | Wed 18 November 2026 | SG-4 |
+| IMP-114 interviews (US-151): anonymous notes with participant codes; PR #201 (open, draft) | Junaid, Krrish | Thu 19 November 2026 | SG-4 |
+| Add `ranking_explain` to the `FEATURES_DISABLED` defaults (IMD-186); config not changed here | Kirtan | Sprint 6 | this gate |
+| Destructive Button hover contrast about 4.40:1 (PD-RUN-071b-1) | Manasvi | Sprint 6 | IMD-183 |
+| Prompt v2: application supplies the "AI-written" label; a place at most once in a generated plan, meal stops included | Manya, Nidhi | Sprint 6 | IMD-180, IMD-181 |
+| TC-385 live-stack label review and screenshots | Manasvi | no date set | IMP-507 costs-page |
+| Provider spending limit (Awaiting validation) | Kirtan | no date set | IMP-511 |
+| Observe that a pull-request edit runs only `attribution` | Kirtan | next pull-request edit | RUN-072, IMD-184 |
+| TC-382 manual screen-reader pass | Krrish | IMP-703 (Sprint 7) | IMP-513 |
+| Screenshots on the local stack: Sprint 5 screens (place picker, alternatives dialog, lock toggle, trip edit, costs, map and list fallback) and the SG-4 screens (#260, #261, #267, #268, #273); 44 px targets at 375 px | Malhar, Krrish, Manasvi | no date set | Sprint 5 records; SG-4 |
+| Ahmedabad saved samples (FR-036 AC3), waiting for two trip inputs | Jeel | no date set | SG-4 |
+| TC-384 error-catalogue checklist | Krrish | no date set | SG-4 |
+| Carried from SG-3: IMP-113 remaining facts (Gemini tier, ORS key and allowance, e-mail sender, AWS plan); `docs/decisions/accounts.md` still says "outcome pending" | Nidhi, Junaid, Kirtan | no date set | SG-4 |
+| Production environment with required reviewers | Kirtan | Sprint 8 | IMD-185 |
+| Fork pull-request approval setting | operator | no date set | IMD-185 |
+| OpenFreeMap terms Unverified (`docs/decisions/map-tiles.md`) | Manasvi | no date set | IMP-508 |
+| Gemini contract recordings are hand-written; replace with scrubbed live recordings | Junaid | no date set | IMP-512 |
+| Idle-machine `make test-web` ×10 | operator | no date set | SG-4 |
+| `infra/aws/02_rds.sh`, `04_ssm.sh`, `06_services.sh`: replace `--cli-input-json file:///dev/stdin` with a file (still present at `43a4240`) | Kirtan | before the next run of those scripts | SG-4 |
+| Carried from SG-3: IMD-120 data checks (Malhar plan, Junaid 20 percent sample, Jeel and Malhar 60 rows); no record on `main` shows them done | Malhar, Junaid, Jeel | no date set | SG-4 |
+| Carried from SG-3: TC-334 coverage, report-only step in CI; thresholds still proposed | Kirtan | no date set | SG-4 |
+
+Closed since SG-4: IMD-159 code fix, plain-language `Money.currency` error (`5f53777`, #276); focus-fallback test after a removal (IMP-513, DayColumn cases, [record](parts/IMP-513-whole-task.md)); totals note (totals and breakdown now on the Costs page, IMP-507, TC-226 component path); PD-IMP-499-1 confirmation (IMD-167); repair call through the retry allowance (IMP-502, [record](parts/IMP-502-whole-task.md)).
+
+Confirmed by: Kirtan (gate owner) — pending
 
 ## SG-6 end of week 6: MVP feature freeze (IMP-699)
 
