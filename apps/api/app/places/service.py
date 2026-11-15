@@ -1,4 +1,4 @@
-"""Places service (MOD-B04): read-only use cases behind API-06 and API-16 (basic) (§6.6.3).
+"""Places service (MOD-B04): read-only use cases behind API-06, API-16 and API-17 (§6.6.3).
 
 The session is the request's transaction (app.auth.deps.DbSession), as in trips/service.py. Only
 active destinations and places are read. The seed writes the reference tables; the one write here
@@ -7,15 +7,16 @@ is ``ensure_data_source``, the source of a RAG guide (A1 §5.1).
 
 from collections.abc import Sequence
 from datetime import date
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFound
+from app.core.errors import NotFound, ValidationFailed
 from app.db.models import Place
 from app.places import repository
-from app.places.schemas import Destination, PlaceSummary
-from app.schemas.common import Page
+from app.places.schemas import Destination, PlaceOut, PlaceSummary
+from app.schemas.common import ErrorDetail, Page
 
 
 class DataSourceConflictError(Exception):
@@ -33,31 +34,71 @@ async def search_places(
     *,
     q: str | None,
     categories: Sequence[str],
+    tags: Sequence[str] = (),
+    price_max: Decimal | None = None,
+    duration_max_min: int | None = None,
+    step_free: bool = False,
+    near_lat: float | None = None,
+    near_lon: float | None = None,
+    max_distance_m: int | None = None,
     limit: int,
     offset: int,
 ) -> Page[PlaceSummary]:
-    """API-16: active places of an active destination by name, category and page.
+    """API-16: active places of an active destination, filtered (IMP-604) and paged.
 
     An inactive or unknown destination is 404 NOT_FOUND: §6.2 makes inactive destinations
-    invisible, so they answer like a missing one (IMD-127).
+    invisible, so they answer like a missing one (IMD-127). ``near_lat`` and ``near_lon`` come
+    together, and ``max_distance_m`` needs them; otherwise 422. No match is an empty page with
+    total 0, for which the explore page explains which filters to relax (FR-017 AC2).
     """
+    details = [
+        ErrorDetail(field=name, message="Give near_lat and near_lon together.")
+        for name, value, other in (
+            ("near_lat", near_lat, near_lon),
+            ("near_lon", near_lon, near_lat),
+        )
+        if value is None and other is not None
+    ]
+    near = (near_lat, near_lon) if near_lat is not None and near_lon is not None else None
+    if max_distance_m is not None and near is None:
+        details.append(ErrorDetail(field="max_distance_m", message="Needs near_lat and near_lon."))
+    if details:
+        raise ValidationFailed(details=details)
     destination = await repository.destination_by_id(session, destination_id)
     if destination is None or not destination.is_active:
         raise NotFound()
     rows, total = await repository.search_places(
         session,
         destination_id,
-        q=q.strip() if q else None,
-        categories=categories,
+        repository.PlaceFilters(
+            q=q.strip() if q else None,
+            categories=categories,
+            tags=tags,
+            price_max=price_max,
+            currency=destination.currency,
+            duration_max_min=duration_max_min,
+            step_free=step_free,
+            near=near,
+            max_distance_m=max_distance_m,
+        ),
         limit=limit,
         offset=offset,
     )
     return Page[PlaceSummary](
-        items=[PlaceSummary.from_row(row, source) for row, source in rows],
+        items=[PlaceSummary.from_row(row, source, distance) for row, source, distance in rows],
         total=total,
         limit=limit,
         offset=offset,
     )
+
+
+async def get_place(session: AsyncSession, place_id: UUID) -> PlaceOut:
+    """API-17: one active place of an active destination with hours, source and labels; an
+    inactive or unknown place is 404 (§6.2)."""
+    found = await repository.active_place_detail(session, place_id)
+    if found is None:
+        raise NotFound()
+    return PlaceOut.from_rows(*found)
 
 
 async def active_place_names(
