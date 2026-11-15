@@ -2,17 +2,17 @@
 
 - Run id: RUN-076b
 - Owner: Nidhi Chauhan (4 points)
-- Status: implementation complete; checks pending the controls commit.
+- Status: MERGED-READY (local gate passed).
 - Base commit: ce2c63d
 - Files changed: generation/request_builder.py, generation/pipeline.py, tests/unit/generation/test_request_builder.py, tests/unit/generation/test_pipeline.py, tests/api/test_generations.py, tests/fixtures/pipeline.py; this record (all API paths below apps/api/).
-- Commands: `git diff --check` → empty output; final make results pending.
-- Acceptance: not yet verified. Tests cover one target day, fixed constraints, other days excluded from shortlist and must-visits, remaining budget, gr-2 passages, MOCK day answers and pipeline scope for model and rule-based jobs.
+- Commands: `git diff --check` → empty output; final make results are recorded below.
+- Acceptance: verified by the unit and real-database API suites below. Tests cover one target day, fixed constraints, other days excluded from shortlist and must-visits, remaining budget, gr-2 passages, MOCK day answers and pipeline scope for model and rule-based jobs.
 - Budget: existing activity-budget formula reserves transport, accommodation and contingency, then subtracts known high costs of other days and target locks; the remainder is clamped to zero. Unknown costs remain unavailable.
 - The active template stays v2; no prompt file, model contract or schema changes. MOCK already supports day scope, so no adapter change.
 - Files outside the run list: tests/fixtures/pipeline.py → the shared test row now supplies the existing scope columns read by the pipeline.
 - Blockers: none.
 - Proposed decisions: none.
-- Open issues: database verification awaits final checks or CI.
+- Open issues: none in this part; TC-376 browser execution belongs to the controls part and awaits CI.
 
 ## Card steps, acceptance criteria and test commands (verbatim)
 
@@ -42,3 +42,27 @@
 - apps/api/tests/api/test_generations.py — TC-213, TC-214, TC-215, TC-216, TC-313 — `make test-api ARGS='-k regenerate'`
 - apps/web/e2e/itinerary-edit.spec.ts — TC-376 — `make e2e ARGS='itinerary-edit'`
 
+
+## Single integration fix
+
+- Split the two compound assertions required by lint; no assertion was removed. Correct the API day-budget fixture currency to GBP, Sampleton's declared destination currency. The active template remains v2.
+- Day-only hints and fixed constraints, exclusions, remaining budget and gr-2 passage preservation are verified by test_regenerate_day_request_excludes_other_days_keeps_only_its_locks_and_budget, test_regenerate_mock_answers_only_the_requested_day_with_passage_citations, the model/rule-based pipeline scope cases, and test_regenerate_day_builds_gr_2_with_fixed_locks_exclusions_and_remaining_budget.
+- No dropped parts, blockers or proposed decisions. This is this owner's only integration fix commit.
+
+## Final batch checks (RUN-076b)
+
+Database: disposable PostgreSQL 16.15 with pgvector 0.6.0 on loopback port 55476, extracted under a task-owned temporary directory; no system installation. It was stopped and the cluster, packages and connection settings were removed after testing. Alembic: `0007 (head)` before and after; no migration added.
+
+| Command | Exact result lines |
+| --- | --- |
+| `make lint` | `All checks passed!`; `232 files already formatted`; `✖ 1 problem (0 errors, 1 warning)` (existing client navigation warning); `All matched files use Prettier code style!` |
+| `make typecheck` | `Success: no issues found in 123 source files`; `✓ Types generated successfully` |
+| `make imports` | `Contracts: 6 kept, 0 broken.` |
+| `make test` (all five suites) | `======================= 1185 passed, 1 warning in 19.39s =======================`; `================= 91 passed, 2 deselected, 1 warning in 20.98s =================`; `================== 564 passed, 1 warning in 195.46s (0:03:15) ==================`; `============================= 71 passed in 44.04s ==============================`; `      Tests  283 passed (283)` |
+| `make test-api ARGS='-k regenerate'` | `================ 21 passed, 543 deselected, 1 warning in 16.64s ================` |
+| `make openapi-check` | `openapi-check: contracts/ and apps/web/lib/api/schema.d.ts are up to date` |
+| `make check` | `make check exit: 0`; all constituent checks passed. The final `make test` above also includes the subsequently added day-theme provenance regression. |
+| `make e2e ARGS='itinerary-edit --list'` | `Total: 4 tests in 1 file` |
+| `(cd apps/api && .venv/bin/alembic heads)` | `0007 (head)` |
+
+Not run locally: `make e2e ARGS='itinerary-edit'` requires the local authentication stack, and Docker is unavailable in this WSL distro. Discovery is verified; TC-376 browser execution is not yet verified. The branch's one E2E dispatch includes this file. No live provider or recorded evaluation run was used.

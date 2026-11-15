@@ -1855,7 +1855,7 @@ async def test_regenerate_day_builds_gr_2_with_fixed_locks_exclusions_and_remain
     assert locked.status_code == 200, locked.text
     response = await api_client.patch(
         f"/api/v1/trips/{generated_trip}",
-        json={"budget": {"amount": "5000.00", "currency": "INR"}},
+        json={"budget": {"amount": "5000.00", "currency": "GBP"}},
         headers=auth_user.headers,
     )
     assert response.status_code == 200, response.text

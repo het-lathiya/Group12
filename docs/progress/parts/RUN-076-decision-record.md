@@ -11,3 +11,10 @@
 - Blockers: none.
 - Proposed decisions: none.
 - Open issues: IMD-191's API-35 SG-6 gap remains; Batch C implements the meal and retention decisions.
+
+## Batch validation
+
+- `make check` → `make check exit: 0`.
+- `make openapi` regenerated the declared contracts with no tracked difference; the conditional contracts-only commit is unnecessary.
+- `make openapi-check` → `openapi-check: contracts/ and apps/web/lib/api/schema.d.ts are up to date`.
+- The decision rows and the API-16 names remain the only specification changes. Batch C implementations, prompt activation and a recorded evaluation are still deferred.
