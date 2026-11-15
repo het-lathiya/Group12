@@ -696,3 +696,18 @@ export function useDuplicateTrip(tripId: string) {
     },
   });
 }
+
+// IMP-602 dashboard
+/** API-08 for the dashboard: one page of trips, archived ones only when asked (FR-012 AC3). */
+export function useTripList(includeArchived: boolean, limit = 20) {
+  return useQuery({
+    queryKey: queryKeys.trips({ limit, include_archived: includeArchived }),
+    queryFn: async () =>
+      unwrap(
+        await api().GET("/api/v1/trips", {
+          params: { query: { limit, include_archived: includeArchived } },
+        }),
+      ),
+    placeholderData: keepPreviousData, // the filter toggle keeps the list on screen
+  });
+}

@@ -172,3 +172,84 @@ describe("dashboard (FR-013, FR-014)", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+// IMP-602 dashboard: FR-012 AC1–AC3 (TC-082 to TC-084) web side.
+describe("dashboard trip list (FR-012)", () => {
+  let urls: URL[];
+  beforeEach(() => {
+    urls = [];
+    vi.stubGlobal("fetch", async (request: Request) => {
+      const url = new URL(request.url);
+      urls.push(url);
+      if (url.pathname === "/api/v1/itineraries/latest") {
+        return json({ trip_id: null, plan_revision: null, updated_at: null });
+      }
+      const all = url.searchParams.get("include_archived") === "true";
+      const items = all ? trips : trips.filter((t) => t.status !== "archived");
+      return json({ items, total: items.length, limit: 20, offset: 0 });
+    });
+  });
+
+  it("TC-082: each trip shows title, destination, dates, status and its next step", async () => {
+    trips = [
+      TRIP,
+      {
+        ...TRIP,
+        id: "00000000-0000-4000-8000-000000000003",
+        title: "Planned trip",
+        status: "ready",
+        has_itinerary: true,
+      },
+    ];
+    renderDashboard();
+
+    const card = (await screen.findByText("Planned trip")).closest(
+      "li",
+    ) as HTMLElement;
+    expect(within(card).getByText("Ready")).toBeInTheDocument();
+    expect(within(card).getByText(/Sampleton/)).toBeInTheDocument();
+    expect(
+      within(card).getByRole("link", { name: /open itinerary/i }),
+    ).toHaveAttribute(
+      "href",
+      "/trips/00000000-0000-4000-8000-000000000003/itinerary",
+    );
+    expect(
+      within(card).getByRole("button", { name: "Actions for Planned trip" }),
+    ).toBeInTheDocument();
+  });
+
+  it("TC-083: no trips offers Create your first trip", async () => {
+    trips = [];
+    renderDashboard();
+
+    expect(
+      await screen.findByRole("link", { name: "Create your first trip" }),
+    ).toHaveAttribute("href", "/trips/new");
+  });
+
+  it("TC-084: archived trips are hidden until Show archived is on", async () => {
+    trips = [
+      TRIP,
+      {
+        ...TRIP,
+        id: "00000000-0000-4000-8000-000000000004",
+        title: "Old trip",
+        status: "archived",
+      },
+    ];
+    const user = renderDashboard();
+    await screen.findByText("Weekend in Sampleton");
+    expect(screen.queryByText("Old trip")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "Show archived" }));
+
+    const card = (await screen.findByText("Old trip")).closest(
+      "li",
+    ) as HTMLElement;
+    expect(within(card).getByText("Archived")).toBeInTheDocument();
+    expect(
+      urls.some((url) => url.searchParams.get("include_archived") === "true"),
+    ).toBe(true);
+  });
+});

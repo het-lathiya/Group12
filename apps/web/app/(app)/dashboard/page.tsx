@@ -7,19 +7,20 @@ import { useState } from "react";
 import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
 import { LoadingSkeleton } from "@/components/states/LoadingSkeleton";
+import { TripCard } from "@/components/trips/TripCard";
 import { Button } from "@/components/ui/button";
 import type { ApiError } from "@/lib/api/client";
-import { useLatestItinerary, useTrips } from "@/lib/api/queries";
-import { formatDayDate } from "@/lib/format";
+import { useLatestItinerary, useTripList } from "@/lib/api/queries";
 
 /**
- * /dashboard (§7.5.3; FR-013, FR-014): New trip, Open latest (API-09) and the traveller's drafts (API-08)
- * with Continue draft. The full trip list and its actions are IMP-602.
+ * /dashboard (§7.5.3; FR-012 to FR-015): New trip, Open latest (API-09) and the traveller's trips
+ * (API-08) as TripCards with their actions; archived trips only behind Show archived (FR-012 AC3).
  */
 export default function DashboardPage() {
   const router = useRouter();
   const latest = useLatestItinerary();
-  const trips = useTrips();
+  const [showArchived, setShowArchived] = useState(false);
+  const trips = useTripList(showArchived);
   const [noLatest, setNoLatest] = useState(false);
   const latestTripId = latest.data?.trip_id ?? null;
 
@@ -88,54 +89,47 @@ export default function DashboardPage() {
           onRetry={() => void trips.refetch()}
         />
       )}
-      {trips.data?.total === 0 && (
-        <EmptyState
-          title="No trips yet"
-          description="Start with a destination, your dates and a budget."
-          action={
-            <Button asChild>
-              <Link href="/trips/new">Create a trip</Link>
-            </Button>
-          }
-        />
-      )}
-      {drafts.length > 0 && (
+      {trips.data && (
         <section
-          aria-labelledby="drafts-heading"
+          aria-labelledby="trips-heading"
           className="flex flex-col gap-3"
         >
-          <h2 id="drafts-heading" className="text-lg font-semibold">
-            Drafts
-          </h2>
-          <ul className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            {drafts.map((trip) => (
-              <li
-                key={trip.id}
-                className="flex flex-col gap-3 rounded-xl border bg-card p-4 text-card-foreground"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-semibold break-words">{trip.title}</h3>
-                  <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-muted px-2 text-xs font-medium text-muted-foreground">
-                    Draft
-                  </span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {trip.destination.name} · {formatDayDate(trip.start_date)} to{" "}
-                  {formatDayDate(trip.end_date)}
-                </p>
-                <div className="mt-auto flex flex-col gap-2 sm:flex-row">
-                  <Button asChild className="w-full sm:w-auto">
-                    <Link
-                      href={`/trips/new?draft=${trip.id}`}
-                      aria-label={`Continue draft: ${trip.title}`}
-                    >
-                      Continue draft
-                    </Link>
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 id="trips-heading" className="text-lg font-semibold">
+              All trips
+            </h2>
+            <label className="flex min-h-touch items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="size-4 accent-primary"
+                checked={showArchived}
+                onChange={(event) => setShowArchived(event.target.checked)}
+              />
+              Show archived
+            </label>
+          </div>
+          {trips.data.total > 0 ? (
+            <ul className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              {trips.data.items.map((trip) => (
+                <TripCard key={trip.id} trip={trip} />
+              ))}
+            </ul>
+          ) : showArchived ? (
+            <p className="text-sm text-muted-foreground">
+              No trips yet, archived or not.
+            </p>
+          ) : (
+            <EmptyState
+              headingLevel={3}
+              title="No trips yet"
+              description="Start with a destination, your dates and a budget. Archived trips appear with Show archived."
+              action={
+                <Button asChild>
+                  <Link href="/trips/new">Create your first trip</Link>
+                </Button>
+              }
+            />
+          )}
         </section>
       )}
     </div>
