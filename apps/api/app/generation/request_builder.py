@@ -13,6 +13,7 @@ from collections.abc import Callable, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from datetime import timedelta
+from decimal import Decimal
 from typing import Final, Literal
 from uuid import UUID
 
@@ -81,6 +82,8 @@ class RequestSettings:
     contingency_pct: float
     scope: Scope = field(default_factory=lambda: Scope(kind="full", day_number=None))
     meal_slots_enabled: bool = True  # the IMD-11 switch 'meal_slots' (IMP-606)
+    excluded_place_ids: frozenset[UUID] = frozenset()
+    remaining_day_budget: Decimal | None = None
 
 
 def hours_summary(hours: Iterable[PlaceOpeningHours], weekdays: Sequence[int]) -> str:
@@ -132,6 +135,18 @@ def build_generation_request(
     """The gr-1 fields; ``shortlist`` is in rank order, best first. Nothing here reads a row.
     ``day_hints`` come from the grouping, at most the pace maximum of items per day (IMP-503)."""
     pace = presets.pace_limits(preferences.pace)
+    scoped_day = settings.scope.day_number if settings.scope.kind == "day" else None
+    shortlist = [place for place in shortlist if place.place_id not in settings.excluded_place_ids]
+    must_visit = [
+        place_id for place_id in must_visit if place_id not in settings.excluded_place_ids
+    ]
+    hints = grouping.group_days(
+        shortlist, must_visit, 1 if scoped_day else trip.num_days, pace.max_items_per_day
+    )
+    if scoped_day is not None:
+        hints = [hint.model_copy(update={"day_number": scoped_day}) for hint in hints]
+        locked_items = [item for item in locked_items if item.day_number == scoped_day]
+    amount = settings.remaining_day_budget if scoped_day is not None else None
     return GenerationRequest(
         request_id=uuid.uuid4(),
         trip=TripContext(
@@ -142,7 +157,10 @@ def build_generation_request(
             travellers=Travellers(adults=trip.adults, children=trip.children),
             group_needs=[need.value for need in trip.group_needs],
             budget=(
-                Budget(amount=f"{trip.budget.amount:.2f}", currency=trip.budget.currency)
+                Budget(
+                    amount=f"{amount if amount is not None else trip.budget.amount:.2f}",
+                    currency=trip.budget.currency,
+                )
                 if trip.budget
                 else None
             ),
@@ -159,7 +177,7 @@ def build_generation_request(
         ),
         must_visit_place_ids=list(must_visit),
         shortlist=list(shortlist),
-        day_hints=grouping.group_days(shortlist, must_visit, trip.num_days, pace.max_items_per_day),
+        day_hints=hints,
         limits=Limits(
             max_items_per_day=pace.max_items_per_day,
             max_active_minutes_per_day=pace.max_active_minutes_per_day,
@@ -251,6 +269,41 @@ async def build(
     trip = await trips_service.get_trip(session, user_id, trip_id)
     prefs = await trips_service.get_preferences(session, user_id, trip_id)
     meals_on = is_enabled(get_settings(), "meal_slots")
+    excluded: frozenset[UUID] = frozenset()
+    remaining_budget = None
+    if scope and scope.kind == "day":
+        saved = await itinerary_service.get_itinerary(session, user_id, trip_id)
+        excluded = frozenset(
+            item.place.id
+            for day in saved.days
+            if day.day_number != scope.day_number
+            for item in day.items
+        )
+        budget_settings = await repository.budget_settings(session, trip_id)
+        available = retrieval.activity_budget(
+            trip.budget.amount if trip.budget else None,
+            num_days=trip.num_days,
+            transport_per_day=budget_settings.transport_allowance_per_day
+            if budget_settings
+            else None,
+            stay_per_night=budget_settings.stay_budget_per_night if budget_settings else None,
+            contingency_pct=(
+                Decimal(await repository.contingency_pct(session, trip_id))
+                if is_enabled(get_settings(), "contingency")
+                else Decimal(0)
+            ),
+        )
+        fixed_cost = sum(
+            (
+                item.cost.max
+                for day in saved.days
+                for item in day.items
+                if item.cost and (day.day_number != scope.day_number or item.is_locked)
+            ),
+            Decimal(0),
+        )
+        if available is not None:
+            remaining_budget = max(Decimal(0), available - fixed_cost)
     candidates = await retrieval.ranked_shortlist(
         session,
         trip,
@@ -259,7 +312,12 @@ async def build(
         meal_slots_per_day=len(presets.meal_slots(prefs.pace, enabled=meals_on)),
         retrieved=retrieved,
     )
-    dates = (trip.start_date + timedelta(days=offset) for offset in range(trip.num_days))
+    offsets = (
+        [scope.day_number - 1]
+        if scope and scope.kind == "day" and scope.day_number is not None
+        else range(trip.num_days)
+    )
+    dates = (trip.start_date + timedelta(days=offset) for offset in offsets)
     weekdays = list(dict.fromkeys(day.isoweekday() for day in dates))
     request = build_generation_request(
         trip,
@@ -280,6 +338,8 @@ async def build(
             contingency_pct=await repository.contingency_pct(session, trip_id),
             scope=scope or Scope(kind="full", day_number=None),
             meal_slots_enabled=meals_on,
+            excluded_place_ids=excluded,
+            remaining_day_budget=remaining_budget,
         ),
     )
     meta = registry.load(prompt_template_id, prompt_version).meta

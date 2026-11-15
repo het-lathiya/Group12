@@ -48,7 +48,7 @@ import time
 from collections import Counter
 from collections.abc import Callable, Sequence
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Final
 from uuid import UUID
 
@@ -80,6 +80,7 @@ from app.schemas.ai import (
     ItineraryOutput,
     ModelMetadata,
     RepairContext,
+    Scope,
     UsageMetadata,
 )
 from app.trips import service as trips_service
@@ -109,6 +110,7 @@ class Job:
     user_id: UUID
     started: float
     validating: bool = False
+    scope: Scope = field(default_factory=lambda: Scope(kind="full", day_number=None))
 
     def elapsed_ms(self) -> int:
         return round((time.perf_counter() - self.started) * 1000)
@@ -186,6 +188,10 @@ async def evaluate(
 
 async def assess(job: Job, request: GenerationRequest, answer: ItineraryOutput) -> Assessed:
     """Steps 8 and 9, then the deterministic repair and step 9 again if it changed anything."""
+    if request.scope.kind == "day" and any(
+        day.day_number != request.scope.day_number for day in answer.days
+    ):
+        return unreadable("schema_violation")
     try:
         answer = output_check.apply_limits(
             answer,
@@ -570,7 +576,16 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
     started = time.perf_counter()
     async with sessions() as session:
         row = await repository.mark_running(session, generation_id)
-        job = Job(generation_id, sessions, row.trip_id, row.user_id, started)
+        job = Job(
+            generation_id,
+            sessions,
+            row.trip_id,
+            row.user_id,
+            started,
+            scope=Scope(
+                kind="day" if row.scope == "day" else "full", day_number=row.scope_day_number
+            ),
+        )
         prompt_template_id, prompt_version = row.prompt_template_id, row.prompt_version
         rule_based = row.model_id == fallback_planner.MODEL_ID  # IMD-43: set at insert
 
@@ -600,6 +615,7 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
             prompt_template_id=prompt_template_id,
             prompt_version=prompt_version,
             retrieved=retrieved,
+            scope=job.scope,
         )
     if rule_based:
         await run_fallback(job, request, None)

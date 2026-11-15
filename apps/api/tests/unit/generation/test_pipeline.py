@@ -141,3 +141,29 @@ def test_pipeline_saves_only_what_the_recalculation_hook_returns(
     journal.run(MockProvider("ok", app_env="test"))
 
     assert journal.saved == replaced
+
+
+@pytest.mark.parametrize("rule_based", [False, True])
+def test_regenerate_pipeline_passes_the_day_scope_to_the_builder_and_save(
+    monkeypatch: pytest.MonkeyPatch,
+    rule_based: bool,
+) -> None:
+    from app.schemas.ai import Scope
+
+    request = sample_request().model_copy(update={"scope": Scope(kind="day", day_number=2)})
+    journal = Journal(monkeypatch, request)
+    if rule_based:
+        from app.generation.fallback_planner import MODEL_ID
+
+        journal.model_id = MODEL_ID
+    scopes = []
+
+    async def build(session: object, **kwargs: Any) -> GenerationRequest:
+        scopes.append(kwargs["scope"])
+        return request
+
+    monkeypatch.setattr(pipeline.request_builder, "build", build)
+    journal.run(MockProvider("ok", app_env="test"))
+    assert scopes == [request.scope]
+    assert journal.saved and {day.day_number for day in journal.saved} == {2}
+    assert journal.completed["outcome"] in ("model", "fallback_rule_based")
