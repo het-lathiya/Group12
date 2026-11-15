@@ -2,6 +2,7 @@
 
 import {
   CalendarDays,
+  ClipboardList,
   Compass,
   History,
   Luggage,
@@ -52,6 +53,11 @@ function navItems(tripId: string | undefined): NavItem[] {
       label: "Explore",
       icon: Compass,
       href: tripId ? `/trips/${tripId}/explore` : undefined,
+    },
+    {
+      label: "Summary",
+      icon: ClipboardList,
+      href: tripId ? `/trips/${tripId}/summary` : undefined,
     },
     ...(isEnabled("versions")
       ? [

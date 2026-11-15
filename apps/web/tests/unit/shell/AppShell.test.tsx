@@ -99,6 +99,10 @@ describe("AppShell (TC-278)", () => {
       "href",
       "/trips/trip-1/versions",
     );
+    expect(within(nav).getByRole("link", { name: /Summary/ })).toHaveAttribute(
+      "href",
+      "/trips/trip-1/summary",
+    );
   });
 
   it("has a skip link as the first focusable element that moves focus to main", async () => {
