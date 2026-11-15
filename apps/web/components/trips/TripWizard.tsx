@@ -20,12 +20,14 @@ import { ApiError, type ErrorDetail } from "@/lib/api/client";
 import {
   useCreateTrip,
   usePreferences,
+  useProfile,
   useSavePreferences,
   useTrip,
   useUpdateTrip,
 } from "@/lib/api/queries";
 import type { components } from "@/lib/api/schema";
 import {
+  preferencesSchema,
   toTripIn,
   type PreferencesValues,
   type TripDetailsValues,
@@ -73,6 +75,18 @@ function preferencesIn(
     notes: values.notes.trim() === "" ? null : values.notes,
     must_visit_place_ids: placeIds,
   };
+}
+
+/** FR-004 AC2: preferences not yet saved for the trip start from the profile's defaults (IMD-16).
+ * Only keys that pass the form's own rules are taken; saved preferences are never replaced. */
+const profileDefaultsSchema = preferencesSchema.omit({ notes: true }).partial();
+function withProfileDefaults(
+  preferences: Schemas["PreferencesOut"],
+  profile: Schemas["Profile"] | undefined,
+): Schemas["PreferencesOut"] {
+  if (preferences.saved || !profile) return preferences;
+  const defaults = profileDefaultsSchema.safeParse(profile.default_preferences);
+  return defaults.success ? { ...preferences, ...defaults.data } : preferences;
 }
 
 type SaveStatus = "idle" | "saving" | "saved" | "failed";
@@ -153,6 +167,7 @@ function Wizard({
   const updateTrip = useUpdateTrip(trip?.id ?? "");
   const savePreferences = useSavePreferences(trip?.id ?? "");
   const preferences = usePreferences(trip?.id);
+  const profile = useProfile();
   const heading = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
   const saving =
@@ -299,10 +314,13 @@ function Wizard({
           </div>
           <div hidden={step !== 1}>
             {step >= 1 &&
-              (preferences.data ? (
+              (preferences.data && !profile.isPending ? (
                 <PreferenceForm
                   formId={FORM_IDS[1]}
-                  preferences={preferences.data}
+                  preferences={withProfileDefaults(
+                    preferences.data,
+                    profile.data,
+                  )}
                   onSave={savePreferenceFields}
                 />
               ) : (
