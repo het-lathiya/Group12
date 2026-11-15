@@ -37,7 +37,7 @@ from app.budget import engine
 from app.core.config import Settings, get_settings
 from app.db.session import transaction
 from app.evaluation import manifest, metrics, retrieval_metrics
-from app.generation import grouping, request_builder, retrieval, schedule
+from app.generation import grouping, presets, request_builder, retrieval, schedule
 from app.itinerary.schemas import PlannedDay
 from app.places import service as places_service
 from app.places.schemas import Destination, PlaceSummary
@@ -358,7 +358,7 @@ async def score_query(
                 trip,
                 prefs,
                 [],
-                meal_slots_per_day=len(request_builder.MEAL_SLOTS),
+                meal_slots_per_day=len(presets.meal_slots(prefs.pace)),
                 retrieved=result,
             )
             for mode, result in (("vector", retrieved), ("lexical", None))
