@@ -728,3 +728,73 @@ async def test_retention_with_the_switch_off_keeps_one_backup_copy(
     assert [no for no, _ in rows] == [4, 5]  # the backup copy and the current plan's version
     current = await read(api_client, auth_user, trip_id)
     assert current["version_id"] is not None
+
+
+async def full_rows(
+    session: AsyncSession, trip_id: uuid.UUID
+) -> list[tuple[uuid.UUID, int, str | None, str, int, uuid.UUID | None]]:
+    session.expire_all()
+    rows = await session.execute(
+        select(ItineraryVersion)
+        .where(ItineraryVersion.trip_id == trip_id)
+        .order_by(ItineraryVersion.version_no)
+    )
+    return [
+        (v.id, v.version_no, v.name, v.reason, v.plan_revision, v.generation_id)
+        for v in rows.scalars()
+    ]
+
+
+# IMD-191 (blueprint §25.6 item 1): with 'versions' off exactly one backup copy of the previous
+# itinerary is kept for regeneration, next to the current plan's own version.
+@pytest.mark.asyncio
+async def test_switch_off_keeps_exactly_one_backup_after_repeated_regenerations(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    named = await save(api_client, auth_user, trip_id, "Kept", await revision(db_session, trip_id))
+    assert named.status_code == 201, named.text
+    monkeypatch.setenv("FEATURES_DISABLED", "versions")
+    get_settings.cache_clear()
+
+    @asynccontextmanager
+    async def job_transaction() -> AsyncIterator[AsyncSession]:
+        async with db_session.begin_nested():
+            yield db_session
+
+    for _ in range(3):
+        base = await revision(db_session, trip_id)
+        started = await api_client.post(
+            f"/api/v1/trips/{trip_id}/itinerary/regenerate",
+            json={"plan_revision": base, "mode": "rule_based"},
+            headers=auth_user.headers,
+        )
+        assert started.status_code == 202, started.text
+        while jobs_queue:
+            await jobs.run(*jobs_queue.pop(0), job_transaction)
+        assert await revision(db_session, trip_id) == base + 1
+
+    current = await read(api_client, auth_user, trip_id)
+    rows = await full_rows(db_session, trip_id)
+    assert [row[2] for row in rows if row[2]] == ["Kept"]  # a named version is never deleted
+    backups = [row for row in rows if row[2] is None and row[0] != uuid.UUID(current["version_id"])]
+    assert len(backups) == 1, rows
+    # The backup is the snapshot taken when the last regeneration started: the previous plan.
+    _, _, _, reason, plan_revision, generation_id = backups[0]
+    assert (reason, plan_revision, generation_id) == (
+        "regeneration",
+        current["plan_revision"] - 1,
+        None,
+    )
+
+    restored = await api_client.post(
+        f"/api/v1/trips/{trip_id}/versions/{backups[0][0]}/restore",
+        json={"plan_revision": current["plan_revision"]},
+        headers=auth_user.headers,
+    )
+    assert restored.status_code == 404, restored.text  # IMD-11: no restore while switched off
