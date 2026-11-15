@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { isEnabled } from "@/lib/flags";
 import { DayColumn } from "@/components/itinerary/DayColumn";
 import { MoveDndContext } from "@/components/itinerary/MoveControls";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -298,5 +299,39 @@ describe("DayColumn focus and announcements (IMP-513)", () => {
     expect(
       screen.getByRole("heading", { level: 3, name: ITEM.place.name }),
     ).toBeInTheDocument();
+  });
+});
+
+vi.mock("@/lib/flags", () => ({ isEnabled: vi.fn(() => true) }));
+
+describe("IMP-607 regenerate day control", () => {
+  afterEach(() => vi.mocked(isEnabled).mockReturnValue(true));
+
+  it("is labelled and starts only its day from the keyboard", async () => {
+    const start = vi.fn();
+    render(
+      <DayColumn
+        day={DAY}
+        regeneration={{ onRegenerate: start, disabled: false }}
+      />,
+    );
+    screen.getByRole("button", { name: "Regenerate day 1" }).focus();
+    await userEvent.setup().keyboard("{Enter}");
+    expect(start).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
+  it("is disabled while a job is active and absent when regeneration is switched off", () => {
+    const regeneration = { onRegenerate: vi.fn(), disabled: true };
+    const { rerender } = render(
+      <DayColumn day={DAY} regeneration={regeneration} />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Regenerate day 1" }),
+    ).toBeDisabled();
+    vi.mocked(isEnabled).mockImplementation((name) => name !== "regeneration");
+    rerender(<DayColumn day={DAY} regeneration={regeneration} />);
+    expect(
+      screen.queryByRole("button", { name: /Regenerate day/ }),
+    ).not.toBeInTheDocument();
   });
 });

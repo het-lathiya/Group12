@@ -3,8 +3,11 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState, useSyncExternalStore } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 
+import { GenerationProgress } from "@/components/generation/GenerationProgress";
+import { PrivacyNotice } from "@/components/generation/PrivacyNotice";
+import { ConfirmDialog } from "@/components/states/ConfirmDialog";
 import { FallbackNotice } from "@/components/generation/FallbackNotice";
 import { DayColumn } from "@/components/itinerary/DayColumn";
 import { itemCardId } from "@/components/itinerary/ItineraryItemCard";
@@ -17,10 +20,16 @@ import { ErrorState } from "@/components/states/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ApiError } from "@/lib/api/client";
-import { useItinerary, usePreferences, useTrip } from "@/lib/api/queries";
+import { ApiError, OFFLINE_MESSAGE } from "@/lib/api/client";
+import {
+  useItinerary,
+  usePreferences,
+  useRegenerate,
+  useTrip,
+} from "@/lib/api/queries";
 import type { components } from "@/lib/api/schema";
 import { formatDayDate } from "@/lib/format";
+import { isEnabled } from "@/lib/flags";
 
 type Day = components["schemas"]["Day"];
 
@@ -81,6 +90,10 @@ type DaysProps = {
   /** The open day tab below 768 px; null opens the first day. */
   tab: string | null;
   onTab: (tab: string) => void;
+  regeneration?: {
+    onRegenerate: (dayNumber: number) => void;
+    disabled: boolean;
+  };
 };
 
 function Days(props: DaysProps) {
@@ -94,7 +107,7 @@ function Days(props: DaysProps) {
   );
 }
 
-function DayLayout({ days, edit, tab, onTab }: DaysProps) {
+function DayLayout({ days, edit, tab, onTab, regeneration }: DaysProps) {
   const tabletUp = useTabletUp();
 
   if (!tabletUp) {
@@ -109,7 +122,11 @@ function DayLayout({ days, edit, tab, onTab }: DaysProps) {
         </TabsList>
         {days.map((day) => (
           <TabsContent key={day.day_number} value={dayId(day)}>
-            <DayColumn day={day} edit={edit} />
+            <DayColumn
+              day={day}
+              edit={regeneration?.disabled ? undefined : edit}
+              regeneration={regeneration}
+            />
           </TabsContent>
         ))}
       </Tabs>
@@ -143,7 +160,8 @@ function DayLayout({ days, edit, tab, onTab }: DaysProps) {
             key={day.day_number}
             day={day}
             id={dayId(day)}
-            edit={edit}
+            edit={regeneration?.disabled ? undefined : edit}
+            regeneration={regeneration}
           />
         ))}
       </div>
@@ -159,6 +177,61 @@ function DayLayout({ days, edit, tab, onTab }: DaysProps) {
 export default function ItineraryPage() {
   const { tripId } = useParams<{ tripId: string }>();
   const itinerary = useItinerary(tripId);
+  const regenerate = useRegenerate(tripId);
+  const [generationId, setGenerationId] = useState<string | null>(null);
+  const [targetDay, setTargetDay] = useState<number | undefined>();
+  const [confirmAll, setConfirmAll] = useState(false);
+  const [startError, setStartError] = useState<Error | null>(null);
+  const [needsNotice, setNeedsNotice] = useState(false);
+  const [regenerated, setRegenerated] = useState(false);
+  const inFlight = useRef(false);
+  const regenerationEnabled = isEnabled("regeneration");
+  const regenerationBusy = regenerate.isPending || generationId !== null;
+  const completed = useCallback(() => {
+    setGenerationId(null);
+    setRegenerated(true);
+  }, []);
+
+  async function startRegeneration(
+    dayNumber?: number,
+    mode: "ai" | "rule_based" = "ai",
+  ) {
+    if (inFlight.current || !itinerary.data) return;
+    inFlight.current = true;
+    setTargetDay(dayNumber);
+    setStartError(null);
+    setRegenerated(false);
+    try {
+      const generation = await regenerate.mutateAsync({
+        dayNumber,
+        plan_revision: itinerary.data.plan_revision,
+        mode,
+      });
+      setGenerationId(generation.id);
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        error.code === "GENERATION_IN_PROGRESS"
+      ) {
+        const active = error.details.find(
+          (detail) => detail.field === "generation_id",
+        );
+        if (active) setGenerationId(active.message);
+        else setStartError(error);
+      } else if (
+        error instanceof ApiError &&
+        error.details.some((d) => d.field === "ai_notice")
+      ) {
+        setNeedsNotice(true);
+      } else {
+        setStartError(
+          error instanceof Error ? error : new Error(OFFLINE_MESSAGE),
+        );
+      }
+    } finally {
+      inFlight.current = false;
+    }
+  }
   const noPlan =
     itinerary.error instanceof ApiError && itinerary.error.status === 404;
   const trip = useTrip(tripId, true);
@@ -217,6 +290,14 @@ export default function ItineraryPage() {
       }}
       tab={tab}
       onTab={setTab}
+      regeneration={
+        regenerationEnabled
+          ? {
+              onRegenerate: (dayNumber) => void startRegeneration(dayNumber),
+              disabled: regenerationBusy,
+            }
+          : undefined
+      }
     />
   );
   const tripNotFound = error instanceof ApiError && error.status === 404;
@@ -226,6 +307,73 @@ export default function ItineraryPage() {
       <h1 className="font-heading text-2xl font-semibold tracking-[-0.01em] sm:text-3xl">
         Your itinerary
       </h1>
+      {regenerationEnabled &&
+        itinerary.data &&
+        itinerary.data.days.some((d) => d.items.length > 0) && (
+          <>
+            <Button
+              variant="outline"
+              className="min-h-touch self-start"
+              disabled={regenerationBusy}
+              aria-busy={regenerationBusy}
+              onClick={() => setConfirmAll(true)}
+            >
+              Regenerate all
+            </Button>
+            <ConfirmDialog
+              open={confirmAll}
+              onOpenChange={setConfirmAll}
+              title="Regenerate the whole itinerary?"
+              description="Unlocked items will be rebuilt around your locked items. Your current plan is kept in Versions."
+              confirmLabel="Regenerate all"
+              onConfirm={() => void startRegeneration()}
+            />
+          </>
+        )}
+      {needsNotice && (
+        <PrivacyNotice
+          onAcknowledge={() => {
+            setNeedsNotice(false);
+            void startRegeneration(targetDay);
+          }}
+        />
+      )}
+      {startError && (
+        <ErrorState
+          title="Regeneration could not start"
+          error={
+            startError instanceof ApiError
+              ? startError
+              : { message: OFFLINE_MESSAGE }
+          }
+          onRetry={() => void startRegeneration(targetDay)}
+        />
+      )}
+      {startError instanceof ApiError &&
+        startError.code === "AI_QUOTA_REACHED" && (
+          <Button
+            variant="outline"
+            disabled={regenerationBusy}
+            onClick={() => void startRegeneration(targetDay, "rule_based")}
+          >
+            Build a rule-based plan
+          </Button>
+        )}
+      {generationId && (
+        <GenerationProgress
+          key={generationId}
+          generationId={generationId}
+          onRetry={() => void startRegeneration(targetDay)}
+          onRuleBased={() => void startRegeneration(targetDay, "rule_based")}
+          retrying={regenerate.isPending}
+          onComplete={completed}
+        />
+      )}
+      {regenerated && (
+        <p role="status" aria-live="polite">
+          Regeneration complete.
+        </p>
+      )}
       {itinerary.data && (
         <StalePlanBanner
           tripId={tripId}
@@ -286,7 +434,7 @@ export default function ItineraryPage() {
             {itinerary.data.source && (
               <FallbackNotice outcome={itinerary.data.source.outcome} />
             )}
-            {trip.data && (
+            {trip.data && !regenerationBusy && (
               <PlacePicker
                 tripId={tripId}
                 destinationId={trip.data.destination_id}
