@@ -191,7 +191,7 @@ export function GenerationProgress({
           className="mt-4 flex items-center gap-2 rounded-lg bg-success-soft px-3 py-2 text-sm font-medium text-success-foreground"
         >
           <CheckCircle2 aria-hidden="true" className="size-4 shrink-0" />
-          Plan ready. Opening your itinerary.
+          {onComplete ? "Plan ready." : "Plan ready. Opening your itinerary."}
         </div>
       )}
 
