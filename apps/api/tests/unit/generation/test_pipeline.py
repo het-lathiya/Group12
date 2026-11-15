@@ -165,5 +165,6 @@ def test_regenerate_pipeline_passes_the_day_scope_to_the_builder_and_save(
     monkeypatch.setattr(pipeline.request_builder, "build", build)
     journal.run(MockProvider("ok", app_env="test"))
     assert scopes == [request.scope]
-    assert journal.saved and {day.day_number for day in journal.saved} == {2}
+    assert journal.saved
+    assert {day.day_number for day in journal.saved} == {2}
     assert journal.completed["outcome"] in ("model", "fallback_rule_based")

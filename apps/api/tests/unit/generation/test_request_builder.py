@@ -435,7 +435,8 @@ def test_regenerate_day_request_excludes_other_days_keeps_only_its_locks_and_bud
     assert request.locked_items == [locked]
     assert excluded not in {p.place_id for p in request.shortlist}
     assert excluded not in request.must_visit_place_ids
-    assert request.day_hints and {h.day_number for h in request.day_hints} == {2}
+    assert request.day_hints
+    assert {h.day_number for h in request.day_hints} == {2}
     assert all(excluded not in h.place_ids for h in request.day_hints)
     assert request.trip.budget.amount == "850.25"
     assert request.trip.num_days == 3
