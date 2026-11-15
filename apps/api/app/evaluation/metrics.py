@@ -1,7 +1,8 @@
 """Versioned metric definitions of the evaluation harness (MOD-B15, FR-119; IMP-413).
 
 One function scores every provider, and it takes no provider argument (FR-119 AC2, TC-286). The
-definitions are written out in ``eval/metrics_v1.md``; its SHA-256 goes into each run record.
+definitions are written out in ``eval/metrics_v2.md``; its SHA-256 goes into each run record. v2
+adds the count ``no_duplicate_places`` (IMD-181) to v1.
 
 The numbered metrics 1 to 13 are those of blueprint §21.4, which is not in the repository
 (PD-IMP-310-1, PD-IMP-413-3), so their definitions cannot be copied: every one is reported as not
@@ -12,7 +13,7 @@ specification states exactly (§8.11, §8.12), each as k of n attempts.
 from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
-METRICS_VERSION: Final = "v1"
+METRICS_VERSION: Final = "v2"
 
 BLUEPRINT_MISSING: Final = "not computed in v1: blueprint §21.4 is not in the repository"
 NUMBERED: Final[Mapping[int, str]] = {
@@ -28,6 +29,7 @@ COUNTS: Final[Mapping[str, str]] = {
     "schema_valid": "schema_valid",  # §8.11 step 1: parsed and validated as io-1 with its limits
     "place_ids_valid": "place_ids_valid",  # §8.11 step 3: no UNKNOWN_PLACE
     "usable": "usable",  # §8.12: at least one item and no blocking finding
+    "no_duplicate_places": "no_duplicate_places",  # IMD-181: a place at most once per plan
 }
 
 
@@ -41,7 +43,7 @@ def compute(scores: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         # FR-030 AC2: mean over every planned day of all attempts of its summed travel minutes.
         "avg_daily_travel_min": round(sum(days) / len(days), 1) if days else None,
         "counts": {
-            name: {"k": sum(1 for s in scores if s[field] is True), "n": n}
+            name: {"k": sum(1 for s in scores if s.get(field) is True), "n": n}
             for name, field in COUNTS.items()
         },
         "numbered": {

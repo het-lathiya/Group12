@@ -238,6 +238,25 @@ def test_prompt_system_text_keeps_the_model_to_its_responsibilities() -> None:
     assert "$" not in system_text  # the system text has no placeholders
 
 
+def test_prompt_v3_states_the_label_unique_place_and_meal_rules() -> None:
+    """RUN-075: IMD-180 (the application writes the label), IMD-181, IMP-606."""
+    template = registry.load("itinerary_generate", "v3")
+    assert (template.meta.input_schema_version, template.meta.output_schema_version) == (
+        "gr-2",
+        "io-2",
+    )
+    text = template.system_text
+    assert 'Do not write "AI-written" or any\n    other label in them' in text
+    assert "they are labelled AI-written" not in text
+    assert "Use a place at most once in the whole plan, meal stops included." in text
+    assert "with a food place (category food) from the shortlist only" in text
+    assert "when limits.meal_slots is empty, add no meal item" in text
+    # Everything v2 tells the model still holds in v3.
+    v2_rules = registry.load("itinerary_generate", "v2").system_text.splitlines()[:19]
+    assert all(line in text.splitlines() for line in v2_rules if "labelled AI-written" not in line)
+    assert "$" not in text
+
+
 # ---------- Broken template directories fail at load ----------
 
 
