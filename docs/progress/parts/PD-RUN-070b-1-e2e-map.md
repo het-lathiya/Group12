@@ -71,3 +71,27 @@ Commands and exact results:
 Acceptance: the YAML and all five conditions are verified locally. "A PR edit runs only attribution" remains **not verified at runtime** until an actual PR edit occurs; none is allowed in this run. No workflow is dispatched for this check. The one final push and one E2E dispatch follow all three parts and local integration checks; their result is recorded in the final pull request. No contract, migration or dependency changed.
 
 Blockers: none. Proposed decisions: none; IMD-184 authorizes this change.
+
+## RUN-073
+
+- Run id: RUN-073
+- Owner: Kirtan (chaudhari kirtan sandipbhai)
+- Date: 15 November 2026
+- Status: implemented; local workflow checks passed; the push-to-main trigger remains not verified at runtime
+- Base commit: 43a4240
+- Decision: IMD-185 (lifts IMD-183's one-push and one-E2E limit: E2E runs by dispatch on each pull request before merge and on every push to `main`; nightly stays off)
+- Files changed: `.github/workflows/e2e.yml` and this record only.
+
+The `push` trigger with `branches: [main]` is restored under `on:` in the shape it had before IMD-183 removed it. `workflow_dispatch` and its `base_url` input are unchanged, and no `schedule` is added. The header comment cites IMD-185. The `e2e` and `staging` jobs, `permissions`, `env` and `concurrency` are unchanged. On a push, `inputs.base_url` is empty, so `e2e` (`!inputs.base_url`) runs and `staging` (`inputs.base_url`) does not; the staging job stays dispatch-only.
+
+Commands and exact results:
+
+- `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/e2e.yml'))"`: no output, exit 0.
+- `python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/e2e.yml'));print(list(d[True].keys()))"`: `['push', 'workflow_dispatch']`.
+- `actionlint .github/workflows/e2e.yml`: no output, exit 0.
+- `git diff --check`: no output, exit 0.
+- Not run: `make e2e`, PostgreSQL tests, live calls; no workflow is dispatched and nothing is pushed in this run.
+
+Acceptance: the trigger list and YAML are verified locally. "E2E runs on every push to main" is **not verified** yet: it can be observed only after this change is merged to `main`. No contract, migration or dependency changed.
+
+Blockers: none. Proposed decisions: none; IMD-185 authorizes this change.
