@@ -295,3 +295,23 @@ async def test_tc_063_a_foreign_trip_answers_like_a_missing_one(
 
 def without_request_id(response: httpx.Response) -> dict[str, Any]:
     return {**response.json()["error"], "request_id": None}
+
+
+# IMP-610 versions: API-38 names A's newest version (read as A through API-36).
+_call_without_version = call
+
+
+async def call(  # wraps the call above for the one route with a version_id
+    client: httpx.AsyncClient, case: RouteCase, user: AuthUser, owned: Owned
+) -> httpx.Response:
+    if "{version_id}" not in case.path:
+        return await _call_without_version(client, case, user, owned)
+    a = AuthUser(user_id=owned.user_id, email=owned.email)
+    listed = await client.get(f"/api/v1/trips/{owned.trip_id}/versions", headers=a.headers)
+    assert listed.status_code == 200, listed.text
+    return await client.request(
+        case.method,
+        case.path.format(trip_id=owned.trip_id, version_id=listed.json()[0]["id"]),
+        json=case.body(owned) if case.body else None,
+        headers=user.headers,
+    )
