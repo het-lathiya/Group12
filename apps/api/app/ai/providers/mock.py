@@ -8,7 +8,12 @@ client or vendor SDK. ``generate_itinerary`` builds io-1 only from the gr-1 requ
   each next item after the fallback travel estimate plus its buffer (as step 9 recalculates it),
   at most ``limits.max_items_per_day`` items and ``limits.max_active_minutes_per_day`` active
   minutes, ending by ``limits.day_end`` and inside the day's ``hours_summary`` hours when it has
-  any; a candidate that fits no day is left out, and when none fits the plain spread is used;
+  any; a candidate that fits no day is left out, and when none fits the plain spread is used.
+  With a lunch slot in ``limits.meal_slots`` (IMD-189) a food place is planned only as the day's
+  meal: once the clock is in the lunch window (12:00 to 14:00) the first remaining food place
+  that fits and starts by 14:00 becomes a ``meal`` item (a must-visit food place may come at any
+  time and is then the meal); a day that runs through the window without one ends its theme with
+  "No food place found nearby", as the rule-based planner does;
 - ``flawed`` and ``unknown_place`` start from the plain spread: the candidates in order, at most
   ``limits.max_items_per_day`` per day, first days first, the first item at 09:00 and each next
   one at the previous start + ``typical_duration_min`` + 30 minutes;
@@ -76,6 +81,12 @@ DAY_START_MIN: Final = 9 * 60
 GAP_MIN: Final = 30
 LAST_START_MIN: Final = 23 * 60 + 59
 THEME_MAX: Final = 80
+# The lunch window and day note of the rule-based planner (IMP-606), repeated because the mock
+# imports no planning module; a unit test keeps them equal to presets.MEAL_WINDOWS.
+LUNCH_FROM: Final = 12 * 60
+LUNCH_TO: Final = 14 * 60
+NO_FOOD_NOTE: Final = "No food place found nearby"
+FOOD: Final = "food"
 WEEKDAYS: Final = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")  # ISO weekdays 1 to 7
 # One part of the request builder's hours_summary, for example "Fri 09:00-17:00" or "Mon closed".
 _HOURS_PART: Final = re.compile(r"(\w{3}) (?:closed|(\d\d:\d\d)-(\d\d:\d\d))")
@@ -140,48 +151,104 @@ def _windows(summary: str, weekday: str) -> list[tuple[int, int]] | None:
     return windows
 
 
+def _fit(
+    request: GenerationRequest,
+    place: ShortlistPlace,
+    previous: ShortlistPlace | None,
+    clock: int,
+    active: int,
+    weekday: str,
+) -> tuple[int, int, int] | None:
+    """(start, end, active minutes after it) when ``place`` fits next on the day, else None."""
+    limits = request.limits
+    travel = 0
+    if previous is not None:
+        mode = request.preferences.transport_pref
+        travel = estimate(previous.lat, previous.lon, place.lat, place.lon, mode).minutes
+    start = clock + (travel + BUFFER_MIN["fallback_estimate"] if previous else 0)
+    end = start + place.typical_duration_min
+    spent = active + travel + place.typical_duration_min
+    windows = _windows(place.hours_summary, weekday)
+    if (
+        end > _minutes(limits.day_end)
+        or spent > limits.max_active_minutes_per_day
+        or (windows is not None and not any(o <= start and end <= c for o, c in windows))
+    ):
+        return None
+    return start, end, spent
+
+
 def _fitted_days(request: GenerationRequest) -> list[ItineraryDayOutput]:
     """The ok plan: each day takes, in shortlist order, the remaining candidates that fit."""
-    limits, mode = request.limits, request.preferences.transport_pref
-    day_start, day_end = _minutes(limits.day_start), _minutes(limits.day_end)
+    limits = request.limits
+    lunch_slot = "lunch" in limits.meal_slots  # empty with the 'meal_slots' switch off (IMD-11)
+    must = {str(place_id) for place_id in request.must_visit_place_ids}
     remaining = list(request.shortlist)
     days: list[ItineraryDayOutput] = []
     for day_number in _day_numbers(request):
         weekday = WEEKDAYS[(request.trip.start_date + timedelta(days=day_number - 1)).weekday()]
         items: list[ItineraryItemOutput] = []
         names: list[str] = []
-        clock, active, previous = day_start, 0, None
-        for place in list(remaining):
+        clock, active, previous, had_meal = _minutes(limits.day_start), 0, None, False
+        # None closes the pass so that a lunch still due after the last candidate is tried.
+        for place in [*remaining, None]:
             if len(items) >= limits.max_items_per_day:
                 break
-            travel = 0
-            if previous is not None:
-                travel = estimate(previous.lat, previous.lon, place.lat, place.lon, mode).minutes
-            start = clock + (travel + BUFFER_MIN["fallback_estimate"] if previous else 0)
-            end = start + place.typical_duration_min
-            windows = _windows(place.hours_summary, weekday)
-            if (
-                end > day_end
-                or active + travel + place.typical_duration_min > limits.max_active_minutes_per_day
-                or (windows is not None and not any(o <= start and end <= c for o, c in windows))
-            ):
-                continue
-            items.append(
-                ItineraryItemOutput(
-                    place_id=str(place.place_id),
-                    start_time=_hhmm(start),
-                    duration_min=place.typical_duration_min,
-                    slot_type="meal" if place.category == "food" else "activity",
-                    note=f"SAMPLE note from the mock provider: visit {place.name}."[:200],
+            if lunch_slot and not had_meal and LUNCH_FROM <= clock <= LUNCH_TO:
+                had_meal = True  # planned now, or no food place fits and the day goes on
+                meal = next(
+                    (
+                        (food, fit)
+                        for food in remaining
+                        if food.category == FOOD
+                        and (fit := _fit(request, food, previous, clock, active, weekday))
+                        and fit[0] <= LUNCH_TO
+                    ),
+                    None,
                 )
-            )
+                if meal is not None:
+                    food, (start, clock, active) = meal
+                    items.append(_item(food, start, "meal"))
+                    names.append(food.name)
+                    remaining.remove(food)
+                    previous = food
+                    if len(items) >= limits.max_items_per_day:
+                        break
+            if place is None or place not in remaining:
+                continue
+            is_food = place.category == FOOD
+            if lunch_slot and is_food and (had_meal or str(place.place_id) not in must):
+                continue  # a food place is the day's meal, not a stop on the way
+            fit = _fit(request, place, previous, clock, active, weekday)
+            if fit is None:
+                continue
+            had_meal = had_meal or (lunch_slot and is_food)
+            items.append(_item(place, fit[0], "meal" if is_food else "activity"))
             names.append(place.name)
             remaining.remove(place)
-            clock, active, previous = end, active + travel + place.typical_duration_min, place
+            clock, active, previous = fit[1], fit[2], place
         if items:
-            theme = f"SAMPLE day {day_number}: {names[0]}"[:THEME_MAX]
-            days.append(ItineraryDayOutput(day_number=day_number, theme=theme, items=items))
+            theme = f"SAMPLE day {day_number}: {names[0]}"
+            meals = any(item.slot_type == "meal" for item in items)
+            if lunch_slot and not meals and clock >= LUNCH_TO:  # the lunch slot stays empty
+                suffix = f" · {NO_FOOD_NOTE}"
+                theme = theme[: THEME_MAX - len(suffix)] + suffix
+            days.append(
+                ItineraryDayOutput(day_number=day_number, theme=theme[:THEME_MAX], items=items)
+            )
     return days
+
+
+def _item(
+    place: ShortlistPlace, start: int, slot_type: Literal["activity", "meal"]
+) -> ItineraryItemOutput:
+    return ItineraryItemOutput(
+        place_id=str(place.place_id),
+        start_time=_hhmm(start),
+        duration_min=place.typical_duration_min,
+        slot_type=slot_type,
+        note=f"SAMPLE note from the mock provider: visit {place.name}."[:200],
+    )
 
 
 def _output(days: list[ItineraryDayOutput]) -> ItineraryOutput:
