@@ -274,3 +274,29 @@ MATRIX = (
     RouteCase("API-12", "DELETE", "/api/v1/trips/{trip_id}", "foreign"),
     RouteCase("API-13", "POST", "/api/v1/trips/{trip_id}/duplicate", "foreign"),
 )
+
+
+# IMP-607 regeneration: revision 0 reaches the owner's stale-plan check without starting a job.
+@dataclass(frozen=True)
+class RegenerateRouteCase(RouteCase):
+    def url(self, owned: Owned) -> str:
+        return self.path.format(trip_id=owned.trip_id, day_number=1)
+
+
+MATRIX = (
+    *MATRIX,
+    RegenerateRouteCase(
+        "API-30",
+        "POST",
+        "/api/v1/trips/{trip_id}/itinerary/days/{day_number}/regenerate",
+        "foreign",
+        body=lambda _: {"plan_revision": 0},
+    ),
+    RouteCase(
+        "API-31",
+        "POST",
+        "/api/v1/trips/{trip_id}/itinerary/regenerate",
+        "foreign",
+        body=lambda _: {"plan_revision": 0},
+    ),
+)

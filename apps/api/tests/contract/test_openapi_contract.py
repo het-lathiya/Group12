@@ -14,7 +14,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app.auth.deps import current_user
+from app.ai.factory import get_model_provider
+from app.auth.deps import current_user, db_session
 from app.auth.tokens import TokenClaims
 from app.core.config import Settings
 from app.main import create_app
@@ -149,17 +150,20 @@ def test_ai_schemas_are_exported_with_the_contract() -> None:
         assert schema["$id"].endswith(version)
 
 
-def test_declared_route_answers_501_with_the_envelope(
+def test_regeneration_switch_off_answers_404_with_the_envelope(
     clean_settings_env: pytest.MonkeyPatch,
 ) -> None:
-    # API-31 is an IMD-37 stub until IMP-607; the token check is overridden, so no database.
+    # IMP-607 replaces the last generation stub; a disabled route needs no database.
+    clean_settings_env.setenv("FEATURES_DISABLED", "regeneration")
     settings = Settings(
         app_env="test", ai_provider="MOCK", database_url="postgresql+psycopg://t@db.invalid/t"
     )
     app = create_app(settings)
     app.dependency_overrides[current_user] = lambda: TokenClaims(uuid.uuid4(), None)
+    app.dependency_overrides[db_session] = lambda: None
+    app.dependency_overrides[get_model_provider] = lambda: None
     response = TestClient(app).post(
         f"{V1}/trips/{uuid.uuid4()}/itinerary/regenerate", json={"plan_revision": 1}
     )
-    assert response.status_code == 501
-    assert response.json()["error"]["code"] == "NOT_IMPLEMENTED"
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"

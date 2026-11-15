@@ -69,6 +69,11 @@ Job = tuple[uuid.UUID, ModelProvider]
 Sessions = Callable[[], AbstractAsyncContextManager[AsyncSession]]
 
 
+def regenerate_url(trip_id: str, day: int | None = None) -> str:
+    scope = f"/days/{day}" if day is not None else ""
+    return f"/api/v1/trips/{trip_id}/itinerary{scope}/regenerate"
+
+
 @pytest_asyncio.fixture
 async def sampleton(db_session: AsyncSession) -> Destination:
     await seed.load_fixture(db_session, seed.read_fixture(SAMPLETON))
@@ -1631,3 +1636,175 @@ async def test_meal_tc_372_switched_off_generation_succeeds_without_meal_items(
     assert days
     assert all(meals == [] for _, meals in days)
     assert not any(theme and fallback_planner.NO_FOOD_NOTE in theme for theme, _ in days)
+
+
+# IMP-607 API-30/31 start protocol (TC-213 to TC-216, TC-372).
+@pytest_asyncio.fixture
+async def generated_trip(
+    api_client: httpx.AsyncClient,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> str:
+    response = await start(api_client, auth_user, trip)
+    done = await poll(api_client, auth_user, response.json()["id"], submitted, sessions)
+    assert done["status"] == "completed", done
+    return trip
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("day", [None, 2])
+async def test_regenerate_start_is_idempotent_snapshots_once_and_excludes_other_jobs(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    generated_trip: str,
+    submitted: list[Job],
+    day: int | None,
+) -> None:
+    url = regenerate_url(generated_trip, day)
+    body = {"plan_revision": 1}
+    response = await api_client.post(url, json=body, headers=auth_user.headers)
+    assert response.status_code == 202, response.text
+    assert response.json()["scope"] == ("day" if day else "full")
+    assert response.json()["day_number"] == day
+    row = await db_session.get(AiGeneration, uuid.UUID(response.json()["id"]))
+    assert row is not None and row.scope_day_number == day
+    versions = list(
+        await db_session.scalars(
+            select(ItineraryVersion).where(ItineraryVersion.trip_id == uuid.UUID(generated_trip))
+        )
+    )
+    snapshot = [version for version in versions if version.reason == "regeneration"]
+    assert len(snapshot) == 1
+    assert snapshot[0].snapshot["plan_revision"] == 1
+    assert snapshot[0].snapshot["days"]
+    repeated = await api_client.post(url, json=body, headers=auth_user.headers)
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["id"] == response.json()["id"]
+    assert len(submitted) == 1
+    assert await db_session.scalar(
+        select(func.count())
+        .select_from(ItineraryVersion)
+        .where(ItineraryVersion.trip_id == uuid.UUID(generated_trip))
+    ) == len(versions)
+    other = await api_client.post(
+        regenerate_url(generated_trip, 1), json=body, headers=auth_user.headers
+    )
+    assert other.status_code == 409, other.text
+    assert other.json()["error"]["code"] == "GENERATION_IN_PROGRESS"
+    assert other.json()["error"]["details"][0]["message"] == response.json()["id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("day", [None, 2])
+async def test_regenerate_start_refuses_a_stale_revision_and_foreign_owner_without_writes(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    generated_trip: str,
+    submitted: list[Job],
+    day: int | None,
+) -> None:
+    other_id = await insert_auth_user(db_session)
+    other = AuthUser(user_id=other_id, email=f"{other_id}@example.test")
+    url = regenerate_url(generated_trip, day)
+    for user, status, code in ((auth_user, 409, "STALE_PLAN"), (other, 404, "NOT_FOUND")):
+        response = await api_client.post(url, json={"plan_revision": 0}, headers=user.headers)
+        assert response.status_code == status, response.text
+        assert response.json()["error"]["code"] == code
+    assert submitted == []
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(ItineraryVersion)
+            .where(ItineraryVersion.trip_id == uuid.UUID(generated_trip))
+        )
+        == 1
+    )
+
+
+@pytest.mark.asyncio
+async def test_regenerate_requires_a_plan_and_a_day_inside_the_trip(
+    api_client: httpx.AsyncClient,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    missing = await api_client.post(
+        regenerate_url(trip), json={"plan_revision": 0}, headers=auth_user.headers
+    )
+    assert missing.status_code == 409 and missing.json()["error"]["code"] == "CONFLICT"
+    initial = await start(api_client, auth_user, trip)
+    await poll(api_client, auth_user, initial.json()["id"], submitted, sessions)
+    outside = await api_client.post(
+        regenerate_url(trip, 4), json={"plan_revision": 1}, headers=auth_user.headers
+    )
+    assert outside.status_code == 422 and outside.json()["error"]["code"] == "INVALID_EDIT"
+    extra = await api_client.post(
+        regenerate_url(trip), json={"plan_revision": 1, "scope": "full"}, headers=auth_user.headers
+    )
+    assert extra.status_code == 422
+    assert submitted == []
+
+
+@pytest.mark.asyncio
+async def test_regenerate_tc_372_disabled_routes_leave_manual_editing_available(
+    api_client: httpx.AsyncClient,
+    auth_user: AuthUser,
+    generated_trip: str,
+    submitted: list[Job],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FEATURES_DISABLED", "regeneration")
+    get_settings.cache_clear()
+    for day in (None, 1):
+        response = await api_client.post(
+            regenerate_url(generated_trip, day),
+            json={"plan_revision": 1},
+            headers=auth_user.headers,
+        )
+        assert response.status_code == 404, response.text
+    plan = (
+        await api_client.get(f"/api/v1/trips/{generated_trip}/itinerary", headers=auth_user.headers)
+    ).json()
+    item = plan["days"][0]["items"][0]
+    edited = await api_client.patch(
+        f"/api/v1/itinerary/items/{item['id']}",
+        json={"plan_revision": 1, "note": "Manual edit"},
+        headers=auth_user.headers,
+    )
+    assert edited.status_code == 200, edited.text
+    assert submitted == []
+
+
+@pytest.mark.asyncio
+async def test_regenerate_snapshots_with_versions_off_and_applies_the_existing_ai_cap(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    generated_trip: str,
+    submitted: list[Job],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AI_DAILY_GENERATIONS_PER_USER", "1")
+    monkeypatch.setenv("FEATURES_DISABLED", "versions")
+    get_settings.cache_clear()
+    url = regenerate_url(generated_trip)
+    capped = await api_client.post(url, json={"plan_revision": 1}, headers=auth_user.headers)
+    assert capped.status_code == 429, capped.text
+    assert capped.json()["error"]["code"] == "AI_QUOTA_REACHED"
+    assert submitted == []
+    allowed = await api_client.post(
+        url, json={"plan_revision": 1, "mode": "rule_based"}, headers=auth_user.headers
+    )
+    assert allowed.status_code == 202, allowed.text
+    versions = list(
+        await db_session.scalars(
+            select(ItineraryVersion).where(ItineraryVersion.trip_id == uuid.UUID(generated_trip))
+        )
+    )
+    assert any(v.reason == "regeneration" and v.plan_revision == 1 for v in versions)
+    assert len(submitted) == 1

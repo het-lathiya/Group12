@@ -22,11 +22,21 @@ from app.ai.prompts import registry
 from app.ai.providers.base import ModelProvider
 from app.auth import service as auth_service
 from app.core.config import get_settings
-from app.core.errors import Conflict, GenerationInProgress, QuotaReached, ValidationFailed
+from app.core.errors import (
+    Conflict,
+    GenerationInProgress,
+    InvalidEdit,
+    NotFound,
+    QuotaReached,
+    StalePlan,
+    ValidationFailed,
+)
+from app.core.flags import is_enabled
 from app.db.models import AiGeneration
 from app.generation import fallback_planner, jobs, outcomes, records, repository
-from app.generation.schemas import GenerationOut, GenerationStartIn
+from app.generation.schemas import GenerationOut, GenerationStartIn, RegenerateIn
 from app.itinerary import service as itinerary_service
+from app.itinerary import versions
 from app.schemas.common import ErrorDetail
 from app.trips import preference_mapping
 from app.trips import service as trips_service
@@ -72,6 +82,35 @@ async def start_generation(
     submit: jobs.Submit,
 ) -> tuple[GenerationOut, bool]:
     """Returns the generation and whether it is new (202) rather than already active (200)."""
+    return await _start(session, user_id, trip_id, body, provider, submit)
+
+
+async def start_regeneration(
+    session: AsyncSession,
+    user_id: UUID,
+    trip_id: UUID,
+    body: RegenerateIn,
+    provider: ModelProvider,
+    submit: jobs.Submit,
+    *,
+    day_number: int | None = None,
+) -> tuple[GenerationOut, bool]:
+    """API-30/31 share API-22's job, idempotency and quota protocol (IMP-607)."""
+    if not is_enabled(get_settings(), "regeneration"):
+        raise NotFound()
+    return await _start(session, user_id, trip_id, body, provider, submit, day_number=day_number)
+
+
+async def _start(
+    session: AsyncSession,
+    user_id: UUID,
+    trip_id: UUID,
+    body: GenerationStartIn | RegenerateIn,
+    provider: ModelProvider,
+    submit: jobs.Submit,
+    *,
+    day_number: int | None = None,
+) -> tuple[GenerationOut, bool]:
     await repository.lock_trip(session, trip_id, user_id)  # serialises concurrent starts
     trip = await trips_service.get_trip(session, user_id, trip_id)  # NotFound if not the caller's
     if trip.status == "archived":
@@ -82,7 +121,15 @@ async def start_generation(
         raise ValidationFailed(
             details=[ErrorDetail(field="preferences", message="Save the trip's preferences.")]
         )
-    if trip.has_itinerary:
+    regenerating = isinstance(body, RegenerateIn)
+    if isinstance(body, RegenerateIn):
+        if not trip.has_itinerary:
+            raise Conflict("This trip has no itinerary to regenerate.")
+        if body.plan_revision != trip.plan_revision:
+            raise StalePlan()
+        if day_number is not None and not 1 <= day_number <= trip.num_days:
+            raise InvalidEdit("The day is outside this trip.")
+    elif trip.has_itinerary:
         raise Conflict("This trip already has an itinerary. Regenerate it instead.")
     if body.mode == "ai" and not await auth_service.ai_notice_acknowledged(session, user_id):
         raise ValidationFailed(
@@ -92,8 +139,8 @@ async def start_generation(
     request_hash = records.request_hash(
         {
             "trip_id": str(trip_id),
-            "scope": "full",
-            "day_number": None,
+            "scope": "day" if day_number is not None else "full",
+            "day_number": day_number,
             "mode": body.mode,
             "plan_revision": trip.plan_revision,
         }
@@ -123,9 +170,12 @@ async def start_generation(
             input_schema_version=template.meta.input_schema_version,
             output_schema_version=template.meta.output_schema_version,
             mapping_version=preference_mapping.MAPPING_VERSION,
-            scope="full",
+            scope="day" if day_number is not None else "full",
+            scope_day_number=day_number,
             request_hash=request_hash,
         )
+        if regenerating:
+            await versions.snapshot_before_regeneration(session, user_id, trip_id)
         row = await repository.get_for_user(session, generation_id, user_id)
         out = await _to_out(session, row)
         await session.commit()  # the job reads the row in its own transaction (§6.4)
