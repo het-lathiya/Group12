@@ -1,11 +1,13 @@
-"""API-06 and API-16 (§6.6.3, §6.5 Destination and PlaceSummary; FR-019: TC-069, TC-101,
-TC-102; IMP-205 places-api-search part; FR-016: TC-092 to TC-094, IMP-509 whole-task part).
+"""API-06, API-16 and API-17 (§6.6.3, §6.5 Destination, PlaceSummary and PlaceOut; FR-019:
+TC-069, TC-101, TC-102; IMP-205 places-api-search part; FR-016: TC-092 to TC-094, IMP-509
+whole-task part; FR-017, FR-018: TC-095 to TC-098, IMP-604 search-api part).
 
 Runs against the migrated test database with Sampleton loaded through the seed (IMP-107, IMP-205);
 every test is rolled back.
 """
 
 import uuid
+from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -17,7 +19,7 @@ from fixtures.auth import AuthUser
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DataSource, Destination, Place
+from app.db.models import DataSource, Destination, Place, PlaceOpeningHours
 from app.places import seed, vocabulary
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -49,6 +51,7 @@ PLACE_FIELDS = {
     "verification_status",
     "suitability",
     "source_name",
+    "distance_m",
 }
 SAMPLE_SOURCE = "SAMPLE fixture (synthetic)"
 
@@ -430,3 +433,308 @@ async def test_places_list_keeps_to_one_destination_and_hides_inactive_rows(
     [elsewhere] = theirs["items"]
     assert elsewhere["name"] == "Aaa Elsewhere Gate"
     assert elsewhere["source_name"]
+
+
+# API-16 filters and API-17 detail (IMP-604; FR-017, FR-018).
+# `make test-api ARGS='-k "filter or place_detail"'`.
+
+
+async def names(
+    client: httpx.AsyncClient, user: AuthUser, destination: Destination, **params: Any
+) -> list[str]:
+    response = await search(client, user, destination, limit=50, **params)
+    assert response.status_code == 200, response.text
+    return [item["name"] for item in response.json()["items"]]
+
+
+def refs(*numbers: int) -> set[str]:
+    return {f"sample-{n:03d}" for n in numbers}
+
+
+async def names_of(session: AsyncSession, external_refs: set[str]) -> list[str]:
+    rows = await session.scalars(select(Place.name).where(Place.external_ref.in_(external_refs)))
+    return sorted(rows.all())
+
+
+@pytest.mark.asyncio
+async def test_tc_095_filter_by_category_and_price_band_returns_only_matching_places(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    found = await names(api_client, auth_user, sampleton, category="food", price_max="7.00")
+    # Lowest prices 3.00, 7.00 and 4.00; the unpriced sample-017 never matches a price filter.
+    assert found == await names_of(db_session, refs(13, 16, 18))
+    items = (await search(api_client, auth_user, sampleton, price_max="7", limit=50)).json()
+    assert all(Decimal(i["price"]["min"]) <= 7 for i in items["items"])
+
+
+@pytest.mark.asyncio
+async def test_filter_by_interest_tag_duration_and_step_free(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    lunch = await names(api_client, auth_user, sampleton, interest="lunch")
+    assert lunch == await names_of(db_session, refs(14, 16, 17))
+    either = await names(api_client, auth_user, sampleton, interest=["lunch", "wildlife"])
+    assert either == await names_of(db_session, refs(11, 14, 16, 17))
+    short = await names(api_client, auth_user, sampleton, duration_max_min=30)
+    assert short == await names_of(db_session, refs(3, 4, 13, 18, 20, 21, 25))
+    # Unknown step-free (NULL) is not step-free; false is no filter.
+    assert await names(api_client, auth_user, sampleton, step_free="true") == await names_of(
+        db_session, refs(1, 5)
+    )
+    assert len(await names(api_client, auth_user, sampleton, step_free="false")) == 30
+
+
+@pytest.mark.asyncio
+async def test_filter_q_matches_a_tag_as_well_as_the_name(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    assert await names(api_client, auth_user, sampleton, q="WILDLIFE") == [
+        "Sample Heron Marsh (sample)"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_tc_096_filter_without_a_match_is_an_empty_page_with_total_0(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    response = await search(
+        api_client, auth_user, sampleton, category="museum", step_free="true", price_max="1.00"
+    )
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "total": 0, "limit": 20, "offset": 0}
+
+
+@pytest.mark.asyncio
+async def test_tc_097_filter_near_a_point_orders_by_distance(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    near = {"near_lat": "53.86", "near_lon": "2.3"}  # sample-030, Sample Climbing Wall
+    page = (await search(api_client, auth_user, sampleton, limit=50, **near)).json()
+
+    distances = [item["distance_m"] for item in page["items"]]
+    assert page["total"] == 30
+    assert page["items"][0]["name"] == "Sample Climbing Wall (sample)"
+    assert distances[0] == 0
+    assert distances == sorted(distances)
+    assert all(isinstance(d, int) for d in distances)
+
+    close = (await search(api_client, auth_user, sampleton, max_distance_m=3000, **near)).json()
+    assert 0 < close["total"] < 30
+    assert all(item["distance_m"] <= 3000 for item in close["items"])
+    # Without a point there is no distance.
+    plain = (await search(api_client, auth_user, sampleton)).json()
+    assert {item["distance_m"] for item in plain["items"]} == {None}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("params", "fields"),
+    [
+        ({"tag": "views"}, ["tag"]),
+        ({"price": "3", "sort": "x"}, ["price", "sort"]),
+        ({"near_lat": "53.86"}, ["near_lon"]),
+        ({"near_lon": "2.3"}, ["near_lat"]),
+        ({"max_distance_m": "500"}, ["max_distance_m"]),
+        ({"interest": "beach"}, ["interest.0"]),
+        ({"price_max": "1.234"}, ["price_max"]),
+        ({"price_max": "-1"}, ["price_max"]),
+        ({"duration_max_min": "10"}, ["duration_max_min"]),
+    ],
+    ids=[
+        "unknown param",
+        "two unknown params",
+        "lat without lon",
+        "lon without lat",
+        "distance without point",
+        "unknown interest",
+        "three decimals",
+        "negative price",
+        "duration below 15",
+    ],
+)
+async def test_filter_rejects_unknown_or_bad_params_with_422(
+    api_client: httpx.AsyncClient,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    params: dict[str, Any],
+    fields: list[str],
+) -> None:
+    response = await search(api_client, auth_user, sampleton, **params)
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["code"] == "VALIDATION_ERROR"
+    assert [detail["field"] for detail in error["details"]] == fields
+
+
+async def curated_place(session: AsyncSession, destination: Destination) -> Place:
+    source = await session.scalar(select(DataSource))
+    assert source is not None
+    place = Place(
+        destination_id=destination.id,
+        source_id=source.id,
+        external_ref=f"curated-{uuid.uuid4().hex[:8]}",
+        name="Curated Test Hall",
+        category="museum",
+        tags=["history"],
+        description="A hall used by the detail test.",
+        address="1 Test Row",
+        lat=Decimal("53.9"),
+        lon=Decimal("2.2"),
+        typical_duration_min=60,
+        price_min=Decimal("4.50"),
+        price_max=Decimal("6.00"),
+        price_currency="GBP",
+        price_label="curated",
+        hours_label="curated",
+        hours_checked_on=date(2026, 10, 1),
+        verification_status="curated_checked",
+        step_free=True,
+        website_url="https://example.test/hall",
+    )
+    session.add(place)
+    await session.flush()
+    session.add_all(
+        [
+            PlaceOpeningHours(
+                place_id=place.id, weekday=1, is_closed=True, open_time=None, close_time=None
+            ),
+            PlaceOpeningHours(
+                place_id=place.id,
+                weekday=5,
+                open_time=time(18, 0),
+                close_time=time(1, 30),
+                closes_next_day=True,
+            ),
+            PlaceOpeningHours(
+                place_id=place.id, weekday=2, open_time=time(9, 0), close_time=time(17, 0)
+            ),
+        ]
+    )
+    await session.flush()
+    return place
+
+
+async def detail(client: httpx.AsyncClient, user: AuthUser, place_id: object) -> httpx.Response:
+    return await client.get(f"/api/v1/places/{place_id}", headers=user.headers)
+
+
+@pytest.mark.asyncio
+async def test_tc_098_place_detail_has_curated_hours_with_checked_date_and_its_source(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    place = await curated_place(db_session, sampleton)
+
+    response = await detail(api_client, auth_user, place.id)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert set(body) == PLACE_FIELDS | {
+        "description",
+        "address",
+        "website_url",
+        "booking_url",
+        "hours",
+        "hours_checked_on",
+        "source",
+        "saved",
+        "must_visit",
+    }
+    assert (body["hours_label"], body["hours_checked_on"]) == ("curated", "2026-10-01")
+    assert body["hours"] == [
+        {
+            "weekday": 1,
+            "is_closed": True,
+            "open_time": None,
+            "close_time": None,
+            "closes_next_day": False,
+        },
+        {
+            "weekday": 2,
+            "is_closed": False,
+            "open_time": "09:00",
+            "close_time": "17:00",
+            "closes_next_day": False,
+        },
+        {
+            "weekday": 5,
+            "is_closed": False,
+            "open_time": "18:00",
+            "close_time": "01:30",
+            "closes_next_day": True,
+        },
+    ]
+    assert body["price"] == {"min": "4.50", "max": "6.00", "currency": "GBP", "label": "curated"}
+    assert body["suitability"] == {"step_free": True, "child_friendly": None, "indoor": None}
+    assert body["source"] == {
+        "name": SAMPLE_SOURCE,
+        "source_type": "other",
+        "licence": "synthetic test data",
+        "attribution_text": "Synthetic SAMPLE data for automated tests; not a real place.",
+        "url": None,
+        "retrieved_on": "2026-10-31",
+    }
+    assert (body["description"], body["address"]) == (
+        "A hall used by the detail test.",
+        "1 Test Row",
+    )
+    assert (body["saved"], body["must_visit"], body["distance_m"]) == (None, None, None)
+
+
+@pytest.mark.asyncio
+async def test_place_detail_never_fills_missing_hours_or_prices(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    by_ref = {
+        p.external_ref: p.id
+        for p in await db_session.scalars(
+            select(Place).where(Place.external_ref.in_(["sample-003", "sample-007"]))
+        )
+    }
+    no_hours = (await detail(api_client, auth_user, by_ref["sample-003"])).json()
+    assert (no_hours["hours_label"], no_hours["hours"]) == ("unavailable", [])
+    assert no_hours["hours_checked_on"] is None
+
+    no_price = (await detail(api_client, auth_user, by_ref["sample-007"])).json()
+    assert (no_price["price"], no_price["price_label"]) == (None, "unavailable")
+    assert no_price["hours_label"] == "estimate"
+    assert len(no_price["hours"]) == 7
+
+
+@pytest.mark.asyncio
+async def test_place_detail_of_an_inactive_or_unknown_place_is_404(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    await db_session.execute(
+        update(Place).where(Place.external_ref == "sample-001").values(is_active=False)
+    )
+    inactive_id = await db_session.scalar(
+        select(Place.id).where(Place.external_ref == "sample-001")
+    )
+    hidden = await add_destination_with_place(
+        db_session, sampleton, active=False, place_name="Hidden Hall"
+    )
+    hidden_place = await db_session.scalar(
+        select(Place.id).where(Place.destination_id == hidden.id)
+    )
+
+    for place_id in (inactive_id, hidden_place, uuid.uuid4()):
+        response = await detail(api_client, auth_user, place_id)
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "NOT_FOUND"
+    anonymous = await api_client.get(f"/api/v1/places/{uuid.uuid4()}")
+    assert anonymous.status_code == 401
