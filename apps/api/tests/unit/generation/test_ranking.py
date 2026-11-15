@@ -292,3 +292,27 @@ def test_alternatives_rank_by_the_same_score_and_order_as_the_shortlist() -> Non
     order = [e.candidate for e in ranked if e.candidate.place.category != "stay"]
     assert [e.candidate for e in cut] == order[: len(cut)]
     assert [e.parts.total for e in ranked] == sorted((e.parts.total for e in ranked), reverse=True)
+
+
+# IMP-605: the saved-place signal (FR-020 AC3), on only with the wishlist switch.
+
+
+def test_signal_is_1_for_saved_0_for_rejected_and_half_otherwise_when_the_wishlist_is_on() -> None:
+    saved, rejected, other = fake(), fake(), fake(must_visit=True)
+    relations = {
+        saved.place.id: "saved",
+        rejected.place.id: "rejected",
+        other.place.id: "must_visit",
+    }
+    on = ranking.RankingContext(**{**vars(context([saved])), "relations": relations})
+    off = context([saved])
+
+    assert [ranking.score(c, on).signal for c in (saved, rejected, other, fake())] == [
+        1,
+        0,
+        0.5,
+        0.5,
+    ]
+    assert ranking.score(saved, off).signal == 0
+    # The pm-2 signal weight is 0 in the MVP (§8.9): the total does not move yet.
+    assert ranking.score(saved, on).total == ranking.score(saved, off).total

@@ -14,9 +14,12 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.budget import repository as budget_repository
+from app.core.config import get_settings
 from app.core.errors import Conflict, NotFound, ValidationFailed
+from app.core.flags import is_enabled
 from app.db.models import Trip
 from app.places import service as places_service
+from app.places.schemas import PlaceSummary
 from app.schemas.common import ErrorDetail, Money, Page
 from app.trips import domain, preference_mapping, repository
 from app.trips.repository import TripRow
@@ -299,3 +302,63 @@ async def save_preferences(
         make_stale=row.has_itinerary and changed,
     )
     return await get_preferences(session, user_id, trip_id)
+
+
+# IMP-605 saved places (API-19 to API-21; FR-020), behind the `wishlist` switch (IMD-11).
+# trip_places belongs to this module (one writer per table), so the use cases live here.
+
+
+def _wishlist_enabled() -> None:
+    if not is_enabled(get_settings(), "wishlist"):
+        raise NotFound()  # IMD-11: a switched-off feature's routes answer 404
+
+
+async def save_place(session: AsyncSession, user_id: UUID, trip_id: UUID, place_id: UUID) -> None:
+    """API-19: idempotent. The place must be active in the trip's destination (else 422); a
+    must-visit place stays must-visit and answers 409 CONFLICT; saving twice keeps one row."""
+    _wishlist_enabled()
+    trip = (await _owned(session, user_id, trip_id)).trip
+    if trip.status == "archived":
+        raise Conflict("This trip is archived. Restore it before changing it.")
+    if not await places_service.active_place_names(session, trip.destination_id, [place_id]):
+        raise ValidationFailed(
+            details=[
+                ErrorDetail(
+                    field="place_id",
+                    message=f"Place {place_id} is not an active place of this trip's destination.",
+                )
+            ]
+        )
+    relation = (await repository.place_relations(session, trip_id)).get(place_id)
+    if relation == repository.MUST_VISIT:
+        raise Conflict("This place is already a must-visit place of the trip.")
+    if relation is None:
+        await repository.insert_saved(session, trip_id, place_id)
+
+
+async def unsave_place(session: AsyncSession, user_id: UUID, trip_id: UUID, place_id: UUID) -> None:
+    """API-20: idempotent; removes only the saved row, never a must-visit one."""
+    _wishlist_enabled()
+    trip = (await _owned(session, user_id, trip_id)).trip
+    if trip.status == "archived":
+        raise Conflict("This trip is archived. Restore it before changing it.")
+    await repository.delete_saved(session, trip_id, place_id)
+
+
+async def list_saved_places(
+    session: AsyncSession, user_id: UUID, trip_id: UUID
+) -> list[PlaceSummary]:
+    """API-21: the trip's saved places that are still active, ordered by name."""
+    _wishlist_enabled()
+    trip = (await _owned(session, user_id, trip_id)).trip
+    relations = await repository.place_relations(session, trip_id)
+    saved = [pid for pid, relation in relations.items() if relation == repository.SAVED]
+    return await places_service.active_place_summaries(session, trip.destination_id, saved)
+
+
+async def place_relations(session: AsyncSession, trip: TripOut) -> dict[UUID, str] | None:
+    """The trip's place relations for the ranking signal (IMP-605), or None when the wishlist is
+    switched off. ``trip`` was read for its owner by the caller."""
+    if not is_enabled(get_settings(), "wishlist"):
+        return None
+    return await repository.place_relations(session, trip.id)

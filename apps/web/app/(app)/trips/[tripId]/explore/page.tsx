@@ -6,12 +6,20 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 
 import { PlaceCard, type Place } from "@/components/places/PlaceCard";
+import { SavedPlacesPanel } from "@/components/places/SavedPlacesPanel";
 import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
 import { LoadingSkeleton } from "@/components/states/LoadingSkeleton";
 import { Button } from "@/components/ui/button";
 import { ApiError, OFFLINE_MESSAGE } from "@/lib/api/client";
-import { EXPLORE_PAGE_SIZE, usePlacesPage, useTrip } from "@/lib/api/queries";
+import {
+  EXPLORE_PAGE_SIZE,
+  usePlacesPage,
+  useSavedPlaces,
+  useToggleSavedPlace,
+  useTrip,
+} from "@/lib/api/queries";
+import { isEnabled } from "@/lib/flags";
 
 const SAMPLE_NOTICE =
   "Sample data; prices and hours are estimates unless marked Curated.";
@@ -31,13 +39,21 @@ const usesEstimates = (places: Place[]) =>
 /**
  * /trips/[tripId]/explore (§7.5.5; FR-016): the active places of the trip's destination from
  * API-16, a page at a time, each with its source and verification status, and a notice when the
- * destination is the SAMPLE fixture or the listed facts are estimates (FR-016 AC3).
+ * destination is the SAMPLE fixture or the listed facts are estimates (FR-016 AC3). With the
+ * `wishlist` switch on, each place has a Save toggle and the saved list is shown (FR-020, IMP-605).
  */
 export default function ExplorePage() {
   const { tripId } = useParams<{ tripId: string }>();
   const [offset, setOffset] = useState(0);
   const trip = useTrip(tripId, true);
   const places = usePlacesPage(trip.data?.destination_id, offset);
+  const wishlist = isEnabled("wishlist");
+  const savedPlaces = useSavedPlaces(
+    tripId,
+    wishlist && trip.data !== undefined,
+  );
+  const toggleSaved = useToggleSavedPlace(tripId);
+  const savedIds = new Set((savedPlaces.data ?? []).map((p) => p.id));
   const tripNotFound =
     trip.error instanceof ApiError && trip.error.status === 404;
   const page = places.data;
@@ -101,10 +117,34 @@ export default function ExplorePage() {
         />
       ) : (
         <>
+          {wishlist && (
+            <SavedPlacesPanel
+              places={savedPlaces.data}
+              failed={savedPlaces.isError}
+              removing={toggleSaved.isPending}
+              onRemove={(placeId) =>
+                toggleSaved.mutate({ placeId, save: false })
+              }
+            />
+          )}
           <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {items.map((place) => (
               <li key={place.id}>
-                <PlaceCard place={place} />
+                {wishlist ? (
+                  <PlaceCard
+                    place={place}
+                    saved={savedIds.has(place.id)}
+                    saveDisabled={toggleSaved.isPending || !savedPlaces.data}
+                    onToggleSave={() =>
+                      toggleSaved.mutate({
+                        placeId: place.id,
+                        save: !savedIds.has(place.id),
+                      })
+                    }
+                  />
+                ) : (
+                  <PlaceCard place={place} />
+                )}
               </li>
             ))}
           </ul>

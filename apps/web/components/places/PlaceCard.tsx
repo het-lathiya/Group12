@@ -1,3 +1,5 @@
+import { Bookmark, BookmarkCheck } from "lucide-react";
+
 import { formatDuration } from "@/components/itinerary/ItineraryItemCard";
 import { SourceBadge } from "@/components/labels/SourceBadge";
 import type { components } from "@/lib/api/schema";
@@ -45,16 +47,49 @@ function Price({ price }: { price: Place["price"] }) {
   );
 }
 
+export type PlaceCardProps = {
+  place: Place;
+  /** With `onToggleSave` (wishlist on, IMP-605): whether the place is saved for the trip. */
+  saved?: boolean;
+  onToggleSave?: () => void;
+  saveDisabled?: boolean;
+};
+
 /** One place of the explore list (§7.5.5; FR-016 AC2): facts as API-16 sent them, each labelled. */
-export function PlaceCard({ place }: { place: Place }) {
+export function PlaceCard({
+  place,
+  saved = false,
+  onToggleSave,
+  saveDisabled = false,
+}: PlaceCardProps) {
+  const SaveIcon = saved ? BookmarkCheck : Bookmark;
   return (
     <article className="flex flex-col gap-3 rounded-xl border bg-card p-4 text-card-foreground shadow-xs">
-      <header className="flex flex-col gap-1">
-        <h3 className="font-heading text-base font-semibold">{place.name}</h3>
-        <p className="text-sm text-muted-foreground">
-          {CATEGORY_LABELS[place.category] ?? place.category} ·{" "}
-          {formatDuration(place.typical_duration_min)}
-        </p>
+      <header className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h3 className="font-heading text-base font-semibold">{place.name}</h3>
+          <p className="text-sm text-muted-foreground">
+            {CATEGORY_LABELS[place.category] ?? place.category} ·{" "}
+            {formatDuration(place.typical_duration_min)}
+          </p>
+        </div>
+        {onToggleSave && (
+          <button
+            type="button"
+            aria-pressed={saved}
+            aria-label={`Save ${place.name}`}
+            disabled={saveDisabled}
+            onClick={onToggleSave}
+            className={`inline-flex min-h-touch shrink-0 items-center gap-2 rounded-full border px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 ${
+              saved
+                ? "border-primary bg-primary text-primary-foreground hover:bg-primary-hover"
+                : "border-input bg-background text-foreground hover:bg-muted"
+            }`}
+          >
+            <SaveIcon aria-hidden="true" className="size-4" />
+            {saved ? "Saved" : "Save"}
+          </button>
+        )}
       </header>
       {place.tags.length > 0 && (
         <ul aria-label="Tags" className="flex flex-wrap gap-1">
