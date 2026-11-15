@@ -1,5 +1,6 @@
 """The profiles table (migration 0003). MOD-B02 is its only writer (§5.2, IMD-14)."""
 
+from typing import Any
 from uuid import UUID
 
 from psycopg import errors as pg_errors
@@ -41,7 +42,12 @@ async def get(session: AsyncSession, user_id: UUID) -> ProfileRow | None:
     return await session.get(ProfileRow, user_id, populate_existing=True)
 
 
-async def set_ai_notice_ack(session: AsyncSession, user_id: UUID) -> None:
-    await session.execute(
-        update(ProfileRow).where(ProfileRow.id == user_id).values(ai_notice_ack_at=func.now())
-    )
+async def update_profile(
+    session: AsyncSession, user_id: UUID, values: dict[str, Any], *, acknowledge: bool
+) -> None:
+    """API-04: write the given columns of the caller's own row; ``acknowledge`` also sets
+    ai_notice_ack_at to now (IMD-24). Nothing to write leaves the row as it is."""
+    if acknowledge:
+        values = {**values, "ai_notice_ack_at": func.now()}
+    if values:
+        await session.execute(update(ProfileRow).where(ProfileRow.id == user_id).values(**values))

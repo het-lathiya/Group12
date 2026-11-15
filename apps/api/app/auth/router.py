@@ -1,7 +1,7 @@
 """API-03 GET /api/v1/me (specification §6.6.1; FR-002, FR-003, FR-004; IMD-14).
 
-API-04 PATCH /api/v1/me accepts only ai_notice_acknowledged: true (IMP-305, IMD-24); IMP-601 adds
-the editable profile fields of its declared shape.
+API-04 PATCH /api/v1/me changes display_name, home_country, preferred_currency and
+default_preferences (IMP-601, IMD-16) and acknowledges the AI notice (IMP-305, IMD-24).
 """
 
 from fastapi import APIRouter

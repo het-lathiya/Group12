@@ -711,3 +711,14 @@ export function useTripList(includeArchived: boolean, limit = 20) {
     placeholderData: keepPreviousData, // the filter toggle keeps the list on screen
   });
 }
+
+// IMP-601 profile
+/** API-04: save the caller's profile fields (FR-004; §7.4: set `me`). */
+export function useUpdateProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: Schemas["ProfilePatch"]) =>
+      unwrap(await api().PATCH("/api/v1/me", { body })),
+    onSuccess: (profile) => queryClient.setQueryData(queryKeys.me(), profile),
+  });
+}
