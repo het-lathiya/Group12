@@ -5,6 +5,7 @@ A version holds a ``snap-1`` snapshot: days and items with locks, notes and ``so
 the budget settings and the plan_revision, never costs, travel or findings. Reading a version
 prices the snapshot with the budget engine and runs the validator on it, and writes nothing.
 ``snapshot_before_regeneration`` is the hook IMP-607 calls when a regeneration job starts.
+Every version write ends with the retention rule, ``service.retain_versions``.
 API-36 to API-38 and version reads answer 404 while the 'versions' switch is off (IMD-11).
 """
 
@@ -18,14 +19,13 @@ from app.budget import engine
 from app.core.config import get_settings
 from app.core.errors import (
     Conflict,
-    EndpointNotImplemented,
     GenerationInProgress,
     NotFound,
     StalePlan,
 )
 from app.core.flags import is_enabled
 from app.db.models import AiGeneration, ItineraryDay, ItineraryItem, ItineraryVersion, Place
-from app.itinerary import repository, service
+from app.itinerary import edits, repository, service
 from app.itinerary.schemas import (
     ItineraryOut,
     ItinerarySource,
@@ -122,7 +122,7 @@ async def snapshot_current(
     name: str | None = None,
 ) -> ItineraryVersion:
     """Write a version of the stored plan; the caller holds the trip lock (version_no = max + 1)."""
-    return await repository.insert_version(
+    row = await repository.insert_version(
         session,
         trip_id,
         reason=reason,
@@ -133,6 +133,8 @@ async def snapshot_current(
         generation_id=None,
         created_by=user_id,
     )
+    await service.retain_versions(session, trip_id)
+    return row
 
 
 async def snapshot_before_regeneration(
@@ -187,12 +189,20 @@ async def save_named(
 async def restore(
     session: AsyncSession, user_id: UUID, trip_id: UUID, version_id: UUID, plan_revision: int
 ) -> ItineraryOut:
-    """API-38: restore a version as the new current plan."""
+    """API-38 in one transaction (§5.8, FR-095 AC2): keep the current plan as a restore version,
+    rebuild the days and items from the snapshot, recalculate travel and costs, revalidate, bump
+    plan_revision and write a restore version of the result (through the edit core)."""
     _versions_enabled()
     await _locked_for_change(session, user_id, trip_id, plan_revision)
-    if await repository.version_for_trip(session, trip_id, version_id) is None:
+    version = await repository.version_for_trip(session, trip_id, version_id)
+    if version is None:
         raise NotFound()
-    raise EndpointNotImplemented()  # the restore transaction is the second part of IMP-610
+    snapshot = dict(version.snapshot)  # read before retention may delete an old version
+    await snapshot_current(session, trip_id, user_id, plan_revision, reason="restore")
+    await edits.apply_edit(
+        session, user_id, trip_id, plan_revision, edits.Restore(snapshot), reason="restore"
+    )
+    return await service.get_itinerary(session, user_id, trip_id)
 
 
 async def read_version(
