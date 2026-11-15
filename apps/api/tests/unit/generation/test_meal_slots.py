@@ -88,6 +88,57 @@ def test_meal_imd_189_a_relaxed_full_day_gets_lunch_from_a_food_place() -> None:
     assert len(day.items) <= relaxed.max_items_per_day
 
 
+def _paced(request: GenerationRequest, pace: str, durations: list[int]) -> GenerationRequest:
+    limits = presets.pace_limits(pace)
+    for place, minutes in zip(request.shortlist, durations, strict=False):
+        place.typical_duration_min = minutes
+    request.limits.max_items_per_day = limits.max_items_per_day
+    request.limits.max_active_minutes_per_day = limits.max_active_minutes_per_day
+    return request
+
+
+def test_meal_imd_196_relaxed_long_visits_keep_room_for_lunch() -> None:
+    # Without the reservation the second 120-minute visit ends at 13:05 with 245 of 300 minutes
+    # spent, the meal no longer fits, and the day has neither a meal nor the note.
+    request = _paced(_request(meal_slots("relaxed")), "relaxed", [120, 120, 60])
+    (day,) = plan_rule_based(request).days
+    meals = [item for item in day.items if item.slot_type == "meal"]
+    assert [item.place_id for item in meals] == [THALI]
+    assert LUNCH_FROM <= _minutes(meals[0].start_time) <= LUNCH_TO
+    assert sum(item.duration_min for item in day.items) <= 300
+    assert NO_FOOD_NOTE not in day.theme
+
+
+@pytest.mark.parametrize("food", [True, False])
+def test_meal_imd_196_relaxed_day_with_no_room_for_lunch_says_so(food: bool) -> None:
+    request = _paced(_request(meal_slots("relaxed"), food=food), "relaxed", [120, 120, 120])
+    (day,) = plan_rule_based(request).days
+    assert all(item.slot_type == "activity" for item in day.items)
+    assert len(day.items) == 2  # the visits are kept; only the lunch slot stays empty
+    assert day.theme.endswith(f" · {NO_FOOD_NOTE}")
+
+
+@pytest.mark.parametrize("pace", ["balanced", "busy"])
+def test_meal_imd_196_balanced_and_busy_days_unchanged_when_lunch_fits(pace: str) -> None:
+    on = plan_rule_based(_paced(_request(["lunch"]), pace, [120, 120, 120])).days[0]
+    off = plan_rule_based(_paced(_request([]), pace, [120, 120, 120])).days[0]
+    visits = [i.place_id for i in on.items if i.slot_type == "activity"]
+    assert visits == [i.place_id for i in off.items if i.place_id != THALI]
+    assert [i.place_id for i in on.items if i.slot_type == "meal"] == [THALI]
+    assert NO_FOOD_NOTE not in on.theme
+
+
+@pytest.mark.parametrize("pace", ["relaxed", "balanced", "busy"])
+def test_meal_imd_196_switch_off_reserves_nothing(pace: str) -> None:
+    request = _paced(_request(meal_slots(pace, enabled=False)), pace, [120, 120, 60])
+    (day,) = plan_rule_based(request).days
+    assert all(item.slot_type == "activity" for item in day.items)
+    assert NO_FOOD_NOTE not in day.theme
+    assert [item.place_id for item in day.items][:2] == [
+        str(place.place_id) for place in request.shortlist[:2]
+    ]
+
+
 def test_meal_tc_243_no_food_place_leaves_the_slot_empty_with_a_day_note() -> None:
     output = plan_rule_based(_request(["lunch"], food=False))
     (day,) = output.days

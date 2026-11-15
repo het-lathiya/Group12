@@ -5,8 +5,10 @@ no I/O and no randomness, so the plan goes through steps 8 to 11 like a model an
 start at ``limits.day_start``; pick must-visit places first, then the day's hinted places, then
 the rest, each time the nearest one that still fits (ties by shortlist rank); when the request has
 a lunch slot (IMP-606), one ``food`` place becomes the meal once the clock reaches the lunch window,
-and a day that runs through the window without one says "No food place found nearby" in its theme
-(a day-level message, never an item note); stop at the pace limits or ``day_end``.
+and until then every visit that is not a must-visit leaves room in the active-minute limit for the
+shortest food visit left (IMD-196); a day that runs through the window without a meal, or whose
+lunch no food place can fill, says "No food place found nearby" in its theme (a day-level message,
+never an item note); stop at the pace limits or ``day_end``.
 Travel is the labelled distance estimate (§9.3.5) plus its buffer, the arithmetic step 9 repeats.
 
 Only shortlisted places on days 1..num_days are used, items never overlap, so no UNKNOWN_PLACE,
@@ -107,25 +109,33 @@ def plan_rule_based(request: GenerationRequest) -> ItineraryOutput:
         tiers = (must, hints.get(day_number, set()))
         items: list[ItineraryItemOutput] = []
         names: list[str] = []
-        clock, active, had_meal = day_start, 0, False
+        clock, active, had_meal, skipped = day_start, 0, False, False
         previous: ShortlistPlace | None = None
 
         while remaining and len(items) < limits.max_items_per_day:
             lunch_due = lunch_slot and not had_meal and LUNCH_FROM <= clock <= LUNCH_TO
             pool = [p for p in remaining if _wanted(p, must, lunch_due, had_meal)]
-            chosen = None
+            lunch_left = lunch_slot and not had_meal and clock <= LUNCH_TO
+            food = [p.typical_duration_min for p in remaining if p.category == FOOD]
+            reserve = min(food, default=0) if lunch_left else 0  # IMD-196
+            chosen, reserved_out = None, False
             for place in _by_preference(pool, previous, tiers, rank, mode):
                 travel = _travel(previous, place, mode)
                 if lunch_due and clock + travel > LUNCH_TO:
                     continue  # the meal starts inside the lunch window or not at all
                 end = clock + travel + place.typical_duration_min
                 spent = active + travel + place.typical_duration_min
-                if end <= day_end and spent <= limits.max_active_minutes_per_day:
-                    chosen, clock, active = place, end, spent
-                    break
+                if end > day_end or spent > limits.max_active_minutes_per_day:
+                    continue
+                keep = 0 if place.category == FOOD or str(place.place_id) in must else reserve
+                if spent + keep > limits.max_active_minutes_per_day:
+                    reserved_out = True
+                    continue
+                chosen, clock, active = place, end, spent
+                break
             if chosen is None:
-                if lunch_due:  # no food place fits: the day goes on without a meal
-                    had_meal = True
+                if lunch_due or reserved_out:  # no food place fits: the slot stays empty
+                    had_meal = skipped = True
                     continue
                 break
 
@@ -147,7 +157,7 @@ def plan_rule_based(request: GenerationRequest) -> ItineraryOutput:
         if items:
             theme = f"Day {day_number} around {names[0]}"
             meals = any(item.slot_type == "meal" for item in items)
-            if lunch_slot and not meals and clock >= LUNCH_TO:  # the lunch slot stays empty
+            if lunch_slot and not meals and (clock >= LUNCH_TO or skipped):  # the slot is empty
                 suffix = f" · {NO_FOOD_NOTE}"
                 theme = theme[: THEME_MAX - len(suffix)] + suffix
             theme = theme[:THEME_MAX]
