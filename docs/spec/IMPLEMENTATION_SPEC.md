@@ -1941,7 +1941,7 @@ Each block is the implementation contract. "Tests" name the file of contract §E
 | API-16 `GET /api/v1/places` | |
 | --- | --- |
 | Auth | Reference |
-| Query | `destination_id` (required); `q` (name contains, ≤ 80 chars); `category` (repeatable); `tag` (repeatable); `price_max` (money); `max_duration_min`; `step_free`, `child_friendly`, `indoor` (true only); `near_lat` + `near_lon` (both or neither; orders by distance, FR-017 AC3); `trip_id` (adds `saved`, `must_visit`); `limit`, `offset` |
+| Query | `destination_id` (required); `q` (name contains, ≤ 80 chars); `category` (repeatable); `interest` (amended by IMD-190) (repeatable); `price_max` (money); `duration_max_min` (amended by IMD-190); `step_free`, `child_friendly`, `indoor` (true only); `near_lat` + `near_lon` with `max_distance_m` (amended by IMD-190) (both or neither; orders by distance, FR-017 AC3); `trip_id` (adds `saved`, `must_visit`); `limit`, `offset` |
 | Response | 200 `Page<PlaceSummary>`; ordered by name unless `near_*`; empty page is valid (the UI shows the relax-filters hint) |
 | DB | Read `places` (active, `ix_places_dest_cat`, GIN on `tags`); distance by haversine in SQL |
 | Tests | `test_places.py`: TC-092, TC-093, TC-095, TC-096, TC-097, TC-101 |
