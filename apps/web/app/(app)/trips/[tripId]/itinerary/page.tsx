@@ -1,5 +1,6 @@
 "use client";
 
+import { Loader2, RotateCw } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -307,29 +308,39 @@ export default function ItineraryPage() {
       <h1 className="font-heading text-2xl font-semibold tracking-[-0.01em] sm:text-3xl">
         Your itinerary
       </h1>
-      {regenerationEnabled &&
-        itinerary.data &&
-        itinerary.data.days.some((d) => d.items.length > 0) && (
-          <>
-            <Button
-              variant="outline"
-              className="min-h-touch self-start"
-              disabled={regenerationBusy}
-              aria-busy={regenerationBusy}
-              onClick={() => setConfirmAll(true)}
-            >
-              Regenerate all
-            </Button>
-            <ConfirmDialog
-              open={confirmAll}
-              onOpenChange={setConfirmAll}
-              title="Regenerate the whole itinerary?"
-              description="Unlocked items will be rebuilt around your locked items. Your current plan is kept in Versions."
-              confirmLabel="Regenerate all"
-              onConfirm={() => void startRegeneration()}
-            />
-          </>
-        )}
+      {regenerationEnabled && itinerary.data && (
+        <>
+          <Button
+            variant="outline"
+            className="min-h-touch self-start"
+            disabled={regenerationBusy}
+            aria-busy={regenerationBusy}
+            onClick={() => setConfirmAll(true)}
+          >
+            {regenerationBusy ? (
+              <Loader2
+                aria-hidden="true"
+                className="motion-safe:animate-spin"
+              />
+            ) : (
+              <RotateCw aria-hidden="true" />
+            )}
+            Regenerate all
+          </Button>
+          <ConfirmDialog
+            open={confirmAll}
+            onOpenChange={setConfirmAll}
+            title="Regenerate the whole itinerary?"
+            description={
+              isEnabled("versions")
+                ? "Unlocked items will be rebuilt around your locked items. Your current plan is kept in Versions."
+                : "Unlocked items will be rebuilt around your locked items. A backup of your current plan is kept."
+            }
+            confirmLabel="Regenerate all"
+            onConfirm={() => void startRegeneration()}
+          />
+        </>
+      )}
       {needsNotice && (
         <PrivacyNotice
           onAcknowledge={() => {

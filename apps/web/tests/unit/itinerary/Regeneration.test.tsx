@@ -123,7 +123,11 @@ it("IMP-607: confirms the whole plan, polls progress and invalidates all derived
   ]) {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: key });
   }
-  expect(await screen.findByText(/rule-based plan/i)).toBeInTheDocument();
+  expect(
+    await screen.findByText(
+      "Built by rules because the AI service was unavailable or its answer failed checks",
+    ),
+  ).toBeInTheDocument();
   client.clear();
 });
 
