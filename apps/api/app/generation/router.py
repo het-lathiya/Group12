@@ -1,7 +1,6 @@
 """Generation routes API-22, API-23, API-30 and API-31 (specification §6.4, §6.6.4, §6.6.5; IMD-13).
 
-API-22 and API-23 are built (IMP-210); API-30 and API-31 answer 501 NOT_IMPLEMENTED until IMP-607
-builds them (IMD-37). API-22, API-30 and API-31 answer 202 for a new generation and 200 when the
+API-22, API-30 and API-31 answer 202 for a new generation and 200 when the
 same request is already active (FR-024 AC3).
 """
 
@@ -12,7 +11,6 @@ from fastapi import APIRouter, Depends, Response, status
 
 from app.ai.factory import ModelProviderDep
 from app.auth.deps import CurrentUser, DbSession
-from app.core.errors import EndpointNotImplemented
 from app.core.rate_limit import expensive_request
 from app.generation import service
 from app.generation.jobs import SubmitDep
@@ -70,8 +68,22 @@ async def get_generation(
     dependencies=[Depends(expensive_request)],
     summary="API-30 Regenerate one day",
 )
-async def regenerate_day(trip_id: UUID, day_number: DayNumber, body: RegenerateIn) -> GenerationOut:
-    raise EndpointNotImplemented()
+async def regenerate_day(
+    trip_id: UUID,
+    day_number: DayNumber,
+    body: RegenerateIn,
+    user: CurrentUser,
+    session: DbSession,
+    provider: ModelProviderDep,
+    submit: SubmitDep,
+    response: Response,
+) -> GenerationOut:
+    out, created = await service.start_regeneration(
+        session, user.user_id, trip_id, body, provider, submit, day_number=day_number
+    )
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return out
 
 
 @router.post(
@@ -82,5 +94,18 @@ async def regenerate_day(trip_id: UUID, day_number: DayNumber, body: RegenerateI
     dependencies=[Depends(expensive_request)],
     summary="API-31 Regenerate the whole itinerary",
 )
-async def regenerate_itinerary(trip_id: UUID, body: RegenerateIn) -> GenerationOut:
-    raise EndpointNotImplemented()
+async def regenerate_itinerary(
+    trip_id: UUID,
+    body: RegenerateIn,
+    user: CurrentUser,
+    session: DbSession,
+    provider: ModelProviderDep,
+    submit: SubmitDep,
+    response: Response,
+) -> GenerationOut:
+    out, created = await service.start_regeneration(
+        session, user.user_id, trip_id, body, provider, submit
+    )
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return out
