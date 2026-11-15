@@ -26,7 +26,7 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fixtures.auth import AuthUser
 from fixtures.db import insert_auth_user
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.errors import ProviderUnavailable
@@ -1860,3 +1860,224 @@ async def test_regenerate_day_builds_gr_2_with_fixed_locks_exclusions_and_remain
     from decimal import Decimal
 
     assert Decimal("0.00") <= Decimal(request.trip.budget.amount) < Decimal("5000.00")
+
+
+async def regenerate_row_hashes(
+    session: AsyncSession,
+    trip_id: str,
+    exclude_day: int | None = None,
+) -> list[tuple[str, str, str]]:
+    """Hash every column, including identities and timestamps, directly in PostgreSQL."""
+    rows = await session.execute(
+        text("""
+        select 'day' as kind, d.id::text, md5(to_jsonb(d)::text) as hash
+        from itinerary_days d where d.trip_id = :trip_id
+          and (:exclude_day is null or d.day_number <> :exclude_day)
+        union all
+        select 'item', i.id::text, md5(to_jsonb(i)::text)
+        from itinerary_items i join itinerary_days d on d.id = i.day_id
+        where i.trip_id = :trip_id
+          and (:exclude_day is null or d.day_number <> :exclude_day)
+        order by 1, 2
+    """),
+        {"trip_id": uuid.UUID(trip_id), "exclude_day": exclude_day},
+    )
+    return [tuple(row) for row in rows]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("day", [None, 2])
+async def test_regenerate_tc_213_tc_214_tc_215_tc_216_tc_313_preserves_locks_and_restores_snapshot(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    generated_trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+    day: int | None,
+) -> None:
+    before = await itinerary(api_client, auth_user, generated_trip)
+    target = before["days"][1]
+    item = target["items"][0]
+    response = await api_client.patch(
+        f"/api/v1/itinerary/items/{item['id']}",
+        json={"plan_revision": before["plan_revision"], "is_locked": True},
+        headers=auth_user.headers,
+    )
+    assert response.status_code == 200, response.text
+    locked = await db_session.get(ItineraryItem, uuid.UUID(item["id"]))
+    assert locked is not None
+    old_citation = uuid.uuid4()
+    locked.source_chunk_ids = [old_citation]
+    locked.note, locked.note_origin = "Keep this note", "user"
+    await db_session.flush()
+    fixed = (locked.id, locked.day_id, locked.position, locked.start_time, locked.duration_min)
+    before = await itinerary(api_client, auth_user, generated_trip)
+    old_hashes = await regenerate_row_hashes(db_session, generated_trip, exclude_day=2)
+    response = await api_client.post(
+        regenerate_url(generated_trip, day),
+        json={"plan_revision": before["plan_revision"]},
+        headers=auth_user.headers,
+    )
+    assert response.status_code == 202, response.text
+    version = await db_session.scalar(
+        select(ItineraryVersion)
+        .where(
+            ItineraryVersion.trip_id == uuid.UUID(generated_trip),
+            ItineraryVersion.reason == "regeneration",
+        )
+        .order_by(ItineraryVersion.version_no.desc())
+    )
+    assert version is not None
+    pre_version_id = str(version.id)
+    done = await poll(api_client, auth_user, response.json()["id"], submitted, sessions)
+    assert done["status"] == "completed", done
+    assert done["plan_revision"] == before["plan_revision"] + 1
+    await db_session.refresh(locked)
+    assert (
+        locked.id,
+        locked.day_id,
+        locked.position,
+        locked.start_time,
+        locked.duration_min,
+    ) == fixed
+    assert locked.note == "Keep this note" and locked.note_origin == "user"
+    assert locked.source_chunk_ids == [old_citation]
+    if day is not None:
+        assert await regenerate_row_hashes(db_session, generated_trip, exclude_day=2) == old_hashes
+    after = await itinerary(api_client, auth_user, generated_trip)
+    assert after["plan_revision"] == done["plan_revision"]
+    restored = await api_client.post(
+        f"/api/v1/trips/{generated_trip}/versions/{pre_version_id}/restore",
+        json={"plan_revision": after["plan_revision"]},
+        headers=auth_user.headers,
+    )
+    assert restored.status_code == 200, restored.text
+
+    def content(plan: dict[str, Any]) -> list[Any]:
+        return [
+            (
+                d["day_number"],
+                [
+                    (
+                        i["place"]["id"],
+                        i["start_time"],
+                        i["duration_min"],
+                        i["is_locked"],
+                        i["note"],
+                    )
+                    for i in d["items"]
+                ],
+            )
+            for d in plan["days"]
+        ]
+
+    assert content(restored.json()) == content(before)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("day", [None, 2])
+@pytest.mark.parametrize("failure", ["quota", "stale", "complete"])
+async def test_regenerate_failure_or_stale_revision_leaves_the_plan_unchanged(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    generated_trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+    monkeypatch: pytest.MonkeyPatch,
+    day: int | None,
+    failure: str,
+) -> None:
+    before = await regenerate_row_hashes(db_session, generated_trip)
+    response = await api_client.post(
+        regenerate_url(generated_trip, day), json={"plan_revision": 1}, headers=auth_user.headers
+    )
+    assert response.status_code == 202, response.text
+    generation_id, provider = submitted.pop()
+    if failure == "quota":
+        provider = MockProvider("quota", app_env="test")
+    elif failure == "stale":
+        await db_session.execute(
+            update(Trip).where(Trip.id == uuid.UUID(generated_trip)).values(plan_revision=2)
+        )
+    else:
+
+        async def fail_completion(*args: Any, **kwargs: Any) -> None:
+            raise RuntimeError("SAMPLE injected transaction failure")
+
+        monkeypatch.setattr(repository, "complete", fail_completion)
+    await jobs.run(generation_id, provider, sessions)
+    done = (
+        await api_client.get(f"/api/v1/generations/{generation_id}", headers=auth_user.headers)
+    ).json()
+    assert done["status"] == "failed", done
+    assert done["failure_reason"] == (
+        "provider_quota_exhausted" if failure == "quota" else "internal"
+    )
+    assert await regenerate_row_hashes(db_session, generated_trip) == before
+    current = await itinerary(api_client, auth_user, generated_trip)
+    assert current["plan_revision"] == (2 if failure == "stale" else 1)
+    saved_result = await db_session.scalar(
+        select(ItineraryVersion).where(ItineraryVersion.generation_id == generation_id)
+    )
+    assert saved_result is None
+
+
+@pytest.mark.asyncio
+async def test_regenerate_new_items_take_the_new_generation_citations(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    generated_trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.generation import request_builder
+    from app.rag.mmr import RetrievedChunk
+    from app.rag.service import RetrievalResult
+
+    passage_id = uuid.uuid4()
+
+    async def retrieved(*args: Any) -> RetrievalResult:
+        return RetrievalResult(
+            "vector",
+            "mock-embed-v1",
+            {},
+            {},
+            [
+                RetrievedChunk(
+                    chunk_id=passage_id,
+                    document_id=uuid.uuid4(),
+                    place_id=None,
+                    title="SAMPLE guide",
+                    content="SAMPLE reference passage.",
+                    similarity=0.9,
+                )
+            ],
+            1,
+        )
+
+    class Citing(MockProvider):
+        async def generate_itinerary(self, request: GenerationRequest) -> Any:
+            result = await super().generate_itinerary(request)
+            for day in result.output.days:
+                for item in day.items:
+                    item.source_ids = [str(passage_id)]
+            return result
+
+    monkeypatch.setattr(request_builder, "retrieve", retrieved)
+    api_app.dependency_overrides[get_model_provider] = lambda: Citing("ok", app_env="test")
+    response = await api_client.post(
+        regenerate_url(generated_trip), json={"plan_revision": 1}, headers=auth_user.headers
+    )
+    done = await poll(api_client, auth_user, response.json()["id"], submitted, sessions)
+    assert done["status"] == "completed", done
+    items = list(
+        await db_session.scalars(
+            select(ItineraryItem).where(ItineraryItem.trip_id == uuid.UUID(generated_trip))
+        )
+    )
+    assert items and all(item.source_chunk_ids == [passage_id] for item in items)

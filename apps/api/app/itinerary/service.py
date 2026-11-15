@@ -10,9 +10,9 @@ warnings and summary (FR-058, IMP-405). ``plan_out`` builds the days and totals 
 the edit core (``edits.apply_edit``, IMP-407) return.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any, Final, Literal
 from uuid import UUID
@@ -24,7 +24,7 @@ from app.budget import engine
 from app.budget import repository as budget_repository
 from app.budget.schemas import AmountRange, CostSummaryOut
 from app.core.config import get_settings
-from app.core.errors import NotFound, StalePlan
+from app.core.errors import InvalidEdit, NotFound, StalePlan
 from app.core.flags import is_enabled
 from app.db.models import AiGeneration, ItineraryDay, ItineraryItem, Place
 from app.itinerary import repository
@@ -45,6 +45,10 @@ from app.itinerary.schemas import (
 from app.places import repository as places_repository
 from app.places import service as places_service
 from app.rag import service as rag_service
+from app.routing.cache import RouteCacheRepository
+from app.routing.client import get_client
+from app.routing.estimate import buffer_minutes
+from app.routing.service import RoutingService
 from app.schemas.ai import LockedItem, PlanFinding
 from app.trips import service as trips_service
 from app.trips.schemas import TripOut
@@ -74,6 +78,7 @@ async def save_generated_plan(
     validation_summary: dict[str, Any],
     origin: Literal["model", "fallback_rule_based"] = "model",
     findings: Sequence[PlanFinding] = (),
+    base_revision: int | None = None,
 ) -> SavedPlan:
     """``origin`` fallback_rule_based saves no note (IMD-131) and a version of reason fallback.
 
@@ -84,6 +89,8 @@ async def save_generated_plan(
     trip = await repository.lock_trip(session, trip_id, user_id)
     if trip is None:
         raise NotFound()
+    if base_revision is not None and trip.plan_revision != base_revision:
+        raise StalePlan()
     prefs = await trips_service.get_preferences(session, user_id, trip_id)
     days = await repository.replace_plan(
         session,
@@ -114,6 +121,234 @@ async def save_generated_plan(
     )
     await retain_versions(session, trip_id)
     return SavedPlan(version_id=version.id, plan_revision=plan_revision)
+
+
+async def save_regenerated_plan(
+    session: AsyncSession,
+    trip_id: UUID,
+    user_id: UUID,
+    plan: Sequence[PlannedDay],
+    generation_id: UUID,
+    *,
+    base_revision: int,
+    scope_day_number: int | None,
+    origin: Literal["model", "fallback_rule_based"],
+    blocking_codes: Collection[str],
+    repairs: Mapping[str, int],
+) -> tuple[SavedPlan, list[PlanFinding]]:
+    """IMP-607 step 11: merge around fixed rows, then validate and snapshot the whole plan.
+
+    The caller's transaction also completes the generation. Other days are only read for day
+    scope; locked rows keep their identity, position, time, duration, notes and citations.
+    """
+    trip_row = await repository.lock_trip(session, trip_id, user_id)
+    if trip_row is None:
+        raise NotFound()
+    if trip_row.plan_revision != base_revision:
+        raise StalePlan()
+    trip = await trips_service.get_trip(session, user_id, trip_id)
+    prefs = await trips_service.get_preferences(session, user_id, trip_id)
+    days = {day.day_number: day for day in await repository.plan_days(session, trip_id)}
+    rows = await repository.plan_items(session, trip_id)
+    numbers = {day.id: day.day_number for day in days.values()}
+    target = (
+        {scope_day_number}
+        if scope_day_number is not None
+        else set(days) | {day.day_number for day in plan}
+    )
+    if scope_day_number is not None and any(day.day_number != scope_day_number for day in plan):
+        raise InvalidEdit("The generated plan is outside the requested day.")
+    proposals = {day.day_number: day for day in plan}
+    fixed = {
+        str(item.place_id)
+        for item, _, _ in rows
+        if item.is_locked or numbers[item.day_id] not in target
+    }
+    seen = set(fixed)
+    for item, _, _ in rows:
+        if numbers[item.day_id] in target and not item.is_locked:
+            await session.delete(item)
+    await session.flush()  # release unlocked positions before inserting their replacements
+    must_visit = {str(place_id) for place_id in prefs.must_visit_place_ids}
+    for number in sorted(target):
+        proposal = proposals.get(number)
+        if number not in days:
+            days[number] = ItineraryDay(
+                trip_id=trip_id,
+                day_number=number,
+                plan_date=trip.start_date + timedelta(days=number - 1),
+            )
+            session.add(days[number])
+            await session.flush()
+        day = days[number]
+        numbers[day.id] = number
+        day.theme = proposal.theme if proposal else day.theme
+        day.source_generation_id = generation_id
+        locked = {
+            item.position: item for item, _, _ in rows if item.day_id == day.id and item.is_locked
+        }
+        slots = dict(locked)
+        # The output's item limit includes fixed slots, even when the model omitted them.
+        capacity = max(len(locked), len(proposal.items) if proposal else 0)
+        position = 1
+        for item in proposal.items if proposal else ():
+            if item.place_id in seen or len(slots) >= capacity:
+                continue
+            while position in slots:
+                position += 1
+            note = (item.note or None) if origin == "model" else None
+            row = ItineraryItem(
+                trip_id=trip_id,
+                day_id=day.id,
+                place_id=UUID(item.place_id),
+                position=position,
+                slot_type=item.slot_type,
+                start_time=time.fromisoformat(item.start_time),
+                duration_min=item.duration_min,
+                origin=origin,
+                note=note,
+                note_origin="ai" if note else "none",
+                is_locked=item.place_id in must_visit,
+                source_chunk_ids=[UUID(chunk) for chunk in item.source_chunk_ids],
+            )
+            slots[position] = row
+            seen.add(item.place_id)
+            position += 1
+        await _schedule_regenerated_day(
+            session, trip, prefs.transport_pref.value, slots, set(locked)
+        )
+        for position, row in slots.items():
+            if position not in locked:
+                session.add(row)
+    await session.flush()
+
+    day_rows = [days[number] for number in sorted(days)]
+    current = await repository.plan_items(session, trip_id)
+    merged = planned_days(day_rows, current)
+    ctx = await validation_context(
+        session, user_id, trip, [item.place_id for day in merged for item in day.items]
+    )
+    findings = validator.validate(merged, ctx)
+    if not any(day.items for day in merged) or any(f.code in blocking_codes for f in findings):
+        raise InvalidEdit("No regenerated plan satisfied the checks around the locked items.")
+    revision = await repository.mark_plan_saved(session, trip_id)
+    # Fixed positions can leave a gap when fewer new items fit; validator refs are ordinal.
+    ordinal: dict[UUID, int] = {}
+    refs = {}
+    for item, _, _ in current:
+        ordinal[item.day_id] = ordinal.get(item.day_id, 0) + 1
+        number = numbers[item.day_id]
+        refs[f"d{number}-i{ordinal[item.day_id]}"] = f"d{number}-i{item.position}"
+    await repository.insert_warnings(
+        session,
+        trip_id,
+        revision,
+        [f.model_copy(update={"item_ref": refs.get(f.item_ref, f.item_ref)}) for f in findings],
+    )
+    counts = {
+        key: sum(f.severity == severity for f in findings)
+        for severity, key in validator.SEVERITY_KEYS.items()
+    }
+    snapshot_items: dict[UUID, list[dict[str, Any]]] = {day.id: [] for day in day_rows}
+    for item, _, _ in current:
+        snapshot_items[item.day_id].append(
+            {
+                "place_id": str(item.place_id),
+                "position": item.position,
+                "slot_type": item.slot_type,
+                "start_time": item.start_time.strftime("%H:%M"),
+                "duration_min": item.duration_min,
+                "origin": item.origin,
+                "note": item.note,
+                "note_origin": item.note_origin,
+                "is_locked": item.is_locked,
+                "source_chunk_ids": [str(chunk) for chunk in item.source_chunk_ids],
+            }
+        )
+    version = await repository.insert_version(
+        session,
+        trip_id,
+        reason="regeneration",
+        plan_revision=revision,
+        snapshot={
+            "schema": SNAPSHOT_SCHEMA,
+            "plan_revision": revision,
+            "days": [
+                {
+                    "day_number": day.day_number,
+                    "plan_date": day.plan_date.isoformat(),
+                    "theme": day.theme,
+                    "items": snapshot_items[day.id],
+                }
+                for day in day_rows
+            ],
+            "budget_settings": await repository.budget_settings_snapshot(session, trip_id),
+        },
+        validation_summary={**counts, **repairs},
+        generation_id=generation_id,
+        created_by=user_id,
+    )
+    await retain_versions(session, trip_id)
+    return SavedPlan(version.id, revision), findings
+
+
+async def _schedule_regenerated_day(
+    session: AsyncSession,
+    trip: TripOut,
+    mode: str,
+    slots: dict[int, ItineraryItem],
+    locked_positions: set[int],
+) -> None:
+    """Fit new visits in position order around fixed slots; all prices and legs come from code."""
+    places = {
+        place.id: place
+        for place in await repository.places_by_ids(
+            session, {item.place_id for item in slots.values()}
+        )
+    }
+    routing = RoutingService(RouteCacheRepository(session), get_client())
+    clock, previous = 9 * 60, None
+    for position, item in sorted(slots.items()):
+        place = places[item.place_id]
+        travel = await routing.travel(places[previous.place_id], place, mode) if previous else None
+        gap = travel.minutes + buffer_minutes(travel.travel_source) if travel else 0
+        if position not in locked_positions:
+            start = clock + gap
+            duration = place.typical_duration_min
+            following = next(
+                (
+                    fixed
+                    for pos, fixed in sorted(slots.items())
+                    if pos > position and pos in locked_positions
+                ),
+                None,
+            )
+            bound = 19 * 60
+            if following is not None:
+                leg = await routing.travel(place, places[following.place_id], mode)
+                bound = (
+                    following.start_time.hour * 60
+                    + following.start_time.minute
+                    - leg.minutes
+                    - buffer_minutes(leg.travel_source)
+                )
+            if start + duration > bound:
+                del slots[position]
+                continue
+            item.start_time = time(start // 60, start % 60)
+            item.duration_min = duration
+        item.travel_from_prev_min = travel.minutes if travel else None
+        item.travel_from_prev_m = travel.distance_m if travel else None
+        item.travel_mode = travel.mode.value if travel else None
+        item.travel_source = travel.travel_source if travel else None
+        cost = engine.item_cost(
+            place, adults=trip.adults, children=trip.children, currency=trip_currency(trip)
+        )
+        item.cost_min = None if cost.lo is None else engine.from_minor(cost.lo)
+        item.cost_max = None if cost.hi is None else engine.from_minor(cost.hi)
+        item.cost_currency, item.cost_label = trip_currency(trip), cost.label
+        clock = item.start_time.hour * 60 + item.start_time.minute + item.duration_min
+        previous = item
 
 
 async def retain_versions(session: AsyncSession, trip_id: UUID) -> None:

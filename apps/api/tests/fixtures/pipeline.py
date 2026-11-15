@@ -70,6 +70,7 @@ class Journal:
                     "model_id": self.model_id,
                     "scope": request.scope.kind,
                     "scope_day_number": request.scope.day_number,
+                    "request_hash": None,
                 },
             )
 

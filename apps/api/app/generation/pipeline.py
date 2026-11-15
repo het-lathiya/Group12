@@ -59,9 +59,11 @@ from app.ai.errors import InvalidOutputKind, ProviderError, ProviderInvalidOutpu
 from app.ai.providers.base import ModelProvider
 from app.budget import engine
 from app.core.config import REPAIR_TIME_ALLOWANCE_S, get_settings
+from app.core.errors import StalePlan
 from app.generation import (
     fallback_planner,
     outcomes,
+    records,
     repository,
     request_builder,
     retrieval,
@@ -111,6 +113,8 @@ class Job:
     started: float
     validating: bool = False
     scope: Scope = field(default_factory=lambda: Scope(kind="full", day_number=None))
+    request_hash: str | None = None
+    rule_based: bool = False
 
     def elapsed_ms(self) -> int:
         return round((time.perf_counter() - self.started) * 1000)
@@ -448,24 +452,56 @@ async def save(
 ) -> None:
     """Step 11: save the plan of step 9, its warnings and the record together. The record's
     counts add the plan's findings to step 8's."""
-    counts = Counter(SEVERITY_KEYS[finding.severity] for finding in findings)
-    plan_summary = {key: counts[key] for key in SEVERITY_KEYS.values()}
-    validation_summary = {
-        **validation_summary,
-        **{key: validation_summary.get(key, 0) + plan_summary[key] for key in plan_summary},
-    }
     repairs = {"deterministic_repairs": deterministic_repairs, "repair_attempts": repair_attempts}
     async with job.sessions() as session:
-        await itinerary_service.save_generated_plan(
-            session,
-            job.trip_id,
-            job.user_id,
-            plan,
-            job.generation_id,
-            validation_summary={**plan_summary, **repairs},
-            origin="fallback_rule_based" if outcome == "fallback_rule_based" else "model",
-            findings=findings,
-        )
+        trip = None
+        if job.request_hash is not None:
+            trip = await trips_service.get_trip(session, job.user_id, job.trip_id)
+            current_hash = records.request_hash(
+                {
+                    "trip_id": str(job.trip_id),
+                    "scope": job.scope.kind,
+                    "day_number": job.scope.day_number,
+                    "mode": "rule_based" if job.rule_based else "ai",
+                    "plan_revision": trip.plan_revision,
+                }
+            )
+            if current_hash != job.request_hash:
+                raise StalePlan()
+        if trip is not None and trip.has_itinerary:
+            _, findings = await itinerary_service.save_regenerated_plan(
+                session,
+                job.trip_id,
+                job.user_id,
+                plan,
+                job.generation_id,
+                base_revision=trip.plan_revision,
+                scope_day_number=job.scope.day_number,
+                origin="fallback_rule_based" if outcome == "fallback_rule_based" else "model",
+                blocking_codes=BLOCKING,
+                repairs=repairs,
+            )
+        else:
+            counts = Counter(SEVERITY_KEYS[finding.severity] for finding in findings)
+            await itinerary_service.save_generated_plan(
+                session,
+                job.trip_id,
+                job.user_id,
+                plan,
+                job.generation_id,
+                validation_summary={
+                    **{key: counts[key] for key in SEVERITY_KEYS.values()},
+                    **repairs,
+                },
+                origin="fallback_rule_based" if outcome == "fallback_rule_based" else "model",
+                findings=findings,
+                base_revision=trip.plan_revision if trip else None,
+            )
+        counts = Counter(SEVERITY_KEYS[finding.severity] for finding in findings)
+        validation_summary = {
+            **validation_summary,
+            **{key: validation_summary.get(key, 0) + counts[key] for key in SEVERITY_KEYS.values()},
+        }
         await repository.complete(
             session,
             job.generation_id,
@@ -585,6 +621,8 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
             scope=Scope(
                 kind="day" if row.scope == "day" else "full", day_number=row.scope_day_number
             ),
+            request_hash=row.request_hash,
+            rule_based=row.model_id == fallback_planner.MODEL_ID,
         )
         prompt_template_id, prompt_version = row.prompt_template_id, row.prompt_version
         rule_based = row.model_id == fallback_planner.MODEL_ID  # IMD-43: set at insert

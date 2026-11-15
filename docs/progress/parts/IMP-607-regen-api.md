@@ -2,7 +2,7 @@
 
 - Run id: RUN-076b
 - Owner: Het Lathiya (4 points, both endpoint and merge commits)
-- Status: implementation in progress; checks pending the controls commit.
+- Status: implementation complete; checks pending the controls commit.
 - Base commit: ce2c63d
 - Files changed: generation/router.py, generation/service.py, tests/api/test_generations.py, tests/contract/test_openapi_contract.py, tests/authz/route_matrix.py; this record. The save half follows in generation/pipeline.py and itinerary/service.py.
 - Commands: preflight `(cd apps/api && .venv/bin/alembic heads)` → `0007 (head)`; `git diff --check` → empty output.
@@ -40,3 +40,12 @@
 - apps/api/tests/api/test_generations.py — TC-213, TC-214, TC-215, TC-216, TC-313 — `make test-api ARGS='-k regenerate'`
 - apps/web/e2e/itinerary-edit.spec.ts — TC-376 — `make e2e ARGS='itinerary-edit'`
 
+
+## Transactional merge (second Het commit)
+
+- Files changed: apps/api/app/generation/pipeline.py, apps/api/app/itinerary/service.py, apps/api/tests/api/test_generations.py, apps/api/tests/fixtures/pipeline.py; this record.
+- The save verifies the start request hash against the current plan revision and compares that revision again under the trip lock. No generation_settings field, table or migration is added.
+- Day scope deletes only target unlocked items. Other days and their row identities and timestamps are read only. Full regeneration merges all days around the existing locked rows. Fixed positions, local times, durations, origin, notes and citations survive; new items use the new validated citations.
+- Target travel and prices are recomputed, the whole trip is validated, the revision is bumped, warnings and a regeneration version are written, and the generation completes in the same transaction. Any failure rolls back the plan; jobs.run then fails the generation.
+- Acceptance not yet verified: API tests name TC-213, TC-214, TC-215, TC-216 and TC-313, compare PostgreSQL hashes of all non-target row columns, restore the pre-regeneration snapshot, check new citations and inject quota, stale revision and completion failures. TC-372 verifies manual editing with regeneration off.
+- Files outside the run list: tests/fixtures/pipeline.py → supply the start hash on the shared row stand-in.
