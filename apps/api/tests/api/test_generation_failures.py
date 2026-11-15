@@ -372,6 +372,7 @@ async def test_tc_149_generation_failures_after_quota_the_rule_based_option_buil
 
 async def queued_on(session: AsyncSession, user: AuthUser, trip_id: str) -> uuid.UUID:
     """An AI generation for a trip that already has a plan, as a regeneration would leave it."""
+    revision = await session.scalar(select(Trip.plan_revision).where(Trip.id == uuid.UUID(trip_id)))
     return await generation_repository.create_queued(
         session,
         trip_id=uuid.UUID(trip_id),
@@ -382,7 +383,15 @@ async def queued_on(session: AsyncSession, user: AuthUser, trip_id: str) -> uuid
         prompt_version="v1",
         mapping_version="pm-2",
         scope="full",
-        request_hash=records.request_hash({"trip_id": trip_id, "case": str(uuid.uuid4())}),
+        request_hash=records.request_hash(
+            {
+                "trip_id": trip_id,
+                "scope": "full",
+                "day_number": None,
+                "mode": "ai",
+                "plan_revision": revision,
+            }
+        ),
     )
 
 
