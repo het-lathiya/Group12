@@ -154,7 +154,8 @@ def test_the_schema_check_rejects_an_invalid_output() -> None:
 
 
 def test_candidates_keep_their_order_and_follow_the_timing_rule() -> None:
-    output = generate(ok(), request_with(limits__max_items_per_day=2))
+    # Without a lunch slot (switch off) food places are ordinary stops in shortlist order.
+    output = generate(ok(), request_with(limits__max_items_per_day=2, limits__meal_slots=[]))
     # Shortlist order FORT (120), MARKET (60), THALI (60); two items per day.
     assert [[item.place_id for item in day.items] for day in output.days] == [
         [FORT, MARKET],
@@ -187,12 +188,15 @@ def test_a_candidate_goes_to_the_first_day_it_fits_or_is_left_out() -> None:
     data["shortlist"][0]["hours_summary"] = "Tue closed; Wed 09:00-17:00"  # FORT: day 2 only
     data["shortlist"][1]["hours_summary"] = "Tue 18:00-02:00; Wed closed"  # MARKET: evening only
     data["shortlist"][2]["hours_summary"] = "hours unavailable"  # THALI: nothing to fit
+    data["limits"]["meal_slots"] = []  # no lunch slot: THALI is an ordinary stop
     output = generate(ok(), GenerationRequest.model_validate(data))
     assert [[item.place_id for item in day.items] for day in output.days] == [[THALI], [FORT]]
 
     late = generate(ok(), request_with(limits__day_end="11:00"))  # THALI never ends by 11:00
     assert [[item.place_id for item in day.items] for day in late.days] == [[FORT], [MARKET]]
-    short = generate(ok(), request_with(limits__max_active_minutes_per_day=130))
+    short = generate(
+        ok(), request_with(limits__max_active_minutes_per_day=130, limits__meal_slots=[])
+    )
     assert [[item.place_id for item in day.items] for day in short.days] == [
         [FORT],
         [MARKET, THALI],
@@ -214,6 +218,58 @@ def test_food_places_are_meals_and_text_fields_are_marked_sample() -> None:
     assert all(item.note.startswith("SAMPLE") for item in output.days[0].items)
     assert output.summary is not None
     assert output.summary.startswith("SAMPLE")
+
+
+def _lunch_request(shortlist: list[dict[str, Any]]) -> GenerationRequest:
+    data = sample_request_data()
+    data["must_visit_place_ids"], data["day_hints"] = [], []
+    data["shortlist"] = shortlist
+    return GenerationRequest.model_validate(data)
+
+
+def test_imd_189_ok_plans_the_lunch_slot_from_a_food_place() -> None:
+    fort, market, thali = sample_request_data()["shortlist"]
+    output = generate(ok(), _lunch_request([thali, fort, market]))  # food first in the shortlist
+    (day,) = output.days
+    assert [(i.place_id, i.start_time, i.slot_type) for i in day.items] == [
+        (FORT, "09:00", "activity"),
+        (MARKET, "11:15", "activity"),
+        (THALI, "12:30", "meal"),  # not before the lunch window, and inside it
+    ]
+    assert mock.NO_FOOD_NOTE not in day.theme
+    assert len(output.place_ids()) == len(set(output.place_ids()))  # IMD-181
+
+
+def test_imd_189_ok_plans_one_meal_per_day_and_reuses_no_place() -> None:
+    fort, market, thali = sample_request_data()["shortlist"]
+    second_food = thali | {"place_id": str(uuid.UUID(int=6)), "name": "Example Dosa Corner"}
+    output = generate(ok(), _lunch_request([fort, thali, second_food, market]))
+    (day,) = output.days
+    assert [i.place_id for i in day.items if i.slot_type == "meal"] == [THALI]
+    assert len(output.place_ids()) == len(set(output.place_ids()))  # IMD-181
+
+
+def test_imd_189_without_a_food_place_the_lunch_slot_stays_empty_with_the_day_note() -> None:
+    fort, market, _ = sample_request_data()["shortlist"]
+    tower = fort | {"place_id": str(uuid.UUID(int=7)), "name": "Example Tower"}
+    output = generate(ok(), _lunch_request([fort, market, tower]))  # the day ends at 14:30
+    (day,) = output.days
+    assert {item.slot_type for item in day.items} == {"activity"}
+    assert day.theme.startswith("SAMPLE")
+    assert day.theme.endswith(f" · {mock.NO_FOOD_NOTE}")
+    assert len(day.theme) <= mock.THEME_MAX
+    texts = [day.theme, *(item.note for item in day.items)]
+    assert not any("ai-written" in text.lower() for text in texts)  # IMD-180
+
+
+def test_the_mock_lunch_window_and_note_match_the_planning_constants() -> None:
+    from app.generation.fallback_planner import LUNCH_FROM, LUNCH_TO, NO_FOOD_NOTE
+
+    assert (mock.LUNCH_FROM, mock.LUNCH_TO, mock.NO_FOOD_NOTE) == (
+        LUNCH_FROM,
+        LUNCH_TO,
+        NO_FOOD_NOTE,
+    )
 
 
 def test_an_empty_shortlist_is_an_empty_answer() -> None:
