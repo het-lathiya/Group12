@@ -3,7 +3,8 @@
 ``save_generated_plan`` is step 11 of the pipeline (§8.2): it runs in the caller's transaction,
 which also completes the generation record, so the plan, the version and the record are saved
 together or not at all (NFR-008). ``get_itinerary`` (API-24) and ``latest_itinerary`` (API-09)
-read the saved plan for its owner (IMP-211). ``revalidate`` (API-32) re-runs the validator on the
+read the saved plan for its owner (IMP-211); ``trip_summary`` is API-35 (IMP-609).
+``revalidate`` (API-32) re-runs the validator on the
 current plan and replaces that revision's warnings; ``version_findings`` reads a stored version's
 warnings and summary (FR-058, IMP-405). ``plan_out`` builds the days and totals that API-24 and
 the edit core (``edits.apply_edit``, IMP-407) return.
@@ -11,7 +12,7 @@ the edit core (``edits.apply_edit``, IMP-407) return.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Final, Literal
 from uuid import UUID
@@ -21,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.budget import engine
 from app.budget import repository as budget_repository
-from app.budget.schemas import AmountRange
+from app.budget.schemas import AmountRange, CostSummaryOut
 from app.core.config import get_settings
 from app.core.errors import NotFound, StalePlan
 from app.core.flags import is_enabled
@@ -38,6 +39,7 @@ from app.itinerary.schemas import (
     PlannedItem,
     SourceRef,
     Totals,
+    TripSummaryOut,
     ValidateOut,
 )
 from app.places import repository as places_repository
@@ -207,6 +209,29 @@ async def get_itinerary(session: AsyncSession, user_id: UUID, trip_id: UUID) -> 
         days=out_days,
         findings=await stored_findings(session, trip_id, trip.plan_revision),
         totals=totals,
+    )
+
+
+async def trip_summary(
+    session: AsyncSession, user_id: UUID, trip_id: UUID, costs: CostSummaryOut
+) -> TripSummaryOut:
+    """API-35 (FR-094): a read-only projection of the current plan for the print view: the days
+    as API-24 shows them (times, travel with its source, labelled costs, AI-written themes and
+    notes), the stored findings of the current revision and the budget engine's ``costs``
+    (API-33's answer). Nothing is calculated here; an empty plan answers 404."""
+    trip = await trips_service.get_trip(session, user_id, trip_id)
+    days = await repository.plan_days(session, trip_id)
+    if not days:
+        raise NotFound(NO_ITINERARY)
+    rows = await repository.plan_items(session, trip_id)
+    generation = await repository.latest_completed_generation(session, trip_id)
+    out_days, _ = await plan_out(session, trip, days, rows, generation)
+    return TripSummaryOut(
+        trip=trip,
+        days=out_days,
+        unresolved_findings=await stored_findings(session, trip_id, trip.plan_revision),
+        costs=costs,
+        generated_at=datetime.now(UTC),
     )
 
 
