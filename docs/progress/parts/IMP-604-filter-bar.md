@@ -47,3 +47,8 @@ None.
 
 - The bar has no "near a point" control. Distance ordering (FR-017 AC3) is in the API, but choosing a reference point (for example a map click or "near my hotel") needs a design decision.
 - The trip tabs need an "Explore" link to `/trips/[tripId]/explore`. That is shared navigation, so it is left to the lead.
+
+## Integration wiring (RUN-075, same owner)
+
+- `apps/web/components/shell/AppShell.tsx`: "Explore" trip tab to `/trips/<tripId>/explore`, shown disabled until a trip is open like Itinerary and Costs. With seven items the phone bottom bar scrolls inside itself (`overflow-x-auto`, items at least 4 rem wide) so the page never scrolls sideways.
+- `tests/unit/shell/AppShell.test.tsx`: the open-trip case also checks the Explore link.
