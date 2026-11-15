@@ -1543,3 +1543,48 @@ async def test_lock_disabled_returns_404_and_must_visit_is_locked_on_save(
     )
     assert removed.status_code == 200
     assert any(f["code"] == "MUST_VISIT_MISSING" for f in removed.json()["findings"])
+
+
+# IMP-602 archived read-only (IMD-35, FR-015 AC3): itinerary edit routes answer 409 CONFLICT
+
+
+@pytest.mark.asyncio
+async def test_tc_091_an_archived_trip_refuses_itinerary_edits_until_restored(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    before = await route_state(api_client, auth_user, trip_id)
+    item_id = before["days"][0]["items"][0]["id"]
+    trip_url = f"/api/v1/trips/{trip_id}"
+    archived = await api_client.patch(
+        trip_url, json={"status": "archived"}, headers=auth_user.headers
+    )
+    assert archived.status_code == 200, archived.text
+
+    removed = await api_client.delete(
+        item_url(item_id),
+        params={"plan_revision": before["plan_revision"]},
+        headers=auth_user.headers,
+    )
+    validated = await api_client.post(
+        f"{trip_url}/itinerary/validate",
+        json={"plan_revision": before["plan_revision"]},
+        headers=auth_user.headers,
+    )
+
+    for response in (removed, validated):
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "CONFLICT"
+    assert await route_state(api_client, auth_user, trip_id) == before
+    restored = await api_client.patch(trip_url, json={"status": "ready"}, headers=auth_user.headers)
+    assert restored.status_code == 200, restored.text
+    again = await api_client.delete(
+        item_url(item_id),
+        params={"plan_revision": before["plan_revision"]},
+        headers=auth_user.headers,
+    )
+    assert again.status_code == 200, again.text

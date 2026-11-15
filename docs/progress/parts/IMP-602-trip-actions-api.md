@@ -63,3 +63,10 @@ The database was a throwaway local PostgreSQL 16.2 + pgvector on 127.0.0.1:55432
 - The card's step 1 names a `status` filter; §6.6.2 API-08 names `include_archived`. The specification wins, so the existing `include_archived` is kept and no new query parameter is added.
 - On API-11, the switch guards only `status` (archive and restore). Title edits stay available because the wizard (IMP-410, IMP-510) edits the title through the same route. The menu hides Rename when the switch is off.
 - No new endpoints, tables, environment variables, error codes or dependencies.
+
+## Integration wiring (RUN-075, same owner)
+
+- `apps/api/app/itinerary/edits.py` `apply_edit` and `apps/api/app/itinerary/service.py` `revalidate` call `trips_service.ensure_not_archived(trip_row.status)` after the owner check, so API-25 to API-29, API-32 and version restore (which runs through `apply_edit`) answer 409 CONFLICT on an archived trip. Saved places (API-19, API-20) already check the archived status.
+- Test: `tests/api/test_edits.py::test_tc_091_an_archived_trip_refuses_itinerary_edits_until_restored` (remove and revalidate answer 409 and change nothing; after restore the edit succeeds).
+- `pytest tests/api/test_edits.py tests/api/test_itinerary.py tests/api/test_versions.py -q` → `92 passed in 64.15s (0:01:04)` (throwaway local PostgreSQL 16.2 + pgvector).
+- FR-015 AC3 on the itinerary routes: verified by the test above.
