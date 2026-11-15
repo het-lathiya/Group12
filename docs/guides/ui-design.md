@@ -39,6 +39,8 @@ Light theme only; there is no theme toggle. The stylesheet stores each value in 
 | `accent-foreground` | #1C1917 | Text on accent |
 | `destructive` | #B91C1C | Irreversible actions, error text |
 | `destructive-foreground` | #FFFFFF | Text on destructive |
+| `destructive-soft` | #FEF2F2 | Destructive button surface |
+| `destructive-soft-hover` | #FEE2E2 | Destructive button hover surface |
 
 ### Semantic soft pairs
 
@@ -66,6 +68,8 @@ Each pair is text (`<name>-foreground`, also available as `<name>`) on its soft 
 | primary-foreground on primary | 5.47:1 | 4.5 |
 | primary on card | 5.47:1 | 4.5 |
 | destructive-foreground on destructive | 6.47:1 | 4.5 |
+| destructive on destructive-soft | 5.91:1 | 4.5 |
+| destructive on destructive-soft-hover | 5.30:1 | 4.5 |
 | input on card | 3.24:1 | 3.0 |
 | success on success-soft | 4.79:1 | 4.5 |
 | warning on warning-soft | 4.84:1 | 4.5 |

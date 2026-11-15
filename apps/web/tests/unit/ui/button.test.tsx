@@ -33,4 +33,19 @@ describe("Button", () => {
     expect(button).toHaveClass("disabled:opacity-50", "transition-colors");
     expect(button).not.toHaveClass("transition-all");
   });
+
+  // RUN-075, PD-RUN-071b-1 (IMD-183): solid tokens, so the hover keeps #B91C1C at 5.30:1.
+  it("destructive uses the solid soft tokens, with no opacity-mixed background", () => {
+    render(<Button variant="destructive">Delete</Button>);
+    const button = screen.getByRole("button", { name: "Delete" });
+
+    expect(button).toHaveClass(
+      "bg-destructive-soft",
+      "hover:bg-destructive-soft-hover",
+      "text-destructive",
+    );
+    expect(button.className).not.toMatch(
+      /(^|\s)(dark:)?(hover:)?bg-destructive\//,
+    );
+  });
 });
