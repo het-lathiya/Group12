@@ -2836,7 +2836,7 @@ On a completed fallback row `failure_reason` stays null; the cause is stored in 
 
 | `MOCK_PROVIDER_SCENARIO` | Behaviour | Exercises |
 | --- | --- | --- |
-| `ok` (default) | Valid io-1 built from `day_hints` | Happy path, E2E |
+| `ok` (default) | Valid io-1 built from `day_hints`; plans lunch from a food place of the shortlist, otherwise an empty meal slot with the note (amended by IMD-197) | Happy path, E2E |
 | `flawed` | Schema-valid io-1 for the SAMPLE fixture with one overlap on day 1 and one must-visit place missing | `OVERLAP`, `MUST_VISIT_MISSING`, deterministic repair, warnings panel |
 | `timeout` | Raises `ProviderTimeout` immediately (no real waiting) | Retry, fallback with `provider_timeout` |
 | `rate_limited` | Raises `ProviderRateLimited(retry_after_s=1)` | Bounded retry, fallback with `provider_rate_limited` |
