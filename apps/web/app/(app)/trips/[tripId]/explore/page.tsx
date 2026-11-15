@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { PlaceCard, type Place } from "@/components/places/PlaceCard";
+import { PlaceDetailDrawer } from "@/components/places/PlaceDetailDrawer";
 import {
   activeFilterNames,
   filtersFromParams,
@@ -49,7 +50,8 @@ const usesEstimates = (places: Place[]) =>
  * /trips/[tripId]/explore (§7.5.5; FR-016): the active places of the trip's destination from
  * API-16, a page at a time, each with its source and verification status, and a notice when the
  * destination is the SAMPLE fixture or the listed facts are estimates (FR-016 AC3). PlaceFilterBar
- * narrows the list, with the filters in the URL; no match explains which to relax (FR-017). With the
+ * narrows the list, with the filters in the URL; no match explains which to relax (FR-017); Details
+ * opens PlaceDetailDrawer (API-17, FR-018). With the
  * `wishlist` switch on, each place has a Save toggle and the saved list is shown (FR-020, IMP-605).
  */
 export default function ExplorePage() {
@@ -57,6 +59,7 @@ export default function ExplorePage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [offset, setOffset] = useState(0);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const filters = filtersFromParams(
     new URLSearchParams(searchParams.toString()),
   );
@@ -176,7 +179,7 @@ export default function ExplorePage() {
           )}
           <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {items.map((place) => (
-              <li key={place.id}>
+              <li key={place.id} className="flex flex-col gap-2">
                 {wishlist ? (
                   <PlaceCard
                     place={place}
@@ -192,6 +195,14 @@ export default function ExplorePage() {
                 ) : (
                   <PlaceCard place={place} />
                 )}
+                <Button
+                  variant="outline"
+                  className="min-h-touch"
+                  aria-label={`Details of ${place.name}`}
+                  onClick={() => setDetailId(place.id)}
+                >
+                  Details
+                </Button>
               </li>
             ))}
           </ul>
@@ -226,6 +237,7 @@ export default function ExplorePage() {
           </nav>
         </>
       )}
+      <PlaceDetailDrawer placeId={detailId} onClose={() => setDetailId(null)} />
     </div>
   );
 }
