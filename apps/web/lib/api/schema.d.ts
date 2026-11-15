@@ -1180,6 +1180,11 @@ export interface components {
             category: components["schemas"]["Category"];
             /** Description */
             description: string | null;
+            /**
+             * Distance M
+             * @description Metres from near_lat/near_lon; set only when API-16 is given them
+             */
+            distance_m?: number | null;
             /** Hours */
             hours: components["schemas"]["OpeningHours"][];
             /** Hours Checked On */
@@ -1255,6 +1260,11 @@ export interface components {
         /** PlaceSummary */
         PlaceSummary: {
             category: components["schemas"]["Category"];
+            /**
+             * Distance M
+             * @description Metres from near_lat/near_lon; set only when API-16 is given them
+             */
+            distance_m?: number | null;
             hours_label: components["schemas"]["SourceLabel"];
             /**
              * Id
@@ -1397,7 +1407,8 @@ export interface components {
         };
         /**
          * ProfilePatch
-         * @description API-04 body: any of these fields (IMP-305 builds the notice flag, IMP-601 the others).
+         * @description API-04 body: any of these fields; a body naming a user is rejected (IMD-45). The currency,
+         *     country and default-preference rules are checked by auth/service.py (IMP-601).
          */
         ProfilePatch: {
             /**
@@ -2094,8 +2105,19 @@ export interface operations {
         parameters: {
             query: {
                 destination_id: string;
+                /** @description Name or tag contains */
                 q?: string | null;
                 category?: components["schemas"]["OfferedCategory"][] | null;
+                /** @description Places with any of these tags */
+                interest?: components["schemas"]["Tag"][] | null;
+                /** @description In the destination currency */
+                price_max?: number | string | null;
+                duration_max_min?: number | null;
+                /** @description True keeps confirmed step-free places */
+                step_free?: boolean;
+                near_lat?: number | null;
+                near_lon?: number | null;
+                max_distance_m?: number | null;
                 limit?: number;
                 offset?: number;
             };

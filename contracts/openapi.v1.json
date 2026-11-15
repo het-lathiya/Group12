@@ -1934,6 +1934,18 @@
             ],
             "title": "Description"
           },
+          "distance_m": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Metres from near_lat/near_lon; set only when API-16 is given them",
+            "title": "Distance M"
+          },
           "hours": {
             "items": {
               "$ref": "#/components/schemas/OpeningHours"
@@ -2184,6 +2196,18 @@
         "properties": {
           "category": {
             "$ref": "#/components/schemas/Category"
+          },
+          "distance_m": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Metres from near_lat/near_lon; set only when API-16 is given them",
+            "title": "Distance M"
           },
           "hours_label": {
             "$ref": "#/components/schemas/SourceLabel"
@@ -2543,7 +2567,7 @@
       },
       "ProfilePatch": {
         "additionalProperties": false,
-        "description": "API-04 body: any of these fields (IMP-305 builds the notice flag, IMP-601 the others).",
+        "description": "API-04 body: any of these fields; a body naming a user is rejected (IMD-45). The currency,\ncountry and default-preference rules are checked by auth/service.py (IMP-601).",
         "properties": {
           "ai_notice_acknowledged": {
             "anyOf": [
@@ -3980,6 +4004,7 @@
             }
           },
           {
+            "description": "Name or tag contains",
             "in": "query",
             "name": "q",
             "required": false,
@@ -3994,6 +4019,7 @@
                   "type": "null"
                 }
               ],
+              "description": "Name or tag contains",
               "title": "Q"
             }
           },
@@ -4014,6 +4040,133 @@
                 }
               ],
               "title": "Category"
+            }
+          },
+          {
+            "description": "Places with any of these tags",
+            "in": "query",
+            "name": "interest",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/Tag"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Places with any of these tags",
+              "title": "Interest"
+            }
+          },
+          {
+            "description": "In the destination currency",
+            "in": "query",
+            "name": "price_max",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "In the destination currency",
+              "title": "Price Max"
+            }
+          },
+          {
+            "in": "query",
+            "name": "duration_max_min",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 480,
+                  "minimum": 15,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Duration Max Min"
+            }
+          },
+          {
+            "description": "True keeps confirmed step-free places",
+            "in": "query",
+            "name": "step_free",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "True keeps confirmed step-free places",
+              "title": "Step Free",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "near_lat",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 90,
+                  "minimum": -90,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Near Lat"
+            }
+          },
+          {
+            "in": "query",
+            "name": "near_lon",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 180,
+                  "minimum": -180,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Near Lon"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_distance_m",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Distance M"
             }
           },
           {
@@ -5098,7 +5251,7 @@
         ],
         "summary": "API-21 List my trip's saved places",
         "tags": [
-          "places"
+          "trips"
         ]
       }
     },
@@ -5149,7 +5302,7 @@
         ],
         "summary": "API-20 Remove a saved place from my trip",
         "tags": [
-          "places"
+          "trips"
         ]
       },
       "put": {
@@ -5198,7 +5351,7 @@
         ],
         "summary": "API-19 Save a place to my trip",
         "tags": [
-          "places"
+          "trips"
         ]
       }
     },
