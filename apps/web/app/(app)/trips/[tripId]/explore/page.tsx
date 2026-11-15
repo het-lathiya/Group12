@@ -2,10 +2,19 @@
 
 import { Info } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { PlaceCard, type Place } from "@/components/places/PlaceCard";
+import {
+  activeFilterNames,
+  filtersFromParams,
+  filtersToParams,
+  filtersToQuery,
+  NO_FILTERS,
+  PlaceFilterBar,
+  type PlaceFilters,
+} from "@/components/places/PlaceFilterBar";
 import { SavedPlacesPanel } from "@/components/places/SavedPlacesPanel";
 import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
@@ -14,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { ApiError, OFFLINE_MESSAGE } from "@/lib/api/client";
 import {
   EXPLORE_PAGE_SIZE,
-  usePlacesPage,
+  useFilteredPlacesPage,
   useSavedPlaces,
   useToggleSavedPlace,
   useTrip,
@@ -39,14 +48,34 @@ const usesEstimates = (places: Place[]) =>
 /**
  * /trips/[tripId]/explore (§7.5.5; FR-016): the active places of the trip's destination from
  * API-16, a page at a time, each with its source and verification status, and a notice when the
- * destination is the SAMPLE fixture or the listed facts are estimates (FR-016 AC3). With the
+ * destination is the SAMPLE fixture or the listed facts are estimates (FR-016 AC3). PlaceFilterBar
+ * narrows the list, with the filters in the URL; no match explains which to relax (FR-017). With the
  * `wishlist` switch on, each place has a Save toggle and the saved list is shown (FR-020, IMP-605).
  */
 export default function ExplorePage() {
   const { tripId } = useParams<{ tripId: string }>();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [offset, setOffset] = useState(0);
+  const filters = filtersFromParams(
+    new URLSearchParams(searchParams.toString()),
+  );
+  const filterKey = filtersToParams(filters).toString();
   const trip = useTrip(tripId, true);
-  const places = usePlacesPage(trip.data?.destination_id, offset);
+  const places = useFilteredPlacesPage(
+    trip.data?.destination_id,
+    filtersToQuery(filters),
+    offset,
+  );
+  const relax = activeFilterNames(filters);
+  // IMP-604: the applied filters live in the URL, so a reload keeps them.
+  function applyFilters(next: PlaceFilters) {
+    const query = filtersToParams(next).toString();
+    setOffset(0);
+    router.replace(`/trips/${tripId}/explore${query ? `?${query}` : ""}`, {
+      scroll: false,
+    });
+  }
   const wishlist = isEnabled("wishlist");
   const savedPlaces = useSavedPlaces(
     tripId,
@@ -86,6 +115,14 @@ export default function ExplorePage() {
           {notice}
         </p>
       )}
+      {trip.data && (
+        <PlaceFilterBar
+          key={filterKey}
+          value={filters}
+          currency={trip.data.destination.currency}
+          onChange={applyFilters}
+        />
+      )}
       {tripNotFound ? (
         <EmptyState
           title="Trip not found"
@@ -110,6 +147,16 @@ export default function ExplorePage() {
         />
       ) : !page ? (
         <LoadingSkeleton shape="cards" count={6} label="Loading places" />
+      ) : page.total === 0 && relax.length > 0 ? (
+        <EmptyState
+          title="No places match these filters"
+          description={`Try relaxing these filters: ${relax.join(", ")}.`}
+          action={
+            <Button onClick={() => applyFilters(NO_FILTERS)}>
+              Clear filters
+            </Button>
+          }
+        />
       ) : page.total === 0 ? (
         <EmptyState
           title="No places yet"
