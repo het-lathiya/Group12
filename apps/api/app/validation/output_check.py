@@ -20,6 +20,7 @@ from app.schemas.ai import MAX_SOURCE_IDS, GroundedItemOutput, ItineraryOutput, 
 
 UNKNOWN_PLACE_MESSAGE: Final = "This place is not in the shortlist of active places."
 OUTSIDE_TRIP_MESSAGE: Final = "This day is outside the trip."
+MEAL_NOT_FOOD_MESSAGE: Final = "A meal must be a food place from the shortlist."
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,24 @@ def apply_limits(
     return output
 
 
+def without_meals(output: ItineraryOutput) -> ItineraryOutput:
+    """Every ``meal`` item as an ordinary activity, for a request with no meal slot (IMP-606)."""
+    days = [
+        day.model_copy(
+            update={
+                "items": [
+                    item.model_copy(update={"slot_type": "activity"})
+                    if item.slot_type == "meal"
+                    else item
+                    for item in day.items
+                ]
+            }
+        )
+        for day in output.days
+    ]
+    return output.model_copy(update={"days": days})
+
+
 def _finding(code: str, message: str, day_number: int, position: int) -> PlanFinding:
     return PlanFinding.model_validate(
         {
@@ -73,11 +92,13 @@ def check_output(
     shortlist_ids: Set[str],
     trip_days: int,
     passage_ids: Set[str] = frozenset(),
+    food_ids: Set[str] | None = None,
 ) -> OutputCheckResult:
     """Reject items on days outside the trip, unknown or inactive places and repeated places.
 
     ``shortlist_ids`` holds only places still active. The first occurrence of a place is kept. A
     kept item keeps at most three distinct citations from ``passage_ids``; the rest are counted.
+    With ``food_ids``, a ``meal`` item on any other place is an invalid reference (IMP-606).
     """
     findings: list[PlanFinding] = []
     seen: set[str] = set()
@@ -94,6 +115,13 @@ def check_output(
                 invalid_ids += 1
                 findings.append(
                     _finding("UNKNOWN_PLACE", UNKNOWN_PLACE_MESSAGE, day.day_number, position)
+                )
+            elif (
+                food_ids is not None and item.slot_type == "meal" and item.place_id not in food_ids
+            ):
+                invalid_ids += 1
+                findings.append(
+                    _finding("UNKNOWN_PLACE", MEAL_NOT_FOOD_MESSAGE, day.day_number, position)
                 )
             elif item.place_id not in seen:
                 seen.add(item.place_id)

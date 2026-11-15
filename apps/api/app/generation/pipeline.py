@@ -195,8 +195,11 @@ async def assess(job: Job, request: GenerationRequest, answer: ItineraryOutput) 
     except ProviderInvalidOutput as exc:
         return unreadable(exc.kind)
     active = await job.active_ids(request)
+    if not request.limits.meal_slots:  # no meal slot requested, or the switch is off (IMD-11)
+        answer = output_check.without_meals(answer)
+    food = {str(place.place_id) for place in request.shortlist if place.category == "food"}
     checked = output_check.check_output(
-        answer, active, request.trip.num_days, request.passage_ids()
+        answer, active, request.trip.num_days, request.passage_ids(), food
     )
     step8 = output_check.summary(checked)
     dropped = len(checked.findings)  # step 8 dropped each unknown place and day outside the trip

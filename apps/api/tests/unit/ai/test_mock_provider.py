@@ -33,7 +33,7 @@ from app.ai.providers import mock
 from app.ai.providers.mock import MockProvider
 from app.core.config import ConfigError, MockScenario, load_settings
 from app.db.models import Destination, Place, PlaceOpeningHours
-from app.generation import ranking, request_builder, schedule
+from app.generation import presets, ranking, request_builder, schedule
 from app.generation.retrieval import Candidate
 from app.places.import_pipeline import prepare
 from app.places.schemas import PlaceSummary
@@ -381,7 +381,7 @@ def sampleton_request(start: date) -> tuple[GenerationRequest, dict[str, HoursIn
         mapped,
         destination,
         num_days=3,
-        meal_slots_per_day=len(request_builder.MEAL_SLOTS),
+        meal_slots_per_day=len(presets.meal_slots("balanced")),
         activity_budget=None,
     )
     data = sample_request_data()
