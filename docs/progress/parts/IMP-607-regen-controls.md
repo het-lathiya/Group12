@@ -68,3 +68,26 @@ Database: disposable PostgreSQL 16.15 with pgvector 0.6.0 on loopback port 55476
 | `(cd apps/api && .venv/bin/alembic heads)` | `0007 (head)` |
 
 Not run locally: `make e2e ARGS='itinerary-edit'` requires the local authentication stack, and Docker is unavailable in this WSL distro. Discovery is verified; TC-376 browser execution is not yet verified. The branch's one E2E dispatch includes this file. No live provider or recorded evaluation run was used.
+
+## RUN-076c · restore-toast animation and axe timing (16 November 2026)
+
+- Run id: RUN-076c; head before: 9d43947; branch: feat/S6-B-regenerate; existing PR #282. Preflight fetched/pulled cleanly, origin/main remains ce2c63d, and the PR is MERGEABLE with merge state CLEAN. The project virtual environment was already available.
+- Commit owner, author and committer: Krrish Kamani <krrishkamani51@gmail.com>. This run makes one fix commit.
+- Cause: animation-blend. In CI run 43750541683 the first 360 px scan passed; the second scan, after full regeneration and restoration, failed on the toast title. The outcome is the restore notification `Version ${version.version_no} restored`, emitted by versions/page.tsx's restore onSuccess. Regeneration itself shows an inline completion message.
+- Colour source: components/ui/sonner.tsx maps --normal-text to --popover-foreground and --normal-bg to --popover. globals.css resolves these to **#1c1917 on #ffffff**, measured in Chromium from the actual tokens and installed Sonner CSS: **17.4883:1**. Providers renders the default Toaster; the toast has only cn-toast and no muted or opacity class override. Sonner's title inherits its colour.
+- CI sampled **#8d8b8a on #fcfcfc = 3.3054:1**, below the unchanged 4.5:1 requirement. The installed Sonner CSS transitions transform/opacity over 400 ms. A read-only 360 px reproduction observed data-mounted=true while opacity was still 0 and two CSSTransitions were running; after settling, opacity was 1 with no running animations and the high-contrast token colours remained. This identifies the transient blend rather than a token-colour defect; Krrish owns the spec/helper fix.
+- Change: TC-376 now waits for its specific restore toast to have data-mounted=true before navigating back. The shared e2e/axe.ts helper waits for mounted toast elements and for document.getAnimations() to contain no running animation before analysis. Every caller uses this same scan entry point, so the animation barrier belongs there. Existing critical/serious assertions, colour-contrast enablement, targets and all four viewport projects remain intact.
+- Files changed: apps/web/e2e/itinerary-edit.spec.ts; apps/web/e2e/axe.ts; this record. Production toast/token files are unchanged.
+
+| Command | Exact result lines |
+| --- | --- |
+| `make lint` | `All checks passed!`; `232 files already formatted`; `✖ 1 problem (0 errors, 1 warning)` (existing client navigation warning); `All matched files use Prettier code style!` |
+| `make typecheck` | `Success: no issues found in 123 source files`; `✓ Types generated successfully` |
+| `make test-web` | `Test Files  42 passed (42)`; `Tests  283 passed (283)` |
+| `make e2e ARGS='itinerary-edit --list'` | `Total: 4 tests in 1 file` |
+| Scratch 360 px Chromium diagnostic importing the actual shared helper with the real tokens/Sonner CSS | `axe scan 1 on blank: []`; `1 passed (2.0s)`; observed running enter transitions before the helper and opacity 1/no running animations afterwards |
+| `git diff --check` | empty output |
+
+- Not run locally: `make e2e ARGS='itinerary-edit'`; Docker and the local authentication stack are unavailable in this WSL distro. The CSS-only diagnostic is not TC-376 journey execution. TC-376 on the new commit at 360/768/1280/1920 remains not verified until the single new E2E dispatch completes; its URL/result is reported in the run's sync report.
+- Status: local checks passed; one branch E2E dispatch follows the plain push. PR title/body are unchanged. No second fix is authorized if that run fails again.
+- Blockers: none. Proposed decisions: none.
