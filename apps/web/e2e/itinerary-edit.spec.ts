@@ -185,6 +185,10 @@ test("TC-376: regenerate a day and all, then restore each pre-regeneration versi
     const restored = (await response.json()) as Itinerary;
     expect(content(restored)).toEqual(content(before));
     before = restored;
+    const restoreToast = page.locator("[data-sonner-toast]").filter({
+      hasText: `Version ${backup!.version_no} restored`,
+    });
+    await expect(restoreToast).toHaveAttribute("data-mounted", "true");
     await page
       .getByRole("link", { name: "Back to itinerary", exact: true })
       .press("Enter");
