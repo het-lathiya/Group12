@@ -13,6 +13,9 @@ only from pm-2 (``trips/preference_mapping.py``, IMD-29, IMD-108); the signal we
 - distance: 1 - d/radius to the must-visit centroid or the destination centre, never below 0. The
   radius is half the destination bounding box's diagonal.
 - pace: ``RankingWeights.duration_component``.
+- signal (IMP-605): 1 for a place the traveller saved, 0 for a rejected one, 0.5 otherwise, when
+  the ``wishlist`` switch is on (``relations`` given); 0 when it is off. A saved place is only this
+  signal: it never becomes must-visit or locked.
 
 The share and the radius are PD-IMP-304-4: blueprint §20.2 is not in the repository.
 """
@@ -33,6 +36,8 @@ SHORTLIST_MAX: Final = 40
 SHORTLIST_PER_DAY: Final = 8
 PRICE_UNAVAILABLE: Final = 0.5
 FOOD_CATEGORY: Final = "food"
+SIGNAL_BY_RELATION: Final = {"saved": 1.0, "rejected": 0.0}
+SIGNAL_NEUTRAL: Final = 0.5
 
 
 class RankablePlace(Protocol):
@@ -86,6 +91,7 @@ class RankingContext:
     centre_lon: float
     radius_m: float
     semantic: Mapping[object, float] = field(default_factory=dict)  # by place ID
+    relations: Mapping[object, str] | None = None  # trip_places relation by place ID; None: off
 
 
 @dataclass(frozen=True)
@@ -124,6 +130,14 @@ def c_semantic(
     return {id_: (value - low) / (high - low) for id_, value in known.items()}
 
 
+def c_signal(place_id: object, relations: Mapping[Any, str] | None) -> float:
+    """The saved or rejected signal (IMP-605); 0 when the wishlist is switched off. Its pm-2
+    weight is 0 in the MVP (§8.9), so it does not change the total yet."""
+    if relations is None:
+        return 0.0
+    return SIGNAL_BY_RELATION.get(relations.get(place_id, ""), SIGNAL_NEUTRAL)
+
+
 def build_context(
     candidates: Iterable[Rankable],
     mapped: MappedPreferences,
@@ -133,6 +147,7 @@ def build_context(
     meal_slots_per_day: int,
     activity_budget: Decimal | None,
     similarities: Mapping[Any, float] | None = None,
+    relations: Mapping[Any, str] | None = None,
 ) -> RankingContext:
     """The context of one trip: its centre is the must-visit centroid, else the destination's."""
     candidates = list(candidates)
@@ -157,6 +172,7 @@ def build_context(
         centre_lon=lon,
         radius_m=max(diagonal / 2, 1.0),
         semantic=c_semantic((c.place.id for c in candidates), similarities or {}),
+        relations=relations,
     )
 
 
@@ -188,7 +204,7 @@ def score(candidate: Rankable, ctx: RankingContext) -> ScoreParts:
     price = _price(candidate.min_group_cost, ctx)
     distance = _distance(place, ctx)
     pace = weights.duration_component(place.typical_duration_min)
-    signal = 0.0  # no saved or rejected signals in the MVP; its weight is 0 (§8.9)
+    signal = c_signal(place.id, ctx.relations)
     total = (
         weights.interest * interest
         + weights.semantic * semantic

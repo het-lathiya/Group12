@@ -29,6 +29,7 @@ from app.places import repository as places_repository
 from app.rag import service as rag_service
 from app.rag.query import build_query_text
 from app.trips import preference_mapping
+from app.trips import service as trips_service
 from app.trips.schemas import PreferencesOut, TripOut
 
 CENT: Final = Decimal("0.01")
@@ -252,5 +253,6 @@ async def ranked_shortlist(
         meal_slots_per_day=meal_slots_per_day,
         activity_budget=await _trip_activity_budget(session, trip),
         similarities=retrieved.place_similarity if retrieved and semantic else None,
+        relations=await trips_service.place_relations(session, trip),
     )
     return [entry.candidate for entry in ranking.rank_shortlist(candidates, context).entries]

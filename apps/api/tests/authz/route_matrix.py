@@ -217,3 +217,20 @@ def unlisted_routes(app: FastAPI) -> list[str]:
         for method, path, route in api_routes(app)
         if (method, path) not in listed and not is_not_implemented(route)
     ]
+
+
+# IMP-605 saved places (API-19 to API-21; TC-345). The path also names A's must-visit place.
+@dataclass(frozen=True)
+class PlaceRouteCase(RouteCase):
+    def url(self, owned: Owned) -> str:
+        return self.path.format(trip_id=owned.trip_id, place_id=owned.place_id)
+
+
+MATRIX = (
+    *MATRIX,
+    PlaceRouteCase("API-19", "PUT", "/api/v1/trips/{trip_id}/saved-places/{place_id}", "foreign"),
+    PlaceRouteCase(
+        "API-20", "DELETE", "/api/v1/trips/{trip_id}/saved-places/{place_id}", "foreign"
+    ),
+    RouteCase("API-21", "GET", "/api/v1/trips/{trip_id}/saved-places", "foreign"),
+)

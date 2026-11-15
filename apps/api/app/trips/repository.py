@@ -176,3 +176,30 @@ async def mark_preferences_saved(
         values["plan_stale"] = True
     if values:
         await session.execute(update(Trip).where(Trip.id == trip_id).values(**values))
+
+
+# IMP-605 saved places (API-19 to API-21): trip_places rows with relation saved.
+SAVED = "saved"
+
+
+async def place_relations(session: AsyncSession, trip_id: UUID) -> dict[UUID, str]:
+    """The trip_places relation of each place the trip names (must_visit, saved, rejected)."""
+    query = select(TripPlace.place_id, TripPlace.relation).where(TripPlace.trip_id == trip_id)
+    return {row[0]: row[1] for row in await session.execute(query)}
+
+
+async def insert_saved(session: AsyncSession, trip_id: UUID, place_id: UUID) -> None:
+    """Save a place the trip does not name yet; the unique (trip_id, place_id) keeps one row."""
+    statement = insert(TripPlace).values(trip_id=trip_id, place_id=place_id, relation=SAVED)
+    await session.execute(statement.on_conflict_do_nothing(index_elements=["trip_id", "place_id"]))
+
+
+async def delete_saved(session: AsyncSession, trip_id: UUID, place_id: UUID) -> None:
+    """Remove the saved row only; a must-visit or rejected row of the place stays."""
+    await session.execute(
+        delete(TripPlace).where(
+            TripPlace.trip_id == trip_id,
+            TripPlace.place_id == place_id,
+            TripPlace.relation == SAVED,
+        )
+    )

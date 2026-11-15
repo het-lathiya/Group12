@@ -25,6 +25,11 @@ vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "http://api.test/api/v1");
 const TRIP_ID = "00000000-0000-4000-8000-000000000002";
 const DESTINATION_ID = "00000000-0000-4000-8000-0000000000d1";
 vi.mock("next/navigation", () => ({ useParams: () => ({ tripId: TRIP_ID }) }));
+// IMP-605: the `wishlist` switch, flipped per test.
+const flags = vi.hoisted(() => ({ wishlist: true }));
+vi.mock("@/lib/flags", () => ({
+  isEnabled: (name: string) => name !== "wishlist" || flags.wishlist,
+}));
 
 const SAMPLE_NOTICE =
   "Sample data; prices and hours are estimates unless marked Curated.";
@@ -112,10 +117,12 @@ const trip = (isSample: boolean) => ({
 function renderPage(
   tripBody: () => Response,
   placesBody: (offset: number) => Response,
+  savedBody: (request: Request) => Response = () => json([]),
 ) {
   const placeRequests: URL[] = [];
   vi.stubGlobal("fetch", async (request: Request) => {
     const url = new URL(request.url);
+    if (url.pathname.includes("/saved-places")) return savedBody(request);
     if (url.pathname.endsWith("/places")) {
       placeRequests.push(url);
       return placesBody(Number(url.searchParams.get("offset")));
@@ -148,7 +155,10 @@ const pageOf = (
     offset,
   });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  flags.wishlist = true;
+});
 
 describe("ExplorePage", () => {
   it("states that the SAMPLE destination's data is sample and estimated (TC-094)", async () => {
@@ -257,5 +267,85 @@ describe("ExplorePage", () => {
     );
 
     expect(await screen.findByText("Trip not found")).toBeInTheDocument();
+  });
+});
+
+// IMP-605 (FR-020: TC-103, TC-104): Save toggle on PlaceCard and the saved-places panel.
+describe("Saved places", () => {
+  it("saves a place with an aria-pressed toggle and lists it (TC-103)", async () => {
+    const saved: Place[] = [];
+    const calls: string[] = [];
+    renderPage(
+      () => json(trip(true)),
+      (offset) => pageOf(offset, 1),
+      (request) => {
+        calls.push(request.method);
+        if (request.method === "PUT") {
+          saved.push(place({ id: "p-0", name: "Place at 0" }));
+          return new Response(null, { status: 204 });
+        }
+        return json(saved);
+      },
+    );
+
+    const toggle = await screen.findByRole("button", {
+      name: "Save Place at 0",
+    });
+    await waitFor(() => expect(toggle).toBeEnabled());
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText(/No saved places yet/)).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-pressed", "true"));
+    expect(calls).toContain("PUT");
+    const panel = screen.getByRole("region", { name: "Saved places" });
+    expect(within(panel).getByText("Place at 0")).toBeInTheDocument();
+    expect(panel).toHaveTextContent("not must-visit places");
+  });
+
+  it("removes a saved place from the panel (TC-104)", async () => {
+    let saved: Place[] = [place({ id: "p-0", name: "Place at 0" })];
+    renderPage(
+      () => json(trip(true)),
+      (offset) => pageOf(offset, 1),
+      (request) => {
+        if (request.method === "DELETE") {
+          saved = [];
+          return new Response(null, { status: 204 });
+        }
+        return json(saved);
+      },
+    );
+
+    const remove = await screen.findByRole("button", {
+      name: "Remove Place at 0 from saved places",
+    });
+    fireEvent.click(remove);
+
+    expect(await screen.findByText(/No saved places yet/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Save Place at 0" }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("hides the toggle and the panel when wishlist is switched off", async () => {
+    flags.wishlist = false;
+    const savedCalls: string[] = [];
+    renderPage(
+      () => json(trip(true)),
+      (offset) => pageOf(offset, 1),
+      (request) => {
+        savedCalls.push(request.method);
+        return json([]);
+      },
+    );
+
+    expect(await screen.findByText("Place at 0")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Save / }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Saved places")).not.toBeInTheDocument();
+    expect(savedCalls).toEqual([]);
   });
 });

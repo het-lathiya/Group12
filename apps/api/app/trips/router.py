@@ -1,5 +1,5 @@
 """Trip routes API-07, API-08, API-10, API-11, API-14 and API-15 (specification §6.6.2; FR-005,
-FR-007 to FR-010, FR-013).
+FR-007 to FR-010, FR-013), and the saved places API-19 to API-21 (§6.6.3; FR-020, IMP-605).
 
 API-12 and API-13 are declared with their final shapes and answer 501 NOT_IMPLEMENTED until
 IMP-602 builds them (IMD-37).
@@ -14,6 +14,7 @@ from fastapi import APIRouter, Query, Response, status
 
 from app.auth.deps import CurrentUser, DbSession
 from app.core.errors import EndpointNotImplemented
+from app.places.schemas import PlaceSummary
 from app.schemas.common import Page
 from app.trips import service
 from app.trips.schemas import PreferencesIn, PreferencesOut, TripIn, TripOut, TripPatch
@@ -94,3 +95,39 @@ async def save_preferences(
 )
 async def get_preferences(trip_id: UUID, user: CurrentUser, session: DbSession) -> PreferencesOut:
     return await service.get_preferences(session, user.user_id, trip_id)
+
+
+# IMP-605 saved places (API-19 to API-21; FR-020), switch `wishlist` (IMD-11).
+
+
+@router.put(
+    "/{trip_id}/saved-places/{place_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    summary="API-19 Save a place to my trip",
+)
+async def save_place(trip_id: UUID, place_id: UUID, user: CurrentUser, session: DbSession) -> None:
+    await service.save_place(session, user.user_id, trip_id, place_id)
+
+
+@router.delete(
+    "/{trip_id}/saved-places/{place_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    summary="API-20 Remove a saved place from my trip",
+)
+async def unsave_place(
+    trip_id: UUID, place_id: UUID, user: CurrentUser, session: DbSession
+) -> None:
+    await service.unsave_place(session, user.user_id, trip_id, place_id)
+
+
+@router.get(
+    "/{trip_id}/saved-places",
+    response_model=list[PlaceSummary],
+    summary="API-21 List my trip's saved places",
+)
+async def list_saved_places(
+    trip_id: UUID, user: CurrentUser, session: DbSession
+) -> list[PlaceSummary]:
+    return await service.list_saved_places(session, user.user_id, trip_id)
