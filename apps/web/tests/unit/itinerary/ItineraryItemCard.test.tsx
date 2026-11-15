@@ -123,3 +123,28 @@ describe("ItineraryItemCard", () => {
     expect(formatDuration(125)).toBe("2 h 5 min");
   });
 });
+
+// IMP-606, FR-083 AC2 (TC-244): a meal stop shows the meal icon and label, and never a rating.
+describe("ItineraryItemCard meal slot", () => {
+  it("marks a meal item with a meal icon and shows no rating", () => {
+    const place = {
+      ...ITEM.place,
+      name: "Sample Corner Bakery (sample)",
+      category: "food",
+      // A rating the API never sends: the card must not render it even if one arrives.
+      rating: 4.5,
+    } as typeof ITEM.place;
+    const { container } = render(
+      <ItineraryItemCard item={{ ...ITEM, slot_type: "meal", place }} />,
+    );
+
+    const label = screen.getByText("Meal");
+    expect(label.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(container).not.toHaveTextContent(/rating|4\.5|★/i);
+  });
+
+  it("shows no meal icon on an activity", () => {
+    render(<ItineraryItemCard item={ITEM} />);
+    expect(screen.getByText("Activity").querySelector("svg")).toBeNull();
+  });
+});
