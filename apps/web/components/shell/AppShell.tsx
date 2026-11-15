@@ -2,6 +2,7 @@
 
 import {
   CalendarDays,
+  Compass,
   Luggage,
   User,
   Wallet,
@@ -45,6 +46,11 @@ function navItems(tripId: string | undefined): NavItem[] {
       icon: Wallet,
       href: tripId ? `/trips/${tripId}/costs` : undefined,
     },
+    {
+      label: "Explore",
+      icon: Compass,
+      href: tripId ? `/trips/${tripId}/explore` : undefined,
+    },
     { label: "Profile", icon: User, href: "/profile" },
   ];
 }
@@ -71,11 +77,16 @@ function NavLinks({
     <ul
       className={cn(
         "flex",
-        layout === "top" ? "items-center gap-1" : "w-full gap-1",
+        layout === "top"
+          ? "items-center gap-1"
+          : "w-full gap-1 overflow-x-auto",
       )}
     >
       {items.map(({ label, icon: Icon, href }) => (
-        <li key={label} className={cn(layout === "bottom" && "flex flex-1")}>
+        <li
+          key={label}
+          className={cn(layout === "bottom" && "flex min-w-16 flex-1")}
+        >
           {href ? (
             <Link
               href={href}
