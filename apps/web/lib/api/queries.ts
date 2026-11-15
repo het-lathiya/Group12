@@ -796,3 +796,50 @@ export function useSummary(tripId: string) {
     retry: retryUnless404,
   });
 }
+
+// IMP-607
+/** Completed generation changes the saved plan and every derived view, including history. */
+export const regenerationQueryKeys = (tripId: string) => [
+  queryKeys.itinerary(tripId),
+  queryKeys.costs(tripId),
+  ["warnings", tripId],
+  ["versions", tripId],
+  ["summary", tripId],
+  queryKeys.trip(tripId),
+  queryKeys.trips(),
+  queryKeys.latestItinerary(),
+];
+
+/** API-30/31: server scope and revision checks use the same job status as API-22. */
+export function useRegenerate(tripId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      dayNumber,
+      ...body
+    }: Schemas["RegenerateIn"] & { dayNumber?: number }) =>
+      unwrap(
+        dayNumber === undefined
+          ? await api().POST("/api/v1/trips/{trip_id}/itinerary/regenerate", {
+              params: { path: { trip_id: tripId } },
+              body,
+            })
+          : await api().POST(
+              "/api/v1/trips/{trip_id}/itinerary/days/{day_number}/regenerate",
+              {
+                params: { path: { trip_id: tripId, day_number: dayNumber } },
+                body,
+              },
+            ),
+      ),
+    onSuccess: (generation) =>
+      queryClient.setQueryData(queryKeys.generation(generation.id), generation),
+    onError: async (error) => {
+      if (error instanceof ApiError && error.code === "STALE_PLAN") {
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.itinerary(tripId),
+        });
+      }
+    },
+  });
+}

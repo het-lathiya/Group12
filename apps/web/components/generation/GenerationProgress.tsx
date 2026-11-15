@@ -16,7 +16,7 @@ import { PausedAiNotice } from "@/components/generation/FallbackNotice";
 import { ErrorState } from "@/components/states/ErrorState";
 import { Button } from "@/components/ui/button";
 import { ApiError, OFFLINE_MESSAGE } from "@/lib/api/client";
-import { queryKeys, useGeneration } from "@/lib/api/queries";
+import { regenerationQueryKeys, useGeneration } from "@/lib/api/queries";
 import type { components } from "@/lib/api/schema";
 
 type Status = components["schemas"]["GenerationOut"]["status"];
@@ -42,6 +42,8 @@ export type GenerationProgressProps = {
   /** Starts a rule-based generation (next_action retry_rule_based, the quota pause). */
   onRuleBased: () => void;
   retrying?: boolean;
+  /** Inline regeneration stays on its itinerary after refreshing the saved plan. */
+  onComplete?: () => void;
 };
 
 /**
@@ -57,6 +59,7 @@ export function GenerationProgress({
   onRetry,
   onRuleBased,
   retrying = false,
+  onComplete,
 }: GenerationProgressProps) {
   const [elapsed, setElapsed] = useState(0);
   const gaveUp = elapsed >= GIVE_UP_AFTER_S;
@@ -82,17 +85,20 @@ export function GenerationProgress({
 
   useEffect(() => {
     if (status !== "completed" || !tripId) return;
-    // §7.4: a new plan changes the trip, its itinerary, its estimate and the trip list.
-    for (const queryKey of [
-      queryKeys.trip(tripId),
-      queryKeys.itinerary(tripId),
-      queryKeys.costs(tripId),
-      queryKeys.trips(),
-    ]) {
-      void queryClient.invalidateQueries({ queryKey });
-    }
-    router.push(`/trips/${tripId}/itinerary`);
-  }, [status, tripId, queryClient, router]);
+    let watching = true;
+    void Promise.all(
+      regenerationQueryKeys(tripId).map((queryKey) =>
+        queryClient.invalidateQueries({ queryKey }),
+      ),
+    ).then(() => {
+      if (!watching) return;
+      if (onComplete) onComplete();
+      else router.push(`/trips/${tripId}/itinerary`);
+    });
+    return () => {
+      watching = false;
+    };
+  }, [status, tripId, queryClient, router, onComplete]);
 
   if (generation.isError && !data) {
     const { error } = generation;
