@@ -1,0 +1,10 @@
+{
+  "template_id": "itinerary_generate",
+  "version": "v3",
+  "created_on": "2026-11-15",
+  "input_schema_version": "gr-2",
+  "output_schema_version": "io-2",
+  "description": "Orders shortlisted places into a day-by-day itinerary (io-2) for a gr-2 request, with retrieved passages as quoted reference data, citations per item, each place at most once and meals from food places.",
+  "change_note": "Tells the model not to write the AI-written label (IMD-180), to use a place at most once in the plan, meal stops included (IMD-181), and to fill meal slots only with shortlisted food places (IMP-606); v1 and v2 stay unchanged.",
+  "approved_by": "AI/ML Engineer (Prompt Engineering, Validation and Evaluation)"
+}

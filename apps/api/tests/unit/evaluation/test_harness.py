@@ -12,6 +12,7 @@ from pydantic import SecretStr
 from app.ai.providers.mock import MockProvider
 from app.core.config import get_settings
 from app.evaluation import manifest, metrics, run
+from app.schemas.ai import ItineraryOutput
 from app.validation import output_check, validator
 
 MANIFEST_FIELDS = {
@@ -126,3 +127,41 @@ def test_a_dataset_that_does_not_match_its_manifest_exits_1(
     monkeypatch.setattr(run, "DATASETS", tmp_path)
     assert run.main(["--dataset", "trips/v9", "--provider", "MOCK"]) == 1
     assert run.main(["--dataset", "trips/missing", "--provider", "MOCK"]) == 1
+
+
+def test_duplicate_places_count_a_repeated_place_and_meal_stops_imd_181() -> None:
+    def answer(days: list[list[tuple[str, str]]]) -> ItineraryOutput:
+        return ItineraryOutput.model_validate(
+            {
+                "days": [
+                    {
+                        "day_number": n,
+                        "theme": "t",
+                        "items": [
+                            {
+                                "place_id": place,
+                                "start_time": "12:00",
+                                "duration_min": 60,
+                                "slot_type": slot,
+                                "note": "",
+                            }
+                            for place, slot in items
+                        ],
+                    }
+                    for n, items in enumerate(days, start=1)
+                ],
+                "summary": "s",
+                "assumptions": [],
+            }
+        )
+
+    a, b = "00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000005"
+    assert run.duplicate_places(answer([[(a, "activity"), (b, "meal")]]), 1) == 0
+    # The same food place as lunch on both days, and a sight twice on one day.
+    repeated = answer([[(b, "meal"), (a, "activity"), (a, "activity")], [(b, "meal")]])
+    assert run.duplicate_places(repeated, 2) == 2
+    assert run.duplicate_places(repeated, 1) == 1  # a day outside the trip is not counted
+    counts = metrics.compute(
+        [{"no_duplicate_places": True}, {"no_duplicate_places": False}, {"schema_valid": False}]
+    )["counts"]
+    assert counts["no_duplicate_places"] == {"k": 1, "n": 3}

@@ -44,7 +44,7 @@ from app.places.schemas import Destination, PlaceSummary
 from app.rag import service as rag_service
 from app.routing.estimate import TravelEstimate, TravelMode
 from app.routing.service import RoutablePlace, travel_time
-from app.schemas.ai import GenerationRequest, ShortlistPlace
+from app.schemas.ai import GenerationRequest, ItineraryOutput, ShortlistPlace
 from app.trips.schemas import PreferencesOut, TripDestination, TripOut, TripStatus
 from app.validation import output_check
 from app.validation.rules import ValidationContext
@@ -54,7 +54,7 @@ REPO_ROOT: Final = Path(__file__).resolve().parents[4]
 DATASETS: Final = REPO_ROOT / "eval" / "datasets"
 RESULTS: Final = REPO_ROOT / "eval" / "results"
 REPORTS: Final = REPO_ROOT / "eval" / "reports"
-METRICS_FILE: Final = REPO_ROOT / "eval" / "metrics_v1.md"
+METRICS_FILE: Final = REPO_ROOT / "eval" / "metrics_v2.md"
 PROVIDERS: Final = ("MOCK", "GEMINI", "RULE_BASED")
 NO_RULE_BASED: Final = "rule-based planner not available (IMP-402)"
 NO_GEMINI_KEY: Final = "GEMINI_API_KEY is not set; GEMINI runs are manual and need the key"
@@ -92,6 +92,12 @@ class PricedShortlistPlace:
     tags: list[str]
 
 
+def duplicate_places(answer: ItineraryOutput, trip_days: int) -> int:
+    """Items on the trip's days whose place came earlier in the plan, meals included (IMD-181)."""
+    ids = [i.place_id for d in answer.days if d.day_number <= trip_days for i in d.items]
+    return len(ids) - len(set(ids))
+
+
 async def score_case(
     provider: ModelProvider, case: dict[str, Any], repeat: int
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -105,6 +111,8 @@ async def score_case(
         "schema_valid": False,
         "place_ids_valid": False,
         "usable": False,
+        "no_duplicate_places": False,
+        "duplicate_places": 0,
         "invalid_ids": 0,
         "rejected_items": 0,
         "findings": {},
@@ -136,6 +144,7 @@ async def score_case(
     score["schema_valid"] = True
 
     checked = output_check.check_output(answer, request.shortlist_ids(), request.trip.num_days)
+    duplicates = duplicate_places(answer, request.trip.num_days)
     places = {str(place.place_id): place for place in request.shortlist}
     plan = await schedule.recalculate(
         checked.output.days,
@@ -157,6 +166,8 @@ async def score_case(
     score.update(
         place_ids_valid=checked.invalid_ids == 0,
         usable=bool(plan) and not BLOCKING & set(codes),
+        no_duplicate_places=duplicates == 0,
+        duplicate_places=duplicates,
         invalid_ids=checked.invalid_ids,
         rejected_items=checked.rejected_items,
         findings=dict(sorted(codes.items())),
