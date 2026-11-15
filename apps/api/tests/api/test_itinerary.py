@@ -402,28 +402,6 @@ async def test_tc_064_another_users_itinerary_answers_like_a_missing_trip(
     assert trip_id not in foreign.text
 
 
-@pytest.mark.asyncio
-async def test_reading_a_stored_version_is_not_built_yet(
-    api_client: httpx.AsyncClient,
-    db_session: AsyncSession,
-    auth_user: AuthUser,
-    destination: Destination,
-    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
-) -> None:
-    trip_id = await create_trip(api_client, auth_user, destination)
-    generation = await generate(api_client, db_session, jobs_queue, auth_user, trip_id)
-
-    response = await api_client.get(
-        f"/api/v1/trips/{trip_id}/itinerary",
-        params={"version_id": generation["itinerary_version_id"]},
-        headers=auth_user.headers,
-    )
-
-    # IMD-37: version_id is reserved for IMP-610.
-    assert response.status_code == 501
-    assert response.json()["error"]["code"] == "NOT_IMPLEMENTED"
-
-
 # IMP-405: stored warnings, API-32 (FR-056, FR-058: TC-193, TC-194)
 
 

@@ -587,3 +587,67 @@ export function useToggleSavedPlace(tripId: string) {
       queryClient.invalidateQueries({ queryKey: savedPlacesKey(tripId) }),
   });
 }
+
+// IMP-610 versions
+/** API-36: the trip's versions, newest first (404 while the `versions` switch is off). */
+export function useVersions(tripId: string) {
+  return useQuery({
+    queryKey: ["versions", tripId],
+    queryFn: async () =>
+      unwrap(
+        await api().GET("/api/v1/trips/{trip_id}/versions", {
+          params: { path: { trip_id: tripId } },
+        }),
+      ),
+    retry: retryUnless404,
+  });
+}
+
+/** API-37: save the current plan as a named version (§7.4: invalidate `versions`). */
+export function useSaveVersion(tripId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: Schemas["VersionCreateIn"]) =>
+      unwrap(
+        await api().POST("/api/v1/trips/{trip_id}/versions", {
+          params: { path: { trip_id: tripId } },
+          body,
+        }),
+      ),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["versions", tripId] }),
+  });
+}
+
+/** API-38: restore a version (§7.4: invalidate `versions`, `itinerary`, `costs`, `summary`, `trip`). */
+export function useRestoreVersion(tripId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      versionId,
+      ...body
+    }: {
+      versionId: string;
+      plan_revision: number;
+    }) =>
+      unwrap(
+        await api().POST(
+          "/api/v1/trips/{trip_id}/versions/{version_id}/restore",
+          {
+            params: { path: { trip_id: tripId, version_id: versionId } },
+            body,
+          },
+        ),
+      ),
+    onSettled: () =>
+      Promise.all(
+        [
+          ["versions", tripId],
+          queryKeys.itinerary(tripId),
+          queryKeys.costs(tripId),
+          ["summary", tripId],
+          queryKeys.trip(tripId),
+        ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+      ),
+  });
+}

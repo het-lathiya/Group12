@@ -3,8 +3,9 @@
 
 API-09 and API-24 to API-29 are built (IMP-211, IMP-309, IMP-408, IMP-504, IMP-505; API-28 and
 API-29 answer 404 while the 'alternatives' switch is off, IMD-11). The others are declared with their
-final shapes and answer 501 NOT_IMPLEMENTED until their cards build them (IMD-37): IMP-609 (API-35),
-IMP-610 (API-36 to API-38).
+final shapes and answer 501 NOT_IMPLEMENTED until their cards build them (IMD-37): IMP-609 (API-35).
+API-36 to API-38 and API-24 with version_id are IMP-610 (app/itinerary/versions.py, switch
+'versions').
 API-30 and API-31 live in generation/router.py and API-32 in validation/router.py (IMD-13).
 """
 
@@ -15,7 +16,7 @@ from fastapi import APIRouter, Depends, status
 from app.auth.deps import CurrentUser, DbSession
 from app.core.errors import EndpointNotImplemented
 from app.core.rate_limit import expensive_request
-from app.itinerary import edits, service
+from app.itinerary import edits, service, versions
 from app.itinerary.schemas import (
     AlternativesOut,
     EditResultOut,
@@ -50,7 +51,9 @@ async def latest_itinerary(user: CurrentUser, session: DbSession) -> LatestItine
 async def get_itinerary(
     trip_id: UUID, user: CurrentUser, session: DbSession, version_id: UUID | None = None
 ) -> ItineraryOut:
-    return await service.get_itinerary(session, user.user_id, trip_id, version_id)
+    if version_id is not None:
+        return await versions.read_version(session, user.user_id, trip_id, version_id)
+    return await service.get_itinerary(session, user.user_id, trip_id)
 
 
 @router.post(
@@ -127,8 +130,8 @@ async def trip_summary(trip_id: UUID) -> TripSummaryOut:
     response_model=list[VersionOut],
     summary="API-36 List my trip's saved versions",
 )
-async def list_versions(trip_id: UUID) -> list[VersionOut]:
-    raise EndpointNotImplemented()
+async def list_versions(trip_id: UUID, user: CurrentUser, session: DbSession) -> list[VersionOut]:
+    return await versions.list_versions(session, user.user_id, trip_id)
 
 
 @router.post(
@@ -137,8 +140,10 @@ async def list_versions(trip_id: UUID) -> list[VersionOut]:
     status_code=status.HTTP_201_CREATED,
     summary="API-37 Save a named version",
 )
-async def create_version(trip_id: UUID, body: VersionCreateIn) -> VersionOut:
-    raise EndpointNotImplemented()
+async def create_version(
+    trip_id: UUID, body: VersionCreateIn, user: CurrentUser, session: DbSession
+) -> VersionOut:
+    return await versions.save_named(session, user.user_id, trip_id, body)
 
 
 @router.post(
@@ -146,5 +151,7 @@ async def create_version(trip_id: UUID, body: VersionCreateIn) -> VersionOut:
     response_model=ItineraryOut,
     summary="API-38 Restore a saved version",
 )
-async def restore_version(trip_id: UUID, version_id: UUID, body: PlanRevisionIn) -> ItineraryOut:
-    raise EndpointNotImplemented()
+async def restore_version(
+    trip_id: UUID, version_id: UUID, body: PlanRevisionIn, user: CurrentUser, session: DbSession
+) -> ItineraryOut:
+    return await versions.restore(session, user.user_id, trip_id, version_id, body.plan_revision)
