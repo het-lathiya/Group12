@@ -3,6 +3,7 @@
 import {
   CalendarDays,
   Compass,
+  History,
   Luggage,
   User,
   Wallet,
@@ -21,6 +22,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { isEnabled } from "@/lib/flags";
 import { cn } from "@/lib/utils";
 
 export const APP_NAME = "AI Travel Planner";
@@ -51,6 +53,15 @@ function navItems(tripId: string | undefined): NavItem[] {
       icon: Compass,
       href: tripId ? `/trips/${tripId}/explore` : undefined,
     },
+    ...(isEnabled("versions")
+      ? [
+          {
+            label: "Versions",
+            icon: History,
+            href: tripId ? `/trips/${tripId}/versions` : undefined,
+          },
+        ]
+      : []),
     { label: "Profile", icon: User, href: "/profile" },
   ];
 }
