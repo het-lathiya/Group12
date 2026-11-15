@@ -191,28 +191,28 @@ async def save_regenerated_plan(
         # The output's item limit includes fixed slots, even when the model omitted them.
         capacity = max(len(locked), len(proposal.items) if proposal else 0)
         position = 1
-        for item in proposal.items if proposal else ():
-            if item.place_id in seen or len(slots) >= capacity:
+        for proposed in proposal.items if proposal else ():
+            if proposed.place_id in seen or len(slots) >= capacity:
                 continue
             while position in slots:
                 position += 1
-            note = (item.note or None) if origin == "model" else None
+            note = (proposed.note or None) if origin == "model" else None
             row = ItineraryItem(
                 trip_id=trip_id,
                 day_id=day.id,
-                place_id=UUID(item.place_id),
+                place_id=UUID(proposed.place_id),
                 position=position,
-                slot_type=item.slot_type,
-                start_time=time.fromisoformat(item.start_time),
-                duration_min=item.duration_min,
+                slot_type=proposed.slot_type,
+                start_time=time.fromisoformat(proposed.start_time),
+                duration_min=proposed.duration_min,
                 origin=origin,
                 note=note,
                 note_origin="ai" if note else "none",
-                is_locked=item.place_id in must_visit,
-                source_chunk_ids=[UUID(chunk) for chunk in item.source_chunk_ids],
+                is_locked=proposed.place_id in must_visit,
+                source_chunk_ids=[UUID(chunk) for chunk in proposed.source_chunk_ids],
             )
             slots[position] = row
-            seen.add(item.place_id)
+            seen.add(proposed.place_id)
             position += 1
         await _schedule_regenerated_day(
             session, trip, prefs.transport_pref.value, slots, set(locked)
@@ -234,7 +234,7 @@ async def save_regenerated_plan(
     revision = await repository.mark_plan_saved(session, trip_id)
     # Fixed positions can leave a gap when fewer new items fit; validator refs are ordinal.
     ordinal: dict[UUID, int] = {}
-    refs = {}
+    refs: dict[str, str] = {}
     for item, _, _ in current:
         ordinal[item.day_id] = ordinal.get(item.day_id, 0) + 1
         number = numbers[item.day_id]
@@ -243,7 +243,12 @@ async def save_regenerated_plan(
         session,
         trip_id,
         revision,
-        [f.model_copy(update={"item_ref": refs.get(f.item_ref, f.item_ref)}) for f in findings],
+        [
+            f.model_copy(
+                update={"item_ref": refs.get(f.item_ref, f.item_ref) if f.item_ref else None}
+            )
+            for f in findings
+        ],
     )
     counts = {
         key: sum(f.severity == severity for f in findings)
@@ -307,7 +312,8 @@ async def _schedule_regenerated_day(
         )
     }
     routing = RoutingService(RouteCacheRepository(session), get_client())
-    clock, previous = 9 * 60, None
+    clock = 9 * 60
+    previous: ItineraryItem | None = None
     for position, item in sorted(slots.items()):
         place = places[item.place_id]
         travel = await routing.travel(places[previous.place_id], place, mode) if previous else None
@@ -478,11 +484,13 @@ async def plan_out(
     generation: AiGeneration | None,
 ) -> tuple[list[Day], Totals]:
     """The response days and the engine's totals for the stored plan (API-24, EditResultOut);
-    ``generation`` is the trip's latest completed one, which decides the AI-text labels."""
+    ``generation`` is the latest completed one; a kept day's own source decides its theme label."""
     sources = await rag_service.resolve_sources(
         session, [chunk_id for item, _, _ in rows for chunk_id in item.source_chunk_ids]
     )
-    ai_text = generation is not None and generation.outcome in AI_OUTCOMES
+    generations: dict[UUID, AiGeneration | None] = (
+        {generation.id: generation} if generation is not None else {}
+    )
     currency = trip_currency(trip)
 
     items_by_day: dict[UUID, list[tuple[ItineraryItem, Place, bool]]] = {}
@@ -491,6 +499,14 @@ async def plan_out(
 
     out_days = []
     for day in days:
+        source = generation
+        if day.source_generation_id is not None:
+            if day.source_generation_id not in generations:
+                generations[day.source_generation_id] = await session.get(
+                    AiGeneration, day.source_generation_id
+                )
+            source = generations[day.source_generation_id]
+        ai_text = source is not None and source.outcome in AI_OUTCOMES
         day_rows = items_by_day.get(day.id, [])
         out_days.append(
             Day(
