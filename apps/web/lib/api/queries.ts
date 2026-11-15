@@ -722,3 +722,47 @@ export function useUpdateProfile() {
     onSuccess: (profile) => queryClient.setQueryData(queryKeys.me(), profile),
   });
 }
+
+// IMP-604 filter bar
+/** The API-16 filters of IMP-604; unset filters are left out of the request. */
+export type PlaceSearchQuery = Readonly<{
+  q?: string;
+  category?: string[];
+  interest?: string[];
+  price_max?: string;
+  duration_max_min?: number;
+  step_free?: boolean;
+}>;
+// The cast below is replaced by generated types after make openapi (the new filters are not in them).
+type PlacesQuery =
+  import("@/lib/api/schema").operations["search_places_api_v1_places_get"]["parameters"]["query"];
+
+/** API-16 with the explore filters, a page at a time (key `['places', destinationId, filters]`). */
+export function useFilteredPlacesPage(
+  destinationId: string | undefined,
+  filters: PlaceSearchQuery,
+  offset: number,
+) {
+  return useQuery({
+    queryKey: queryKeys.places(destinationId ?? "", {
+      filters: JSON.stringify(filters),
+      limit: EXPLORE_PAGE_SIZE,
+      offset,
+    }),
+    queryFn: async () =>
+      unwrap(
+        await api().GET("/api/v1/places", {
+          params: {
+            query: {
+              destination_id: destinationId ?? "",
+              limit: EXPLORE_PAGE_SIZE,
+              offset,
+              ...filters,
+            } as PlacesQuery,
+          },
+        }),
+      ),
+    enabled: destinationId !== undefined,
+    placeholderData: keepPreviousData,
+  });
+}
