@@ -781,3 +781,18 @@ export function usePlace(placeId: string | null) {
     enabled: placeId !== null,
   });
 }
+
+// IMP-609 summary
+/** API-35: the printable summary, built by the API (a 404 means no itinerary yet). */
+export function useSummary(tripId: string) {
+  return useQuery({
+    queryKey: ["summary", tripId],
+    queryFn: async () =>
+      unwrap(
+        await api().GET("/api/v1/trips/{trip_id}/summary", {
+          params: { path: { trip_id: tripId } },
+        }),
+      ),
+    retry: retryUnless404,
+  });
+}
