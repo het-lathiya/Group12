@@ -34,3 +34,7 @@
 
 - See PD-RUN-075-I3 (summary-api record): the closing statement is page text, and checked-on dates are not in the API-35 shape, so the summary shows hours labels without dates.
 - The summary tab link in the trip navigation is for the lead (shared navigation).
+
+## Integration wiring (RUN-075, same owner)
+
+- `apps/web/components/shell/AppShell.tsx`: "Summary" trip tab to `/trips/<tripId>/summary`; `tests/unit/shell/AppShell.test.tsx` checks the link.

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { BudgetAlert } from "@/components/costs/BudgetAlert";
 import { BudgetSettingsForm } from "@/components/costs/BudgetSettingsForm";
 import { CostBreakdown } from "@/components/costs/CostBreakdown";
 import { SourceBadge } from "@/components/labels/SourceBadge";
@@ -79,12 +80,7 @@ export default function CostsPage() {
               ) : (
                 <p>Set an allowance to see the remaining budget.</p>
               )}
-              {isEnabled("budget_alerts") &&
-                data.alerts.map((alert) => (
-                  <p key={alert.id} role="status" className="mt-2 text-warning">
-                    {alert.message}
-                  </p>
-                ))}
+              <BudgetAlert alerts={data.alerts} />
             </section>
             <CostBreakdown costs={data} />
             <section aria-labelledby="budget-settings">

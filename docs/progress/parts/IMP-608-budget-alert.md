@@ -49,3 +49,8 @@ Not run: `make e2e` (no Docker on this machine). No screenshots of the banners: 
 
 - Wiring (the costs page is not in the card's file list): in `apps/web/app/(app)/trips/[tripId]/costs/page.tsx`, replace the inline `isEnabled("budget_alerts") && data.alerts.map(...)` block with `<BudgetAlert alerts={data.alerts} />`, imported from `@/components/costs/BudgetAlert`.
 - The itinerary page has no cost strip, so step 4's "in the itinerary cost strip" has nowhere to go. When one exists, it renders `<BudgetAlert alerts={costs.alerts} />` from `useCosts(tripId)`.
+
+## Integration wiring (RUN-075, same owner)
+
+- `apps/web/app/(app)/trips/[tripId]/costs/page.tsx`: the inline alert list is replaced by `<BudgetAlert alerts={data.alerts} />`, so the banners show on the costs page.
+- `npx vitest run tests/unit/shell tests/unit/costs` → `Tests  25 passed (25)`.
