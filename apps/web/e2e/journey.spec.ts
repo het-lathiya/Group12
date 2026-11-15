@@ -310,8 +310,11 @@ test(
     await expect(skip).toBeInViewport();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("main")).toBeFocused();
+    // Open latest stays disabled until API-09 answers, and press() does not wait for enabled.
+    const openLatest = page.getByRole("button", { name: "Open latest" });
+    await expect(openLatest).toBeEnabled();
     const latestRead = page.waitForResponse(isItineraryRead(tripId));
-    await page.getByRole("button", { name: "Open latest" }).press("Enter");
+    await openLatest.press("Enter");
     await expect(page).toHaveURL(`/trips/${tripId}/itinerary`);
     const latest = (await (await latestRead).json()) as Itinerary;
     expectEditsSaved(latest);
