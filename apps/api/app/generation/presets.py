@@ -21,3 +21,20 @@ PACE_PRESETS: Final[Mapping[Pace, PaceLimits]] = {
 def pace_limits(pace: str) -> PaceLimits:
     """The limits of ``pace`` (relaxed, balanced or busy); ValueError for any other value."""
     return PACE_PRESETS[Pace(pace)]
+
+
+# IMP-606: meal windows as (start, end) in the destination's time (Provisional). Only lunch is
+# planned in the MVP: a day longer than LUNCH_MIN_ACTIVE_MIN active minutes gets a lunch slot.
+MEAL_WINDOWS: Final[Mapping[str, tuple[str, str]]] = {
+    "breakfast": ("07:30", "09:30"),
+    "lunch": ("12:00", "14:00"),
+    "dinner": ("18:30", "20:30"),
+}
+LUNCH_MIN_ACTIVE_MIN: Final = 6 * 60
+
+
+def meal_slots(pace: str, *, enabled: bool = True) -> list[str]:
+    """The meal slots of a day at ``pace``: lunch when the pace allows more than six active hours;
+    none when the ``meal_slots`` switch is off (IMD-11)."""
+    long_day = pace_limits(pace).max_active_minutes_per_day > LUNCH_MIN_ACTIVE_MIN
+    return ["lunch"] if enabled and long_day else []

@@ -1,7 +1,7 @@
 "use client";
 
 import { useIsMutating } from "@tanstack/react-query";
-import { Lock, Unlock } from "lucide-react";
+import { Lock, Unlock, Utensils } from "lucide-react";
 
 import { AlternativesDialog } from "@/components/itinerary/AlternativesDialog";
 import { ItemEditor } from "@/components/itinerary/ItemEditor";
@@ -129,7 +129,11 @@ export function ItineraryItemCard({
               {formatDuration(item.duration_min)}
             </span>
             <span aria-hidden="true">·</span>
-            <span className="inline-flex h-6 items-center rounded-full border border-border px-2 text-xs font-medium text-foreground">
+            <span className="inline-flex h-6 items-center gap-1 rounded-full border border-border px-2 text-xs font-medium text-foreground">
+              {/* IMP-606: a meal stop is a food place; no rating is ever shown (FR-083 AC2). */}
+              {item.slot_type === "meal" && (
+                <Utensils aria-hidden="true" className="size-3.5" />
+              )}
               {SLOT_LABELS[item.slot_type]}
             </span>
           </p>
