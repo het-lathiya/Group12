@@ -28,6 +28,9 @@
   --accent-foreground: oklch(0.216 0.006 56);
   --destructive: oklch(0.505 0.19 27.5); /* #B91C1C */
   --destructive-foreground: oklch(1 0 0);
+  /* Destructive button surfaces: solid, so #B91C1C text stays 4.5:1 or more (IMD-183). */
+  --destructive-soft: oklch(0.971 0.013 17.4); /* #FEF2F2 */
+  --destructive-soft-hover: oklch(0.936 0.031 17.7); /* #FEE2E2 */
   --border: oklch(0.923 0.003 48.7); /* #E7E5E4 */
   --input: oklch(0.65 0.01 62.5); /* #948E89 */
   --ring: oklch(0.511 0.086 186.4); /* #0F766E */
@@ -66,6 +69,8 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-soft-hover: var(--destructive-soft-hover);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
