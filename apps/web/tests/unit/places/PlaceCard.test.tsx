@@ -24,7 +24,11 @@ vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "http://api.test/api/v1");
 
 const TRIP_ID = "00000000-0000-4000-8000-000000000002";
 const DESTINATION_ID = "00000000-0000-4000-8000-0000000000d1";
-vi.mock("next/navigation", () => ({ useParams: () => ({ tripId: TRIP_ID }) }));
+vi.mock("next/navigation", () => ({
+  useParams: () => ({ tripId: TRIP_ID }),
+  useRouter: () => ({ replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 // IMP-605: the `wishlist` switch, flipped per test.
 const flags = vi.hoisted(() => ({ wishlist: true }));
 vi.mock("@/lib/flags", () => ({
