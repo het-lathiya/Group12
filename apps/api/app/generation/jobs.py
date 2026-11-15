@@ -1,5 +1,5 @@
 """In-process generation jobs (IMD-12; §6.4, §8.2): asyncio tasks, at most two at a time, each
-under a 120-second overall timeout, and the stale-job reaper.
+under a 120-second overall timeout, and the stale-job reaper with the daily purges (IMD-31).
 
 The job runner classifies only the timeout and unexpected errors (``internal``); provider errors
 are classified by the pipeline. A timed-out or reaped row is marked with
@@ -21,6 +21,7 @@ from app.ai.providers.base import ModelProvider
 from app.db.session import transaction
 from app.generation import pipeline, records, repository
 from app.generation.pipeline import Sessions
+from app.trips import service as trips_service
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,8 @@ SubmitDep = Annotated[Submit, Depends(get_submit)]
 
 
 async def reap_forever() -> None:
-    """At start-up and every 60 s: fail active rows older than 150 s (§6.4)."""
+    """At start-up and every 60 s: fail active rows older than 150 s (§6.4); once a day purge
+    expired generation records and trips soft-deleted more than 30 days ago (IMD-31)."""
     next_purge = 0.0
     while True:
         try:
@@ -98,9 +100,15 @@ async def reap_forever() -> None:
             if time.monotonic() >= next_purge:
                 async with transaction() as session:
                     purged = await repository.purge_expired(session, datetime.now(UTC))
+                async with transaction() as session:
+                    trips_purged = await trips_service.purge_deleted_trips(
+                        session, datetime.now(UTC)
+                    )
                 next_purge = time.monotonic() + 86400
                 if purged:
                     logger.info("purged %d expired generation records", purged)
+                if trips_purged:
+                    logger.info("purged %d trips deleted more than 30 days ago", trips_purged)
         except Exception:  # the loop must survive a database outage; the next round retries
             logger.exception("generation reaper round failed")
         await asyncio.sleep(REAPER_INTERVAL_S)

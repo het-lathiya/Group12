@@ -517,3 +517,44 @@ async def validation_cost_inputs(session: AsyncSession, trip: TripOut) -> engine
         stay_per_night=minor(settings.stay_budget_per_night) if settings else None,
         contingency_pct=pct if is_enabled(get_settings(), "contingency") else 0,
     )
+
+
+# IMP-602 duplicate
+_NOT_COPIED = frozenset({"id", "trip_id", "created_at", "updated_at"})
+
+
+def _columns(row: Any) -> dict[str, Any]:
+    """A plan row's column values, without its identity, trip and timestamps."""
+    return {c.key: getattr(row, c.key) for c in row.__table__.columns if c.key not in _NOT_COPIED}
+
+
+async def copy_plan(
+    session: AsyncSession, source_trip_id: UUID, source_revision: int, target_trip_id: UUID
+) -> None:
+    """API-13 (FR-015 AC1, A1 §6.10): copy the source's days, items (locks and source_chunk_ids
+    included) and its current revision's warnings to a new trip that has no plan, which then has
+    plan_revision 1. The source is only read; generation links are not copied."""
+    days: dict[UUID, UUID] = {}
+    for day in await repository.plan_days(session, source_trip_id):
+        copy = ItineraryDay(
+            **{**_columns(day), "source_generation_id": None}, trip_id=target_trip_id
+        )
+        session.add(copy)
+        await session.flush()
+        days[day.id] = copy.id
+    items: dict[UUID, UUID] = {}
+    for item, _, _ in await repository.plan_items(session, source_trip_id):
+        item_copy = ItineraryItem(
+            **{**_columns(item), "day_id": days[item.day_id]}, trip_id=target_trip_id
+        )
+        session.add(item_copy)
+        await session.flush()
+        items[item.id] = item_copy.id
+    revision = await repository.bump_revision(session, target_trip_id)
+    for warning in await repository.current_warnings(session, source_trip_id, source_revision):
+        values = _columns(warning)
+        values["plan_revision"] = revision
+        values["item_id"] = items.get(warning.item_id) if warning.item_id else None
+        # type(warning) is ItineraryWarning; this block is append-only, so no new top-level import.
+        session.add(type(warning)(**values, trip_id=target_trip_id))
+    await session.flush()

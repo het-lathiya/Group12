@@ -1,8 +1,7 @@
-"""Trip routes API-07, API-08, API-10, API-11, API-14 and API-15 (specification §6.6.2; FR-005,
+"""Trip routes API-07, API-08, API-10 to API-15 (specification §6.6.2; FR-005,
 FR-007 to FR-010, FR-013), and the saved places API-19 to API-21 (§6.6.3; FR-020, IMP-605).
 
-API-12 and API-13 are declared with their final shapes and answer 501 NOT_IMPLEMENTED until
-IMP-602 builds them (IMD-37).
+API-12 and API-13 (IMP-602) sit behind the trip_management switch (IMD-11).
 
 Mounted under /api/v1, whose router requires CurrentUser (IMP-108); the user comes from the token.
 """
@@ -13,7 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Response, status
 
 from app.auth.deps import CurrentUser, DbSession
-from app.core.errors import EndpointNotImplemented
+from app.itinerary import service as itinerary_service
 from app.places.schemas import PlaceSummary
 from app.schemas.common import Page
 from app.trips import service
@@ -63,8 +62,8 @@ async def update_trip(
     response_class=Response,
     summary="API-12 Delete one of my trips",
 )
-async def delete_trip(trip_id: UUID) -> None:
-    raise EndpointNotImplemented()
+async def delete_trip(trip_id: UUID, user: CurrentUser, session: DbSession) -> None:
+    await service.delete_trip(session, user.user_id, trip_id)
 
 
 @router.post(
@@ -73,8 +72,10 @@ async def delete_trip(trip_id: UUID) -> None:
     status_code=status.HTTP_201_CREATED,
     summary="API-13 Duplicate one of my trips",
 )
-async def duplicate_trip(trip_id: UUID) -> TripOut:
-    raise EndpointNotImplemented()
+async def duplicate_trip(trip_id: UUID, user: CurrentUser, session: DbSession) -> TripOut:
+    return await service.duplicate_trip(
+        session, user.user_id, trip_id, copy_plan=itinerary_service.copy_plan
+    )
 
 
 @router.put(

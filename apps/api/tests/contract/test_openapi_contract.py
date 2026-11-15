@@ -15,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.auth.deps import current_user
+from app.auth.tokens import TokenClaims
 from app.core.config import Settings
 from app.main import create_app
 from app.openapi_export import CONTRACT_FILE, openapi_document, render
@@ -151,12 +152,14 @@ def test_ai_schemas_are_exported_with_the_contract() -> None:
 def test_declared_route_answers_501_with_the_envelope(
     clean_settings_env: pytest.MonkeyPatch,
 ) -> None:
-    # API-12 is an IMD-37 stub until IMP-602; the token check is overridden, so no database.
+    # API-31 is an IMD-37 stub until IMP-607; the token check is overridden, so no database.
     settings = Settings(
         app_env="test", ai_provider="MOCK", database_url="postgresql+psycopg://t@db.invalid/t"
     )
     app = create_app(settings)
-    app.dependency_overrides[current_user] = lambda: None
-    response = TestClient(app).delete(f"{V1}/trips/{uuid.uuid4()}")
+    app.dependency_overrides[current_user] = lambda: TokenClaims(uuid.uuid4(), None)
+    response = TestClient(app).post(
+        f"{V1}/trips/{uuid.uuid4()}/itinerary/regenerate", json={"plan_revision": 1}
+    )
     assert response.status_code == 501
     assert response.json()["error"]["code"] == "NOT_IMPLEMENTED"
