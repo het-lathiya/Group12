@@ -256,3 +256,6 @@ MATRIX = (
         body=lambda _: {"plan_revision": 1},
     ),
 )
+
+# IMP-609 summary
+MATRIX = (*MATRIX, RouteCase("API-35", "GET", "/api/v1/trips/{trip_id}/summary", "foreign"))

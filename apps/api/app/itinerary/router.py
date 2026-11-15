@@ -2,8 +2,8 @@
 (specification §6.6.5; IMD-18, IMD-23).
 
 API-09 and API-24 to API-29 are built (IMP-211, IMP-309, IMP-408, IMP-504, IMP-505; API-28 and
-API-29 answer 404 while the 'alternatives' switch is off, IMD-11). The others are declared with their
-final shapes and answer 501 NOT_IMPLEMENTED until their cards build them (IMD-37): IMP-609 (API-35).
+API-29 answer 404 while the 'alternatives' switch is off, IMD-11). API-35 is IMP-609: its costs are
+API-33's answer from the budget service, passed to the itinerary service's projection.
 API-36 to API-38 and API-24 with version_id are IMP-610 (app/itinerary/versions.py, switch
 'versions').
 API-30 and API-31 live in generation/router.py and API-32 in validation/router.py (IMD-13).
@@ -14,7 +14,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 
 from app.auth.deps import CurrentUser, DbSession
-from app.core.errors import EndpointNotImplemented
+from app.budget import service as budget_service
 from app.core.rate_limit import expensive_request
 from app.itinerary import edits, service, versions
 from app.itinerary.schemas import (
@@ -121,8 +121,9 @@ async def replace_item(
     response_model=TripSummaryOut,
     summary="API-35 Read my trip's printable summary",
 )
-async def trip_summary(trip_id: UUID) -> TripSummaryOut:
-    raise EndpointNotImplemented()
+async def trip_summary(trip_id: UUID, user: CurrentUser, session: DbSession) -> TripSummaryOut:
+    costs = await budget_service.get_costs(session, user.user_id, trip_id)
+    return await service.trip_summary(session, user.user_id, trip_id, costs)
 
 
 @router.get(
