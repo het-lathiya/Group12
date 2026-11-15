@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/client";
 import { useCosts, useUpdateBudgetSettings } from "@/lib/api/queries";
 import type { components } from "@/lib/api/schema";
+import { isEnabled } from "@/lib/flags";
 
 type CostSummary = components["schemas"]["CostSummaryOut"];
 
@@ -24,9 +25,18 @@ const allowance = z
     error: "Enter 0 or more, with at most 2 decimal places.",
   });
 
+// API-34 contingency_pct: a whole number from 0 to 50 (BF-08).
+const contingency = z
+  .string()
+  .trim()
+  .refine((value) => /^\d{1,2}$/.test(value) && Number(value) <= 50, {
+    error: "Enter a whole number from 0 to 50.",
+  });
+
 export const budgetSettingsSchema = z.object({
   transport_allowance_per_day: allowance,
   stay_budget_per_night: allowance,
+  contingency_pct: contingency.optional(),
 });
 type Values = z.infer<typeof budgetSettingsSchema>;
 
@@ -43,10 +53,12 @@ const FIELDS = [
   },
 ] as const;
 const HINT = "Your own figure. Shown as Traveller input in costs.";
+const NO_BUFFER = "No contingency buffer is included in this estimate.";
 
 /**
  * BudgetSettingsForm (§7.5; FR-072, IMP-411): the traveller's own transport and stay figures,
- * saved with API-34. Each line shows what the API returned; the browser computes no totals.
+ * and the contingency percentage (FR-075, IMP-608), saved with API-34. Each line shows what the
+ * API returned; the browser computes no totals.
  */
 export function BudgetSettingsForm({
   tripId,
@@ -88,28 +100,35 @@ function Form({
     register,
     handleSubmit,
     setError,
-    formState: { errors },
+    formState: { errors, dirtyFields },
   } = useForm<Values>({
     resolver: zodResolver(budgetSettingsSchema),
     defaultValues: {
       transport_allowance_per_day:
         costs.settings.transport_allowance_per_day ?? "",
       stay_budget_per_night: costs.settings.stay_budget_per_night ?? "",
+      contingency_pct: String(costs.settings.contingency_pct),
     },
   });
   const shown = update.data ?? costs;
+  const contingencyOn = isEnabled("contingency");
 
   async function submit(values: Values) {
     try {
       await update.mutateAsync({
         transport_allowance_per_day: values.transport_allowance_per_day || null,
         stay_budget_per_night: values.stay_budget_per_night || null,
+        // Sent only when changed, so a save of the allowances never touches the buffer.
+        ...(contingencyOn && dirtyFields.contingency_pct
+          ? { contingency_pct: Number(values.contingency_pct) }
+          : {}),
       });
     } catch (error) {
       if (!(error instanceof ApiError)) return; // shown below from update.error
       for (const { field, message } of error.details) {
         const known = FIELDS.find(({ name }) => field === name);
         if (known) setError(known.name, { message });
+        if (field === "contingency_pct") setError(field, { message });
       }
     }
   }
@@ -160,6 +179,34 @@ function Form({
             </Field>
           );
         })}
+        {contingencyOn ? (
+          <Field
+            id="contingency_pct"
+            label="Contingency buffer (%)"
+            hint="From 0 to 50. Added to the high estimate as its own line."
+            error={errors.contingency_pct?.message}
+          >
+            {(describedBy) => (
+              <>
+                <Input
+                  id="contingency_pct"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  aria-describedby={describedBy}
+                  aria-invalid={errors.contingency_pct ? true : undefined}
+                  {...register("contingency_pct")}
+                />
+                <p className="text-sm text-muted-foreground">
+                  {shown.contingency.pct > 0
+                    ? `In costs: ${shown.currency} ${shown.contingency.amount}, Estimate`
+                    : NO_BUFFER}
+                </p>
+              </>
+            )}
+          </Field>
+        ) : (
+          <p className="text-sm text-muted-foreground">{NO_BUFFER}</p>
+        )}
       </div>
       {update.isError &&
         !(update.error instanceof ApiError && update.error.details.length) && (
