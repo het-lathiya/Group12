@@ -7,6 +7,12 @@ network), the budget engine and ``validator.validate``. Step 10 (repair, IMP-502
 The provider comes from ``--provider`` on a copy of the settings, so the application default
 (``AI_PROVIDER``) never changes. GEMINI runs are manual and refused without ``GEMINI_API_KEY``.
 
+``--prompt-version`` (IMD-195) names the itinerary_generate version every request is sent with,
+overriding the version the frozen requests name; a gr-2 version gets the request grounded with no
+passages, as the pipeline does when retrieval finds nothing. The record states the version used
+and ``prompt_version_overridden``. MOCK does not read the prompt text, so only a GEMINI run shows
+the effect of a prompt version.
+
 Writes ``<out>/run.json`` (the record), ``<out>/scores.json`` and ``<out>/raw/<case>_<repeat>.json``.
 Exit codes: 0 done, 1 dataset unreadable or not matching its manifest, 2 provider not available,
 3 run record incomplete (nothing written; IMP-514). Keys and prompt bodies are never written.
@@ -32,6 +38,7 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 from app.ai.errors import ProviderError, ProviderInvalidOutput
 from app.ai.factory import get_provider
 from app.ai.limits import enforce_input_limit
+from app.ai.prompts import registry
 from app.ai.providers.base import ModelProvider
 from app.budget import engine
 from app.core.config import Settings, get_settings
@@ -44,7 +51,12 @@ from app.places.schemas import Destination, PlaceSummary
 from app.rag import service as rag_service
 from app.routing.estimate import TravelEstimate, TravelMode
 from app.routing.service import RoutablePlace, travel_time
-from app.schemas.ai import GenerationRequest, ItineraryOutput, ShortlistPlace
+from app.schemas.ai import (
+    GROUNDED_INPUT_SCHEMA_VERSION,
+    GenerationRequest,
+    ItineraryOutput,
+    ShortlistPlace,
+)
 from app.trips.schemas import PreferencesOut, TripDestination, TripOut, TripStatus
 from app.validation import output_check
 from app.validation.rules import ValidationContext
@@ -63,6 +75,7 @@ BLOCKING: Final = frozenset({"UNKNOWN_PLACE", "OUTSIDE_TRIP_DATES", "OVERLAP", "
 SUITES: Final = ("generation", "retrieval")
 # Retrieval suite: the queries carry preferences only, so every query plans the same trip frame.
 GROUNDED_PROMPT: Final = ("itinerary_generate", "v2")
+GENERATE_TEMPLATE: Final = "itinerary_generate"
 TRIP_START: Final = date(2027, 3, 1)
 TRIP_DAYS: Final = 2
 TRIP_ADULTS: Final = 2
@@ -102,7 +115,7 @@ async def score_case(
     provider: ModelProvider, case: dict[str, Any], repeat: int
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """(score, raw output) of one attempt."""
-    request = _grouped(GenerationRequest.model_validate(case["request"]))
+    request = _for_template(_grouped(GenerationRequest.model_validate(case["request"])))
     score: dict[str, Any] = {
         "case_id": case["id"],
         "repeat": repeat,
@@ -189,6 +202,17 @@ def _grouped(request: GenerationRequest) -> GenerationRequest:
         request.limits.max_items_per_day,
     )
     return request.model_copy(update={"day_hints": hints})
+
+
+def _for_template(request: GenerationRequest) -> GenerationRequest:
+    """gr-2 for a template that reads gr-2, with no passages, as ``request_builder`` builds it."""
+    meta = registry.load(request.prompt_template_id, request.prompt_version).meta
+    grounded = meta.input_schema_version == GROUNDED_INPUT_SCHEMA_VERSION
+    return request_builder.ground(request, None) if grounded else request
+
+
+def _with_version(cases: list[dict[str, Any]], version: str) -> list[dict[str, Any]]:
+    return [case | {"request": case["request"] | {"prompt_version": version}} for case in cases]
 
 
 def _costs(
@@ -494,6 +518,8 @@ def report(record: dict[str, Any]) -> str:
         "",
         f"Dataset {record['dataset_version']} (sha256 {record['dataset_sha256'][:12]}), provider "
         f"{record['provider']}, embedding model {record['embedding_model_id']}, commit {record['git_commit']}.",
+        f"Prompt {record['prompt_template_id']} {record['prompt_version']} (from the run record)."
+        + (" MOCK does not read the prompt text." if record["provider"] == "MOCK" else ""),
         "",
         "| Scope | Queries | recall@6 | Place hit rate (vector) | Place hit rate (lexical) "
         "| Citation validity | Grounding rate |",
@@ -565,7 +591,15 @@ def main(argv: list[str] | None = None, settings: Settings | None = None) -> int
     parser.add_argument("--provider", required=True, choices=PROVIDERS)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--out", type=Path, help="default eval/results/<run_id>/")
+    parser.add_argument(
+        "--prompt-version",
+        choices=sorted(v for t, v in registry.load_all() if t == GENERATE_TEMPLATE),
+        help="itinerary_generate version for every request (default: the version each request "
+        "names); MOCK does not read the prompt text",
+    )
     args = parser.parse_args(argv)
+    if args.suite == "retrieval" and args.prompt_version:
+        parser.error("--prompt-version applies to the generation suite only")
     if args.suite == "retrieval":
         settings = settings or get_settings()
         reason = unavailable(args.provider, settings)
@@ -586,6 +620,8 @@ def main(argv: list[str] | None = None, settings: Settings | None = None) -> int
         print(reason, file=sys.stderr)
         return 2
     provider = get_provider(settings.model_copy(update={"ai_provider": args.provider}))
+    if args.prompt_version:
+        cases = _with_version(cases, args.prompt_version)
 
     scores, raw = asyncio.run(evaluate(provider, cases, args.repeats))
     run_id = f"{started:%Y%m%dT%H%M%SZ}-{args.provider.lower()}"
@@ -596,7 +632,8 @@ def main(argv: list[str] | None = None, settings: Settings | None = None) -> int
         dataset=dataset,
         provider=args.provider,
         metadata=provider.get_model_metadata(),
-        prompt=(first["prompt_template_id"], first["prompt_version"]),
+        template=registry.load(first["prompt_template_id"], first["prompt_version"]),
+        prompt_version_overridden=args.prompt_version is not None,
         # PD-IMP-301-2: not on the protocol; the pipeline reads it the same way.
         settings_sent=getattr(provider, "generation_settings", {}),
         repeats=args.repeats,
