@@ -15,7 +15,8 @@ unlocked items after it shift forward to max(own start, previous end + travel + 
 (FR-060). Kept items keep their note and ``source_chunk_ids``; a replaced item drops them, since
 they describe the old place. The routes (API-25 to API-29) are IMP-408, IMP-409, IMP-504 and
 IMP-505; they translate their bodies into these operations (``patch_item`` and ``remove_item``
-for API-26 and API-27).
+for API-26 and API-27). API-38 (IMP-610) rebuilds the plan from a snapshot with ``Restore`` and
+reason restore; every version write ends with the retention rule (``service.retain_versions``).
 """
 
 from collections.abc import Sequence
@@ -113,7 +114,15 @@ class LockAndEdit:
     is_locked: bool
 
 
-EditOperation = Move | Retime | Remove | Add | Lock | Replace | LockAndEdit
+@dataclass(frozen=True)
+class Restore:
+    """API-38 (IMP-610): rebuild every day from a snap-1 snapshot; costs and travel are
+    recalculated, never copied (§5.2)."""
+
+    snapshot: dict[str, Any]
+
+
+EditOperation = Move | Retime | Remove | Add | Lock | Replace | LockAndEdit | Restore
 
 
 @dataclass
@@ -140,7 +149,13 @@ class Plan:
 
 
 async def apply_edit(
-    session: AsyncSession, user_id: UUID, trip_id: UUID, base_revision: int, op: EditOperation
+    session: AsyncSession,
+    user_id: UUID,
+    trip_id: UUID,
+    base_revision: int,
+    op: EditOperation,
+    *,
+    reason: str = "edit",
 ) -> EditResultOut:
     trip_row = await repository.lock_trip(session, trip_id, user_id)
     if trip_row is None:
@@ -183,7 +198,7 @@ async def apply_edit(
     await repository.insert_version(
         session,
         trip_id,
-        reason="edit",
+        reason=reason,
         plan_revision=plan_revision,
         snapshot={
             "schema": service.SNAPSHOT_SCHEMA,
@@ -195,6 +210,7 @@ async def apply_edit(
         generation_id=None,
         created_by=user_id,
     )
+    await service.retain_versions(session, trip_id)
     generation = await repository.latest_completed_generation(session, trip_id)
     days_out, totals = await service.plan_out(session, trip, day_rows, rows, generation)
     return EditResultOut(
@@ -523,7 +539,56 @@ async def _apply(session: AsyncSession, plan: Plan, op: EditOperation) -> None:
             _priced(item, place, plan.trip)
             plan.places[place.id] = place
             plan.changed.add(day_number)
+        case Restore(snapshot):
+            await _restore(session, plan, snapshot)
     await session.flush()  # new items get their IDs
+
+
+async def _restore(session: AsyncSession, plan: Plan, snapshot: dict[str, Any]) -> None:
+    """Replace the days and items with the snapshot's: locks, notes, origins and citations come
+    back (A1 §5.5); dates follow the trip's start date; prices come from the engine."""
+    await repository.delete_days(session, plan.trip.id)
+    plan.days.clear()
+    plan.items.clear()
+    snap_days = sorted(snapshot.get("days", []), key=lambda day: day["day_number"])
+    ids = {UUID(item["place_id"]) for day in snap_days for item in day["items"]}
+    places = {place.id: place for place in await repository.places_by_ids(session, ids)}
+    for snap_day in snap_days:
+        number = snap_day["day_number"]
+        day = ItineraryDay(
+            id=uuid4(),
+            trip_id=plan.trip.id,
+            day_number=number,
+            plan_date=plan.trip.start_date + timedelta(days=number - 1),
+            theme=snap_day.get("theme"),
+        )
+        session.add(day)
+        plan.days[number], plan.items[number] = day, []
+        for snap_item in snap_day["items"]:
+            place = places.get(UUID(snap_item["place_id"]))
+            if place is None:  # shortcut: a place removed from the data is not restored
+                continue
+            item = ItineraryItem(
+                id=uuid4(),
+                trip_id=plan.trip.id,
+                day_id=day.id,
+                place_id=place.id,
+                position=len(plan.items[number]) + 1,
+                slot_type=snap_item["slot_type"],
+                start_time=time.fromisoformat(snap_item["start_time"]),
+                duration_min=snap_item["duration_min"],
+                origin=snap_item["origin"],
+                note=snap_item.get("note"),
+                note_origin=snap_item.get("note_origin", "none"),
+                is_locked=snap_item.get("is_locked", False),
+                source_chunk_ids=[UUID(c) for c in snap_item.get("source_chunk_ids", [])],
+            )
+            _priced(item, place, plan.trip)
+            session.add(item)
+            plan.items[number].append(item)
+            plan.places[place.id] = place
+        plan.changed.add(number)
+    await session.flush()  # days before items
 
 
 def _minutes(clock: time) -> int:

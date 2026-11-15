@@ -475,3 +475,256 @@ async def test_versions_switch_off_hides_the_routes_and_version_reads(
     # The current plan stays readable (TC-372 floor journey).
     current = await api_client.get(f"{url}/itinerary", headers=auth_user.headers)
     assert current.status_code == 200
+
+
+# API-38 restore (FR-095 AC2: TC-257, TC-318) and retention (IMD-18: TC-319)
+
+
+def visits(itinerary: dict[str, Any]) -> list[tuple[Any, ...]]:
+    return [
+        (day["day_number"], i["place"]["id"], i["start_time"], i["duration_min"], i["is_locked"])
+        for day in itinerary["days"]
+        for i in day["items"]
+    ]
+
+
+async def read(client: httpx.AsyncClient, user: AuthUser, trip_id: uuid.UUID) -> dict[str, Any]:
+    response = await client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=user.headers)
+    assert response.status_code == 200, response.text
+    body: dict[str, Any] = response.json()
+    return body
+
+
+async def remove_first(
+    client: httpx.AsyncClient, user: AuthUser, itinerary: dict[str, Any]
+) -> httpx.Response:
+    item = itinerary["days"][0]["items"][0]
+    return await client.delete(
+        f"/api/v1/itinerary/items/{item['id']}",
+        params={"plan_revision": itinerary["plan_revision"]},
+        headers=user.headers,
+    )
+
+
+@pytest.mark.asyncio
+async def test_tc_257_tc_318_restore_makes_the_version_current_and_keeps_the_replaced_plan(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    original = await read(api_client, auth_user, trip_id)
+    edited = await remove_first(api_client, auth_user, original)
+    assert edited.status_code == 200, edited.text
+    replaced = await read(api_client, auth_user, trip_id)
+    assert visits(replaced) != visits(original)
+
+    restored = await api_client.post(
+        f"/api/v1/trips/{trip_id}/versions/{original['version_id']}/restore",
+        json={"plan_revision": replaced["plan_revision"]},
+        headers=auth_user.headers,
+    )
+
+    assert restored.status_code == 200, restored.text
+    body = restored.json()
+    assert body["is_current"] is True
+    assert body["plan_revision"] == replaced["plan_revision"] + 1
+    assert visits(body) == visits(original)
+    # Costs and travel are recalculated by the engine and routing, not copied (§5.2).
+    assert body["totals"] == original["totals"]
+    assert [i["travel_from_previous"] is None for day in body["days"] for i in day["items"]] == [
+        i["travel_from_previous"] is None for day in original["days"] for i in day["items"]
+    ]
+    assert body == await read(api_client, auth_user, trip_id)
+
+    listed = (
+        await api_client.get(f"/api/v1/trips/{trip_id}/versions", headers=auth_user.headers)
+    ).json()
+    newest, kept = listed[0], listed[1]
+    assert (newest["reason"], newest["plan_revision"]) == ("restore", body["plan_revision"])
+    assert body["version_id"] == newest["id"]
+    # TC-318: the replaced plan stays in history and reads back as it was.
+    assert (kept["reason"], kept["plan_revision"]) == ("restore", replaced["plan_revision"])
+    old = await api_client.get(
+        f"/api/v1/trips/{trip_id}/itinerary",
+        params={"version_id": kept["id"]},
+        headers=auth_user.headers,
+    )
+    assert visits(old.json()) == visits(replaced)
+
+
+@pytest.mark.asyncio
+async def test_restore_a_stale_screen_editing_after_a_restore_gets_409_stale_plan(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    screen = await read(api_client, auth_user, trip_id)
+    restored = await api_client.post(
+        f"/api/v1/trips/{trip_id}/versions/{screen['version_id']}/restore",
+        json={"plan_revision": screen["plan_revision"]},
+        headers=auth_user.headers,
+    )
+    assert restored.status_code == 200, restored.text
+    before = await counts(db_session, trip_id)
+
+    stale_edit = await api_client.delete(
+        f"/api/v1/itinerary/items/{restored.json()['days'][0]['items'][0]['id']}",
+        params={"plan_revision": screen["plan_revision"]},
+        headers=auth_user.headers,
+    )
+    stale_restore = await api_client.post(
+        f"/api/v1/trips/{trip_id}/versions/{screen['version_id']}/restore",
+        json={"plan_revision": screen["plan_revision"]},
+        headers=auth_user.headers,
+    )
+
+    for response in (stale_edit, stale_restore):
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "STALE_PLAN"
+    assert await counts(db_session, trip_id) == before
+
+
+@pytest.mark.asyncio
+async def test_restore_brings_back_locks_notes_and_citations(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    first = await db_session.scalar(
+        select(ItineraryItem).where(ItineraryItem.trip_id == trip_id).limit(1)
+    )
+    assert first is not None
+    place_id, chunk = first.place_id, uuid.uuid4()
+    await db_session.execute(
+        update(ItineraryItem)
+        .where(ItineraryItem.id == first.id)
+        .values(source_chunk_ids=[chunk], is_locked=True, note="Go early.", note_origin="user")
+    )
+    base = await revision(db_session, trip_id)
+    saved = await save(api_client, auth_user, trip_id, "With notes", base)
+    assert saved.status_code == 201, saved.text
+    await db_session.execute(
+        update(ItineraryItem)
+        .where(ItineraryItem.trip_id == trip_id)
+        .values(source_chunk_ids=[], is_locked=False, note=None, note_origin="none")
+    )
+
+    restored = await api_client.post(
+        f"/api/v1/trips/{trip_id}/versions/{saved.json()['id']}/restore",
+        json={"plan_revision": base},
+        headers=auth_user.headers,
+    )
+
+    assert restored.status_code == 200, restored.text
+    db_session.expire_all()
+    row = await db_session.scalar(
+        select(ItineraryItem).where(
+            ItineraryItem.trip_id == trip_id, ItineraryItem.place_id == place_id
+        )
+    )
+    assert row is not None
+    assert (row.source_chunk_ids, row.is_locked, row.note, row.note_origin) == (
+        [chunk],
+        True,
+        "Go early.",
+        "user",
+    )
+
+
+@pytest.mark.asyncio
+async def test_restore_of_a_missing_version_is_404_and_changes_nothing(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    before = await counts(db_session, trip_id)
+    response = await api_client.post(
+        f"/api/v1/trips/{trip_id}/versions/{uuid.uuid4()}/restore",
+        json={"plan_revision": before["revision"]},
+        headers=auth_user.headers,
+    )
+    assert response.status_code == 404, response.text
+    assert await counts(db_session, trip_id) == before
+
+
+async def version_rows(session: AsyncSession, trip_id: uuid.UUID) -> list[tuple[int, str | None]]:
+    session.expire_all()
+    rows = await session.execute(
+        select(ItineraryVersion.version_no, ItineraryVersion.name)
+        .where(ItineraryVersion.trip_id == trip_id)
+        .order_by(ItineraryVersion.version_no)
+    )
+    return [(row.version_no, row.name) for row in rows]
+
+
+async def snapshots(session: AsyncSession, user: AuthUser, trip_id: uuid.UUID, n: int) -> None:
+    for _ in range(n):
+        async with session.begin_nested():
+            await versions.snapshot_before_regeneration(session, user.user_id, trip_id)
+
+
+@pytest.mark.asyncio
+async def test_tc_319_the_limit_removes_only_the_oldest_automatic_version(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    base = await revision(db_session, trip_id)
+    for name in ("Named one", "Named two"):
+        assert (await save(api_client, auth_user, trip_id, name, base)).status_code == 201
+    # v1 fallback (automatic), v2 and v3 named, then automatic snapshots up to the limit.
+    await snapshots(db_session, auth_user, trip_id, 17)
+    assert len(await version_rows(db_session, trip_id)) == 20
+
+    await snapshots(db_session, auth_user, trip_id, 1)
+
+    rows = await version_rows(db_session, trip_id)
+    assert len(rows) == 20
+    assert rows[0] == (2, "Named one")  # v1, the oldest automatic one, is gone
+    assert rows[1] == (3, "Named two")
+    assert rows[-1][0] == 21
+
+    # Named versions are never pruned, even past the limit: automatic ones go first.
+    for index in range(19):
+        response = await save(api_client, auth_user, trip_id, f"Kept {index}", base)
+        assert response.status_code == 201, response.text
+    rows = await version_rows(db_session, trip_id)
+    named = [name for _, name in rows if name]
+    assert len(named) == 21
+    assert [no for no, name in rows if name is None] == []  # all automatic ones pruned
+    assert len(rows) == 21
+
+
+@pytest.mark.asyncio
+async def test_retention_with_the_switch_off_keeps_one_backup_copy(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: Queue,
+    versions_off: None,
+) -> None:
+    trip_id = await planned_trip(api_client, db_session, jobs_queue, auth_user, destination)
+    await snapshots(db_session, auth_user, trip_id, 3)
+    edited = await remove_first(api_client, auth_user, await read(api_client, auth_user, trip_id))
+    assert edited.status_code == 200, edited.text
+
+    rows = await version_rows(db_session, trip_id)
+    assert [no for no, _ in rows] == [4, 5]  # the backup copy and the current plan's version
+    current = await read(api_client, auth_user, trip_id)
+    assert current["version_id"] is not None

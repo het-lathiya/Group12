@@ -347,6 +347,27 @@ async def list_versions(session: AsyncSession, trip_id: UUID) -> list[ItineraryV
     return list(await session.scalars(query))
 
 
+async def version_heads(session: AsyncSession, trip_id: UUID) -> list[tuple[UUID, str | None]]:
+    """(id, name) of the trip's versions, newest first, for the retention rule."""
+    query = (
+        select(ItineraryVersion.id, ItineraryVersion.name)
+        .where(ItineraryVersion.trip_id == trip_id)
+        .order_by(ItineraryVersion.version_no.desc())
+    )
+    return [(row.id, row.name) for row in await session.execute(query)]
+
+
+async def delete_versions(session: AsyncSession, version_ids: Sequence[UUID]) -> None:
+    if version_ids:
+        await session.execute(delete(ItineraryVersion).where(ItineraryVersion.id.in_(version_ids)))
+
+
+async def delete_days(session: AsyncSession, trip_id: UUID) -> None:
+    """The trip's days and, by the foreign key's cascade, their items; warnings stay with their
+    revision (FR-058)."""
+    await session.execute(delete(ItineraryDay).where(ItineraryDay.trip_id == trip_id))
+
+
 async def version_name_taken(session: AsyncSession, trip_id: UUID, name: str) -> bool:
     query = select(
         exists().where(ItineraryVersion.trip_id == trip_id, ItineraryVersion.name == name)
