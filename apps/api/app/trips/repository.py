@@ -9,12 +9,12 @@ preference and must-visit functions take a trip_id that the service has just rea
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, delete, exists, func, select, update
+from sqlalchemy import Select, delete, exists, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -203,3 +203,57 @@ async def delete_saved(session: AsyncSession, trip_id: UUID, place_id: UUID) -> 
             TripPlace.relation == SAVED,
         )
     )
+
+
+# ---------- Delete, duplicate and purge (API-12, API-13, IMD-31; IMP-602) ----------
+
+
+async def soft_delete(session: AsyncSession, trip_id: UUID) -> None:
+    """API-12: hide a trip the service has just read with ``get_owned``; purged after 30 days."""
+    await session.execute(update(Trip).where(Trip.id == trip_id).values(deleted_at=func.now()))
+
+
+async def insert_copy(session: AsyncSession, source: Trip, *, title: str, status: str) -> UUID:
+    """API-13: a new trip with the source's settings, plan_revision 0 until its plan is copied."""
+    trip = Trip(
+        user_id=source.user_id,
+        title=title,
+        destination_id=source.destination_id,
+        start_date=source.start_date,
+        end_date=source.end_date,
+        adults=source.adults,
+        children=source.children,
+        group_needs=list(source.group_needs),
+        budget_amount=source.budget_amount,
+        budget_currency=source.budget_currency,
+        status=status,
+        plan_revision=0,
+        plan_stale=source.plan_stale,
+    )
+    session.add(trip)
+    await session.flush()
+    return trip.id
+
+
+_NOT_COPIED = frozenset({"id", "trip_id", "created_at", "updated_at"})
+
+
+async def copy_preferences_and_places(
+    session: AsyncSession, source_id: UUID, target_id: UUID
+) -> None:
+    """API-13: the source's trip_preferences row and every trip_places row (any relation)."""
+    for model in (TripPreferences, TripPlace):
+        table = model.__table__
+        columns = [c.name for c in table.columns if c.name not in _NOT_COPIED]
+        rows = select(literal(target_id), *(table.c[name] for name in columns)).where(
+            table.c.trip_id == source_id
+        )
+        await session.execute(insert(model).from_select(["trip_id", *columns], rows))
+
+
+async def purge_deleted(session: AsyncSession, deleted_before: datetime) -> int:
+    """IMD-31: delete trips soft-deleted before the cut-off; their child rows go by cascade."""
+    removed = await session.scalars(
+        delete(Trip).where(Trip.deleted_at < deleted_before).returning(Trip.id)
+    )
+    return len(removed.all())

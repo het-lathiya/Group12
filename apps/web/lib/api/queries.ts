@@ -651,3 +651,48 @@ export function useRestoreVersion(tripId: string) {
       ),
   });
 }
+
+// IMP-602 trip actions
+/** API-12: soft delete one trip (§7.4: invalidate `trips` and `latestItinerary`). */
+export function useDeleteTrip(tripId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () =>
+      unwrap(
+        await api().DELETE("/api/v1/trips/{trip_id}", {
+          params: { path: { trip_id: tripId } },
+        }),
+      ),
+    onSuccess: async () => {
+      queryClient.removeQueries({ queryKey: queryKeys.trip(tripId) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.trips() }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.latestItinerary(),
+        }),
+      ]);
+    },
+  });
+}
+
+/** API-13: copy one trip with its plan (§7.4: invalidate `trips` and `latestItinerary`). */
+export function useDuplicateTrip(tripId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () =>
+      unwrap(
+        await api().POST("/api/v1/trips/{trip_id}/duplicate", {
+          params: { path: { trip_id: tripId } },
+        }),
+      ),
+    onSuccess: async (trip) => {
+      queryClient.setQueryData(queryKeys.trip(trip.id), trip);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.trips() }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.latestItinerary(),
+        }),
+      ]);
+    },
+  });
+}
