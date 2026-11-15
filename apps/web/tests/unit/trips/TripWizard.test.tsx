@@ -688,3 +688,27 @@ it("IMP-510: edit mode preloads details and PATCHes the same trip before prefere
   });
   expect(posts()[0].body).not.toHaveProperty("plan_stale");
 });
+
+// IMP-601: FR-004 AC2, the new trip's preferences start from the profile's defaults.
+it("IMP-601: unsaved trip preferences are prefilled from the profile defaults", async () => {
+  vi.stubGlobal("fetch", (request: Request) =>
+    new URL(request.url).pathname === "/api/v1/me"
+      ? server.json({
+          id: "00000000-0000-4000-8000-000000000009",
+          email: null,
+          display_name: null,
+          home_country: null,
+          preferred_currency: "INR",
+          default_preferences: { pace: "relaxed", interests: ["food"] },
+          ai_notice_ack_at: null,
+        })
+      : server.handle(request),
+  );
+  renderWizard(TRIP_ID);
+  await screen.findByRole("heading", { name: "Your preferences" });
+  const pace = await screen.findByRole("group", { name: /^Pace/ });
+
+  expect(
+    within(pace).getByRole("radio", { name: "Relaxed", checked: true }),
+  ).toBeInTheDocument();
+});

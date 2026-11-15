@@ -23,7 +23,8 @@ class Profile(BaseModel):
 
 
 class ProfilePatch(BaseModel):
-    """API-04 body: any of these fields (IMP-305 builds the notice flag, IMP-601 the others)."""
+    """API-04 body: any of these fields; a body naming a user is rejected (IMD-45). The currency,
+    country and default-preference rules are checked by auth/service.py (IMP-601)."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
