@@ -5,18 +5,18 @@ token (§6.2). API-16 has the must-visit picker's filters (IMP-205), the source 
 the IMP-604 filters (interest tags, price, duration, step-free, distance); API-17 reads one place
 with its hours, source and labels (IMP-604). The handlers only call places/service.py.
 
-API-19 to API-21 (IMP-605) are declared with their final shapes and answer 501 NOT_IMPLEMENTED
-until that card builds them (IMD-37).
+API-19 to API-21 (saved places, IMP-605) are served by trips/router.py: they write trip_places,
+which the trips module owns, and places must not import trips (trips already imports places).
 """
 
 from decimal import Decimal
 from typing import Annotated, Final
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.auth.deps import DbSession
-from app.core.errors import EndpointNotImplemented, ValidationFailed
+from app.core.errors import ValidationFailed
 from app.core.rate_limit import expensive_request
 from app.places import service
 from app.places.schemas import Destination, PlaceOut, PlaceSummary
@@ -112,32 +112,3 @@ async def search_places(
 @router.get("/places/{place_id}", response_model=PlaceOut, summary="API-17 Read one place")
 async def get_place(session: DbSession, place_id: UUID, trip_id: UUID | None = None) -> PlaceOut:
     return await service.get_place(session, place_id)
-
-
-@router.put(
-    "/trips/{trip_id}/saved-places/{place_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_class=Response,
-    summary="API-19 Save a place to my trip",
-)
-async def save_place(trip_id: UUID, place_id: UUID) -> None:
-    raise EndpointNotImplemented()
-
-
-@router.delete(
-    "/trips/{trip_id}/saved-places/{place_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_class=Response,
-    summary="API-20 Remove a saved place from my trip",
-)
-async def unsave_place(trip_id: UUID, place_id: UUID) -> None:
-    raise EndpointNotImplemented()
-
-
-@router.get(
-    "/trips/{trip_id}/saved-places",
-    response_model=list[PlaceSummary],
-    summary="API-21 List my trip's saved places",
-)
-async def list_saved_places(trip_id: UUID) -> list[PlaceSummary]:
-    raise EndpointNotImplemented()

@@ -544,3 +544,46 @@ export function useUpdateTrip(tripId: string) {
     },
   });
 }
+
+// IMP-605 saved places
+/** §7.4 key of API-21; saving or unsaving invalidates it. */
+export const savedPlacesKey = (tripId: string) =>
+  ["savedPlaces", tripId] as const;
+
+/** API-21 the trip's saved places; off when the `wishlist` switch is (IMD-11). */
+export function useSavedPlaces(tripId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: savedPlacesKey(tripId),
+    queryFn: async () =>
+      unwrap(
+        await api().GET("/api/v1/trips/{trip_id}/saved-places", {
+          params: { path: { trip_id: tripId } },
+        }),
+      ),
+    enabled,
+  });
+}
+
+/** API-19 saves (`save: true`) or API-20 unsaves a place; both are idempotent. */
+export function useToggleSavedPlace(tripId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      placeId,
+      save,
+    }: {
+      placeId: string;
+      save: boolean;
+    }) => {
+      const params = { path: { trip_id: tripId, place_id: placeId } };
+      const path = "/api/v1/trips/{trip_id}/saved-places/{place_id}";
+      unwrap(
+        save
+          ? await api().PUT(path, { params })
+          : await api().DELETE(path, { params }),
+      );
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: savedPlacesKey(tripId) }),
+  });
+}

@@ -1,12 +1,14 @@
 """API-06, API-16 and API-17 (§6.6.3, §6.5 Destination, PlaceSummary and PlaceOut; FR-019:
 TC-069, TC-101, TC-102; IMP-205 places-api-search part; FR-016: TC-092 to TC-094, IMP-509
-whole-task part; FR-017, FR-018: TC-095 to TC-098, IMP-604 search-api part).
+whole-task part; FR-017, FR-018: TC-095 to TC-098, IMP-604 search-api part); API-19 to API-21
+(FR-020: TC-103 to TC-105, IMP-605 whole-task part).
 
 Runs against the migrated test database with Sampleton loaded through the seed (IMP-107, IMP-205);
 every test is rolled back.
 """
 
 import uuid
+from collections.abc import Iterator
 from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
@@ -16,10 +18,13 @@ import httpx
 import pytest
 import pytest_asyncio
 from fixtures.auth import AuthUser
-from sqlalchemy import select, update
+from fixtures.db import insert_auth_user
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DataSource, Destination, Place, PlaceOpeningHours
+from app.core.config import get_settings
+from app.core.flags import is_enabled
+from app.db.models import DataSource, Destination, Place, PlaceOpeningHours, TripPlace
 from app.places import seed, vocabulary
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -738,3 +743,209 @@ async def test_place_detail_of_an_inactive_or_unknown_place_is_404(
         assert response.json()["error"]["code"] == "NOT_FOUND"
     anonymous = await api_client.get(f"/api/v1/places/{uuid.uuid4()}")
     assert anonymous.status_code == 401
+
+
+# API-19 to API-21 saved places (IMP-605; FR-020: TC-103 to TC-105), switch `wishlist`.
+# `make test-api ARGS='-k saved'`.
+
+
+@pytest.fixture
+def wishlist_on() -> None:
+    if not is_enabled(get_settings(), "wishlist"):
+        pytest.skip("wishlist is switched off in FEATURES_DISABLED (IMD-11)")
+
+
+@pytest.fixture
+def wishlist_off(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setenv("FEATURES_DISABLED", "wishlist")
+    get_settings.cache_clear()
+    yield
+    monkeypatch.undo()
+    get_settings.cache_clear()
+
+
+async def new_trip(client: httpx.AsyncClient, user: AuthUser, destination: Destination) -> str:
+    created = await client.post(
+        "/api/v1/trips",
+        json={
+            "title": "Saved places trip",
+            "destination_id": str(destination.id),
+            "start_date": "2026-12-04",
+            "end_date": "2026-12-06",
+            "adults": 1,
+        },
+        headers=user.headers,
+    )
+    assert created.status_code == 201, created.text
+    return str(created.json()["id"])
+
+
+async def place_id_of(session: AsyncSession, external_ref: str) -> uuid.UUID:
+    place_id = await session.scalar(select(Place.id).where(Place.external_ref == external_ref))
+    assert place_id is not None
+    return place_id
+
+
+def saved_url(trip_id: str, place_id: object = None) -> str:
+    base = f"/api/v1/trips/{trip_id}/saved-places"
+    return base if place_id is None else f"{base}/{place_id}"
+
+
+async def saved_names(client: httpx.AsyncClient, user: AuthUser, trip_id: str) -> list[str]:
+    response = await client.get(saved_url(trip_id), headers=user.headers)
+    assert response.status_code == 200, response.text
+    return [item["name"] for item in response.json()]
+
+
+@pytest.mark.asyncio
+async def test_tc_103_saved_place_appears_in_the_trips_saved_list_once(
+    wishlist_on: None,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip_id = await new_trip(api_client, auth_user, sampleton)
+    tower = await place_id_of(db_session, "sample-002")
+    lookout = await place_id_of(db_session, "sample-001")
+
+    assert await saved_names(api_client, auth_user, trip_id) == []
+    for place_id in (tower, lookout, tower):  # saving twice is idempotent
+        response = await api_client.put(saved_url(trip_id, place_id), headers=auth_user.headers)
+        assert response.status_code == 204, response.text
+
+    assert await saved_names(api_client, auth_user, trip_id) == [
+        "Sample Harbour Lookout (sample)",
+        "Sample Old Signal Tower (sample)",
+    ]
+    rows = await db_session.scalar(
+        select(func.count())
+        .select_from(TripPlace)
+        .where(TripPlace.trip_id == uuid.UUID(trip_id), TripPlace.place_id == tower)
+    )
+    assert rows == 1
+    items = (await api_client.get(saved_url(trip_id), headers=auth_user.headers)).json()
+    assert all(set(item) == PLACE_FIELDS for item in items)
+
+
+@pytest.mark.asyncio
+async def test_tc_104_unsaved_place_is_removed_and_unsaving_again_is_harmless(
+    wishlist_on: None,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip_id = await new_trip(api_client, auth_user, sampleton)
+    tower = await place_id_of(db_session, "sample-002")
+    await api_client.put(saved_url(trip_id, tower), headers=auth_user.headers)
+
+    for _ in range(2):
+        response = await api_client.delete(saved_url(trip_id, tower), headers=auth_user.headers)
+        assert response.status_code == 204, response.text
+    assert await saved_names(api_client, auth_user, trip_id) == []
+
+
+@pytest.mark.asyncio
+async def test_tc_105_saved_place_is_never_a_must_visit_place(
+    wishlist_on: None,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip_id = await new_trip(api_client, auth_user, sampleton)
+    tower = await place_id_of(db_session, "sample-002")
+    museum = await place_id_of(db_session, "sample-005")
+    await api_client.put(saved_url(trip_id, tower), headers=auth_user.headers)
+    prefs_url = f"/api/v1/trips/{trip_id}/preferences"
+    saved = await api_client.put(
+        prefs_url, json={"must_visit_place_ids": [str(museum)]}, headers=auth_user.headers
+    )
+    assert saved.status_code == 200, saved.text
+
+    prefs = (await api_client.get(prefs_url, headers=auth_user.headers)).json()
+    assert prefs["must_visit_place_ids"] == [str(museum)]  # the saved tower is not in it
+    assert await saved_names(api_client, auth_user, trip_id) == ["Sample Old Signal Tower (sample)"]
+
+    # A must-visit place is not saved over (409), and stays must-visit after an unsave.
+    conflict = await api_client.put(saved_url(trip_id, museum), headers=auth_user.headers)
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "CONFLICT"
+    await api_client.delete(saved_url(trip_id, museum), headers=auth_user.headers)
+    prefs = (await api_client.get(prefs_url, headers=auth_user.headers)).json()
+    assert prefs["must_visit_place_ids"] == [str(museum)]
+
+
+@pytest.mark.asyncio
+async def test_saved_place_must_be_an_active_place_of_the_trips_destination(
+    wishlist_on: None,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip_id = await new_trip(api_client, auth_user, sampleton)
+    other = await add_destination_with_place(
+        db_session, sampleton, active=True, place_name="Saved Elsewhere"
+    )
+    elsewhere = await db_session.scalar(select(Place.id).where(Place.destination_id == other.id))
+    await db_session.execute(
+        update(Place).where(Place.external_ref == "sample-003").values(is_active=False)
+    )
+    inactive = await place_id_of(db_session, "sample-003")
+
+    for place_id in (elsewhere, inactive, uuid.uuid4()):
+        response = await api_client.put(saved_url(trip_id, place_id), headers=auth_user.headers)
+        assert response.status_code == 422, response.text
+        assert [d["field"] for d in response.json()["error"]["details"]] == ["place_id"]
+    assert await saved_names(api_client, auth_user, trip_id) == []
+
+
+@pytest.mark.asyncio
+async def test_saved_places_of_another_users_trip_are_404(
+    wishlist_on: None,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip_id = await new_trip(api_client, auth_user, sampleton)
+    tower = await place_id_of(db_session, "sample-002")
+    await api_client.put(saved_url(trip_id, tower), headers=auth_user.headers)
+    other_id = uuid.uuid4()
+    await insert_auth_user(db_session, other_id, f"{other_id}@example.test")
+    other = AuthUser(user_id=other_id, email=f"{other_id}@example.test")
+
+    for method, url in (
+        ("PUT", saved_url(trip_id, tower)),
+        ("DELETE", saved_url(trip_id, tower)),
+        ("GET", saved_url(trip_id)),
+    ):
+        response = await api_client.request(method, url, headers=other.headers)
+        assert response.status_code == 404, (method, response.text)
+        assert response.json()["error"]["code"] == "NOT_FOUND"
+    assert await saved_names(api_client, auth_user, trip_id) == ["Sample Old Signal Tower (sample)"]
+
+
+@pytest.mark.asyncio
+async def test_saved_places_routes_are_404_when_wishlist_is_switched_off(
+    wishlist_off: None,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip_id = await new_trip(api_client, auth_user, sampleton)
+    tower = await place_id_of(db_session, "sample-002")
+    for method, url in (
+        ("PUT", saved_url(trip_id, tower)),
+        ("DELETE", saved_url(trip_id, tower)),
+        ("GET", saved_url(trip_id)),
+    ):
+        response = await api_client.request(method, url, headers=auth_user.headers)
+        assert response.status_code == 404, (method, response.text)
+    rows = await db_session.scalar(
+        select(func.count()).select_from(TripPlace).where(TripPlace.trip_id == uuid.UUID(trip_id))
+    )
+    assert rows == 0

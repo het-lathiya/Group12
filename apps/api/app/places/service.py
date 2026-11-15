@@ -113,6 +113,14 @@ async def active_place_names(
     return {row.id: row.name for row in rows}
 
 
+async def active_place_summaries(
+    session: AsyncSession, destination_id: UUID, place_ids: Sequence[UUID]
+) -> list[PlaceSummary]:
+    """The given places that are active in the destination, ordered by name (API-21, IMP-605)."""
+    rows = await repository.active_places_by_ids(session, destination_id, place_ids)
+    return [PlaceSummary.from_row(row) for row in rows]
+
+
 async def active_places_with_source_date(
     session: AsyncSession, destination_id: UUID
 ) -> list[tuple[Place, date | None]]:
