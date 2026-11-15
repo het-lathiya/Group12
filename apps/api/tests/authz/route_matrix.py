@@ -259,3 +259,18 @@ MATRIX = (
 
 # IMP-609 summary
 MATRIX = (*MATRIX, RouteCase("API-35", "GET", "/api/v1/trips/{trip_id}/summary", "foreign"))
+
+
+# IMP-602 trip actions
+MATRIX = (
+    *MATRIX,
+    RouteCase(
+        "API-11 archive",
+        "PATCH",
+        "/api/v1/trips/{trip_id}",
+        "foreign",
+        body=lambda _: {"status": "archived"},
+    ),
+    RouteCase("API-12", "DELETE", "/api/v1/trips/{trip_id}", "foreign"),
+    RouteCase("API-13", "POST", "/api/v1/trips/{trip_id}/duplicate", "foreign"),
+)

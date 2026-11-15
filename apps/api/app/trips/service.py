@@ -9,6 +9,9 @@ The session is the request's single transaction (app.auth.deps.DbSession): API-0
 and its default budget_settings row in it, so both are saved or neither is.
 """
 
+from collections.abc import Awaitable, Callable
+from datetime import datetime, timedelta
+from typing import Final
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +37,26 @@ from app.trips.schemas import (
     TripPatch,
     TripStatus,
 )
+
+ARCHIVED_MESSAGE: Final = "This trip is archived. Restore it before changing it."
+TRIP_MANAGEMENT: Final = "trip_management"  # IMD-11 switch of API-11 archive, API-12, API-13
+COPY_SUFFIX: Final = " (copy)"
+PURGE_AFTER: Final = timedelta(days=30)  # IMD-31
+
+# itinerary.service.copy_plan, passed in by the router: itinerary imports this module (§4 rule 6).
+CopyPlan = Callable[[AsyncSession, UUID, int, UUID], Awaitable[None]]
+
+
+def ensure_not_archived(status: str) -> None:
+    """IMD-35, FR-015 AC3: every write under an archived trip except API-11 restore, API-12 and
+    API-13 answers 409 CONFLICT. Other modules' write routes call it with the trip they read."""
+    if status == TripStatus.ARCHIVED:
+        raise Conflict(ARCHIVED_MESSAGE)
+
+
+def _trip_management_enabled() -> None:
+    if not is_enabled(get_settings(), TRIP_MANAGEMENT):
+        raise NotFound()  # IMD-11: a switched-off feature's routes answer 404
 
 
 def _to_draft(body: TripIn) -> domain.TripDraft:
@@ -153,8 +176,10 @@ async def update_trip(
     trip = row.trip
     sent = body.model_fields_set
     changes = sent - {"status"}
-    if trip.status == "archived" and changes:
-        raise Conflict("This trip is archived. Restore it before changing it.")
+    if "status" in sent:
+        _trip_management_enabled()
+    if changes:
+        ensure_not_archived(trip.status)
 
     values: dict[str, object] = {}
     if changes:
@@ -261,8 +286,7 @@ async def save_preferences(
     """API-14 in the request's single transaction: preferences, must-visit set and trip state."""
     row = await _owned(session, user_id, trip_id)
     trip = row.trip
-    if trip.status == "archived":
-        raise Conflict("This trip is archived. Restore it before changing it.")
+    ensure_not_archived(trip.status)
 
     wanted = list(body.must_visit_place_ids)
     found = await places_service.active_place_names(session, trip.destination_id, wanted)
@@ -362,3 +386,48 @@ async def place_relations(session: AsyncSession, trip: TripOut) -> dict[UUID, st
     if not is_enabled(get_settings(), "wishlist"):
         return None
     return await repository.place_relations(session, trip.id)
+
+
+async def delete_trip(session: AsyncSession, user_id: UUID, trip_id: UUID) -> None:
+    """API-12: soft delete (FR-015 AC2); hidden everywhere, purged after 30 days (IMD-31)."""
+    _trip_management_enabled()
+    await _owned(session, user_id, trip_id)
+    await repository.soft_delete(session, trip_id)
+
+
+async def duplicate_trip(
+    session: AsyncSession, user_id: UUID, trip_id: UUID, copy_plan: CopyPlan
+) -> TripOut:
+    """API-13 in the request's single transaction: the trip's settings, preferences, places,
+    budget settings and current plan with its warnings; not generations or versions (FR-015 AC1).
+    The source is only read. The copy is ready when it has preferences, else a draft (IMD-25)."""
+    _trip_management_enabled()
+    row = await _owned(session, user_id, trip_id)
+    source = row.trip
+    title = source.title[: domain.TITLE_MAX_CHARS - len(COPY_SUFFIX)] + COPY_SUFFIX
+    has_preferences = await repository.get_preferences(session, trip_id) is not None
+    copy_id = await repository.insert_copy(
+        session, source, title=title, status="ready" if has_preferences else "draft"
+    )
+    settings = await budget_repository.get_settings(session, trip_id)
+    if settings is None:
+        await budget_repository.upsert_settings(session, copy_id)
+    else:
+        await budget_repository.save_settings(
+            session,
+            copy_id,
+            {
+                "transport_allowance_per_day": settings.transport_allowance_per_day,
+                "stay_budget_per_night": settings.stay_budget_per_night,
+                "contingency_pct": settings.contingency_pct,
+            },
+        )
+    await repository.copy_preferences_and_places(session, trip_id, copy_id)
+    if row.has_itinerary:
+        await copy_plan(session, trip_id, source.plan_revision, copy_id)
+    return await get_trip(session, user_id, copy_id)
+
+
+async def purge_deleted_trips(session: AsyncSession, now: datetime) -> int:
+    """IMD-31 daily purge: trips soft-deleted more than 30 days before ``now``."""
+    return await repository.purge_deleted(session, now - PURGE_AFTER)

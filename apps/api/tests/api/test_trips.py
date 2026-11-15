@@ -1,12 +1,13 @@
-"""API-07, API-08, API-10 and API-11 (§6.6.2; FR-005, FR-007, FR-008, FR-011, FR-013: TC-063,
-TC-068 to TC-073, TC-080, TC-081, TC-085, TC-086).
+"""API-07, API-08 and API-10 to API-13 (§6.6.2; FR-005, FR-007, FR-008, FR-011 to FR-013, FR-015:
+TC-063, TC-068 to TC-073, TC-080 to TC-086, TC-089 to TC-091) and the IMD-31 trip purge.
 
 Runs against the migrated test database (tests/fixtures/db.py); every test is rolled back. The
 supported destination is the Sampleton SAMPLE fixture, loaded through the seed (IMP-107).
 """
 
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from collections.abc import Iterator
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -15,11 +16,24 @@ import pytest
 import pytest_asyncio
 from fixtures.auth import AuthUser, bearer, make_token
 from fixtures.db import insert_auth_user
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import BudgetSettings, Destination, ItineraryDay, Trip, TripPreferences
+from app.core.config import get_settings
+from app.db.models import (
+    AiGeneration,
+    BudgetSettings,
+    Destination,
+    ItineraryDay,
+    ItineraryItem,
+    ItineraryWarning,
+    Place,
+    Trip,
+    TripPlace,
+    TripPreferences,
+)
 from app.places import seed
+from app.trips import service as trips_service
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SAMPLETON = REPO_ROOT / "data" / "fixtures" / "sampleton"
@@ -874,3 +888,439 @@ async def test_preferences_mark_the_plan_stale_only_when_they_change(
 
     assert unchanged["plan_stale"] is False
     assert changed["plan_stale"] is True
+
+
+# IMP-602: dashboard list, rename, archive, delete, duplicate and purge (FR-012, FR-015: TC-082
+# to TC-084, TC-089 to TC-091; IMD-11, IMD-31, IMD-35).
+
+
+@pytest.fixture
+def trip_management_off(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setenv("FEATURES_DISABLED", "trip_management")
+    get_settings.cache_clear()
+    yield
+    monkeypatch.undo()
+    get_settings.cache_clear()
+
+
+PLAN_TABLES = (
+    "trips",
+    "trip_preferences",
+    "trip_places",
+    "budget_settings",
+    "itinerary_days",
+    "itinerary_items",
+    "itinerary_warnings",
+)
+
+
+async def stored_rows(session: AsyncSession, trip_id: str) -> dict[str, str | None]:
+    """Every row of the trip in each table, as text, to compare byte for byte."""
+    rows = {}
+    for table in PLAN_TABLES:
+        key = "id" if table == "trips" else "trip_id"
+        query = f"select json_agg(t order by t::text)::text from public.{table} t where {key} = :v"  # noqa: S608  # fixed table names
+        rows[table] = await session.scalar(text(query), {"v": uuid.UUID(trip_id)})
+    return rows
+
+
+async def planned_trip(
+    client: httpx.AsyncClient, session: AsyncSession, user: AuthUser, destination: Destination
+) -> tuple[dict[str, Any], list[Place]]:
+    """A ready trip with preferences, a must-visit place, two days of items and a warning."""
+    trip = await create(client, user, destination)
+    places = list(
+        await session.scalars(
+            select(Place).where(Place.destination_id == destination.id).order_by(Place.name)
+        )
+    )
+    saved = await client.put(
+        f"/api/v1/trips/{trip['id']}/preferences",
+        json={"interests": ["museum"], "must_visit_place_ids": [str(places[0].id)]},
+        headers=user.headers,
+    )
+    assert saved.status_code == 200, saved.text
+    trip_id = await with_itinerary(session, trip)
+    days = list(await session.scalars(select(ItineraryDay).where(ItineraryDay.trip_id == trip_id)))
+    items = [
+        ItineraryItem(
+            trip_id=trip_id,
+            day_id=day.id,
+            position=1,
+            place_id=places[index].id,
+            start_time=time(9, 30),
+            duration_min=90,
+            origin="model",
+            note="A short note.",
+            note_origin="ai",
+            is_locked=index == 0,
+            source_chunk_ids=[uuid.uuid4()] if index == 0 else [],
+        )
+        for index, day in enumerate(sorted(days, key=lambda d: d.day_number)[:2])
+    ]
+    session.add_all(items)
+    await session.flush()
+    session.add(
+        ItineraryWarning(
+            trip_id=trip_id,
+            plan_revision=1,
+            code="HOURS_UNVERIFIED",
+            severity="info",
+            message="Opening hours are not verified.",
+            day_number=1,
+            item_id=items[0].id,
+        )
+    )
+    await session.execute(update(Trip).where(Trip.id == trip_id).values(plan_revision=1))
+    await session.flush()
+    return trip, places
+
+
+# FR-012 AC1, TC-082
+
+
+@pytest.mark.asyncio
+async def test_tc_082_dashboard_lists_title_destination_dates_and_status(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    first = await create(api_client, auth_user, sampleton, title="First")
+    second = await create(api_client, auth_user, sampleton, title="Second")
+
+    page = (await api_client.get("/api/v1/trips", headers=auth_user.headers)).json()
+
+    # Same transaction, same updated_at: order is covered by test_api_08_lists_only_my_trips_newest_first.
+    assert {item["id"] for item in page["items"]} == {first["id"], second["id"]}
+    for item in page["items"]:
+        assert item["title"] in {"First", "Second"}
+        assert item["destination"]["name"] == sampleton.name
+        assert item["start_date"] == START.isoformat()
+        assert item["status"] == "draft"
+        assert item["has_itinerary"] is False
+
+
+# FR-012 AC2, TC-083
+
+
+@pytest.mark.asyncio
+async def test_tc_083_dashboard_without_trips_is_an_empty_page(
+    api_client: httpx.AsyncClient, auth_user: AuthUser
+) -> None:
+    response = await api_client.get("/api/v1/trips", headers=auth_user.headers)
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "total": 0, "limit": 20, "offset": 0}
+
+
+# FR-012 AC3, TC-084
+
+
+@pytest.mark.asyncio
+async def test_tc_084_dashboard_archived_trips_are_behind_the_filter(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    kept = await create(api_client, auth_user, sampleton, title="Kept")
+    archived = await create(api_client, auth_user, sampleton, title="Old")
+    response = await api_client.patch(
+        f"/api/v1/trips/{archived['id']}", json={"status": "archived"}, headers=auth_user.headers
+    )
+    assert response.status_code == 200, response.text
+
+    default = (await api_client.get("/api/v1/trips", headers=auth_user.headers)).json()
+    filtered = (
+        await api_client.get("/api/v1/trips?include_archived=true", headers=auth_user.headers)
+    ).json()
+
+    assert [item["id"] for item in default["items"]] == [kept["id"]]
+    assert {item["id"]: item["status"] for item in filtered["items"]} == {
+        kept["id"]: "draft",
+        archived["id"]: "archived",
+    }
+
+
+@pytest.mark.asyncio
+async def test_dashboard_rename_changes_only_the_title(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+
+    renamed = await api_client.patch(
+        f"/api/v1/trips/{trip['id']}", json={"title": "  Renamed  "}, headers=auth_user.headers
+    )
+    too_long = await api_client.patch(
+        f"/api/v1/trips/{trip['id']}", json={"title": "x" * 121}, headers=auth_user.headers
+    )
+
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["title"] == "Renamed"
+    assert renamed.json()["start_date"] == trip["start_date"]
+    assert error_fields(too_long) == ["title"]
+
+
+# FR-015 AC1, TC-089
+
+
+@pytest.mark.asyncio
+async def test_tc_089_duplicate_copies_days_items_locks_and_citations_and_leaves_the_source(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip, places = await planned_trip(api_client, db_session, auth_user, sampleton)
+    await db_session.execute(
+        update(BudgetSettings)
+        .where(BudgetSettings.trip_id == uuid.UUID(trip["id"]))
+        .values(contingency_pct=15, stay_budget_per_night=2500)
+    )
+    before = await stored_rows(db_session, trip["id"])
+
+    response = await api_client.post(
+        f"/api/v1/trips/{trip['id']}/duplicate", headers=auth_user.headers
+    )
+
+    assert response.status_code == 201, response.text
+    copy = response.json()
+    assert copy["id"] != trip["id"]
+    assert copy["title"] == "Weekend in Sampleton (copy)"
+    assert copy["status"] == "ready"
+    assert copy["plan_revision"] == 1
+    assert copy["has_itinerary"] is True
+    assert await stored_rows(db_session, trip["id"]) == before
+
+    source_id, copy_id = uuid.UUID(trip["id"]), uuid.UUID(copy["id"])
+
+    async def plan(trip_id: uuid.UUID) -> list[tuple[Any, ...]]:
+        query = (
+            select(
+                ItineraryDay.day_number,
+                ItineraryItem.position,
+                ItineraryItem.place_id,
+                ItineraryItem.start_time,
+                ItineraryItem.is_locked,
+                ItineraryItem.source_chunk_ids,
+                ItineraryItem.note,
+            )
+            .join(ItineraryDay, ItineraryDay.id == ItineraryItem.day_id)
+            .where(ItineraryItem.trip_id == trip_id)
+            .order_by(ItineraryDay.day_number)
+        )
+        return [tuple(row) for row in await db_session.execute(query)]
+
+    copied = await plan(copy_id)
+    assert copied == await plan(source_id)
+    assert [row[4] for row in copied] == [True, False]
+    assert len(copied[0][5]) == 1  # source_chunk_ids copied (A1 §6.10)
+    days = await db_session.scalar(
+        select(func.count()).select_from(ItineraryDay).where(ItineraryDay.trip_id == copy_id)
+    )
+    assert days == 3
+    warning = await db_session.scalar(
+        select(ItineraryWarning).where(ItineraryWarning.trip_id == copy_id)
+    )
+    assert warning is not None
+    assert warning.plan_revision == 1
+    copied_item = await db_session.scalar(
+        select(ItineraryItem.id).where(
+            ItineraryItem.trip_id == copy_id, ItineraryItem.place_id == places[0].id
+        )
+    )
+    assert warning.item_id == copied_item
+    preferences = await db_session.get(TripPreferences, copy_id)
+    assert preferences is not None
+    assert preferences.interests == ["museum"]
+    must_visit = await db_session.scalars(
+        select(TripPlace.place_id).where(TripPlace.trip_id == copy_id)
+    )
+    assert list(must_visit) == [places[0].id]
+    settings = await db_session.get(BudgetSettings, copy_id)
+    assert settings is not None
+    assert (settings.contingency_pct, settings.stay_budget_per_night) == (15, 2500)
+    generations = await db_session.scalar(
+        select(func.count()).select_from(AiGeneration).where(AiGeneration.trip_id == copy_id)
+    )
+    assert generations == 0
+
+
+@pytest.mark.asyncio
+async def test_duplicate_of_a_draft_without_plan_is_a_draft_at_revision_0(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    trip = await create(api_client, auth_user, sampleton, title="x" * 120)
+
+    response = await api_client.post(
+        f"/api/v1/trips/{trip['id']}/duplicate", headers=auth_user.headers
+    )
+
+    assert response.status_code == 201, response.text
+    copy = response.json()
+    assert copy["status"] == "draft"
+    assert copy["plan_revision"] == 0
+    assert copy["title"] == "x" * 113 + " (copy)"
+    assert len(copy["title"]) == 120
+
+
+@pytest.mark.asyncio
+async def test_duplicate_and_delete_of_another_users_trip_are_404(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    other_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+    before = await stored_rows(db_session, trip["id"])
+
+    duplicated = await api_client.post(
+        f"/api/v1/trips/{trip['id']}/duplicate", headers=other_user.headers
+    )
+    deleted = await api_client.delete(f"/api/v1/trips/{trip['id']}", headers=other_user.headers)
+    archived = await api_client.patch(
+        f"/api/v1/trips/{trip['id']}", json={"status": "archived"}, headers=other_user.headers
+    )
+
+    for response in (duplicated, deleted, archived):
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "NOT_FOUND"
+    assert await trip_count(db_session, other_user.user_id) == 0
+    assert await stored_rows(db_session, trip["id"]) == before
+
+
+# FR-015 AC2, TC-090
+
+
+@pytest.mark.asyncio
+async def test_tc_090_delete_hides_the_trip_and_keeps_it_recoverable(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip, _ = await planned_trip(api_client, db_session, auth_user, sampleton)
+    url = f"/api/v1/trips/{trip['id']}"
+
+    deleted = await api_client.delete(url, headers=auth_user.headers)
+    again = await api_client.delete(url, headers=auth_user.headers)
+
+    assert deleted.status_code == 204
+    assert deleted.content == b""
+    assert again.status_code == 404
+    assert (await api_client.get(url, headers=auth_user.headers)).status_code == 404
+    everything = await api_client.get(
+        "/api/v1/trips?include_archived=true", headers=auth_user.headers
+    )
+    assert everything.json()["total"] == 0
+    stored = await db_session.get(Trip, uuid.UUID(trip["id"]), populate_existing=True)
+    assert stored is not None
+    assert stored.deleted_at is not None
+    items = await db_session.scalar(
+        select(func.count())
+        .select_from(ItineraryItem)
+        .where(ItineraryItem.trip_id == uuid.UUID(trip["id"]))
+    )
+    assert items == 2  # recoverable until the purge
+
+
+# FR-015 AC3, TC-091
+
+
+@pytest.mark.asyncio
+async def test_tc_091_archived_trip_is_read_only_until_restored(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    trip, _ = await planned_trip(api_client, db_session, auth_user, sampleton)
+    url = f"/api/v1/trips/{trip['id']}"
+    prefs = {"interests": ["food"]}
+
+    archived = await api_client.patch(url, json={"status": "archived"}, headers=auth_user.headers)
+    renamed = await api_client.patch(url, json={"title": "Edited"}, headers=auth_user.headers)
+    preferences = await api_client.put(f"{url}/preferences", json=prefs, headers=auth_user.headers)
+    read = await api_client.get(url, headers=auth_user.headers)
+    restored = await api_client.patch(url, json={"status": "ready"}, headers=auth_user.headers)
+    after = await api_client.patch(url, json={"title": "Edited"}, headers=auth_user.headers)
+
+    assert archived.json()["status"] == "archived"
+    for refused in (renamed, preferences):
+        assert refused.status_code == 409
+        assert refused.json()["error"]["code"] == "CONFLICT"
+    assert read.status_code == 200
+    assert restored.json()["status"] == "ready"  # it has days (§5.4)
+    assert after.json()["title"] == "Edited"
+
+
+@pytest.mark.asyncio
+async def test_an_archived_trip_can_be_duplicated_and_deleted(
+    api_client: httpx.AsyncClient, auth_user: AuthUser, sampleton: Destination
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+    url = f"/api/v1/trips/{trip['id']}"
+    await api_client.patch(url, json={"status": "archived"}, headers=auth_user.headers)
+
+    duplicated = await api_client.post(f"{url}/duplicate", headers=auth_user.headers)
+    deleted = await api_client.delete(url, headers=auth_user.headers)
+
+    assert duplicated.status_code == 201
+    assert duplicated.json()["status"] == "draft"
+    assert deleted.status_code == 204
+
+
+# IMD-11 trip_management switch (TC-372: the list and create stay available)
+
+
+@pytest.mark.asyncio
+async def test_trip_management_off_hides_archive_delete_and_duplicate_but_not_list_or_create(
+    api_client: httpx.AsyncClient,
+    auth_user: AuthUser,
+    sampleton: Destination,
+    trip_management_off: None,
+) -> None:
+    trip = await create(api_client, auth_user, sampleton)
+    url = f"/api/v1/trips/{trip['id']}"
+
+    for response in (
+        await api_client.patch(url, json={"status": "archived"}, headers=auth_user.headers),
+        await api_client.delete(url, headers=auth_user.headers),
+        await api_client.post(f"{url}/duplicate", headers=auth_user.headers),
+    ):
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "NOT_FOUND"
+    listed = (await api_client.get("/api/v1/trips", headers=auth_user.headers)).json()
+    assert [item["id"] for item in listed["items"]] == [trip["id"]]
+    edited = await api_client.patch(url, json={"title": "Wizard edit"}, headers=auth_user.headers)
+    assert edited.status_code == 200
+
+
+# IMD-31 purge
+
+
+@pytest.mark.asyncio
+async def test_purge_removes_trips_deleted_more_than_30_days_ago_and_keeps_younger_ones(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sampleton: Destination,
+) -> None:
+    old, _ = await planned_trip(api_client, db_session, auth_user, sampleton)
+    young = await create(api_client, auth_user, sampleton, title="Young")
+    live = await create(api_client, auth_user, sampleton, title="Live")
+    now = datetime.now(UTC)
+    for trip, age in ((old, timedelta(days=31)), (young, timedelta(days=29))):
+        await db_session.execute(
+            update(Trip).where(Trip.id == uuid.UUID(trip["id"])).values(deleted_at=now - age)
+        )
+
+    purged = await trips_service.purge_deleted_trips(db_session, now)
+
+    assert purged == 1
+    remaining = set(
+        await db_session.scalars(select(Trip.id).where(Trip.user_id == auth_user.user_id))
+    )
+    assert remaining == {uuid.UUID(young["id"]), uuid.UUID(live["id"])}
+    orphans = await db_session.scalar(
+        select(func.count())
+        .select_from(ItineraryItem)
+        .where(ItineraryItem.trip_id == uuid.UUID(old["id"]))
+    )
+    assert orphans == 0  # children by cascade
