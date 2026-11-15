@@ -766,3 +766,18 @@ export function useFilteredPlacesPage(
     placeholderData: keepPreviousData,
   });
 }
+
+// IMP-604 detail drawer
+/** API-17 one place with hours, source and labels (key `['place', placeId]`). */
+export function usePlace(placeId: string | null) {
+  return useQuery({
+    queryKey: ["place", placeId ?? ""] as const,
+    queryFn: async () =>
+      unwrap(
+        await api().GET("/api/v1/places/{place_id}", {
+          params: { path: { place_id: placeId ?? "" } },
+        }),
+      ),
+    enabled: placeId !== null,
+  });
+}
