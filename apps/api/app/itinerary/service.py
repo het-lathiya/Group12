@@ -414,6 +414,7 @@ async def revalidate(
     trip_row = await repository.lock_trip(session, trip_id, user_id)
     if trip_row is None:
         raise NotFound()
+    trips_service.ensure_not_archived(trip_row.status)  # IMD-35: archived trips are read-only
     days = await repository.plan_days(session, trip_id)
     if not days:
         raise NotFound(NO_ITINERARY)
