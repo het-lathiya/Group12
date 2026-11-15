@@ -30,7 +30,7 @@ from app.ai.providers.mock import MockProvider
 from app.db.models import AiGeneration, Destination, Place
 from app.db.models.rag import RagChunk
 from app.generation import jobs, request_builder, retrieval
-from app.generation.request_builder import MEAL_SLOTS
+from app.generation.presets import meal_slots
 from app.places import seed
 from app.rag import service as rag_service
 from app.rag.service import RetrievalResult
@@ -139,7 +139,7 @@ async def shortlist(
         trip,
         prefs,
         prefs.must_visit_place_ids,
-        meal_slots_per_day=len(MEAL_SLOTS),
+        meal_slots_per_day=len(meal_slots(prefs.pace)),
         retrieved=result,
     )
 

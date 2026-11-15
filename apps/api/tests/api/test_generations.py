@@ -14,7 +14,7 @@ import logging
 import re
 import uuid
 from collections import Counter
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -34,7 +34,7 @@ from app.ai.factory import get_model_provider
 from app.ai.providers.base import ModelProvider
 from app.ai.providers.gemini import GeminiProvider
 from app.ai.providers.mock import MockProvider
-from app.core.config import MockScenario, Settings
+from app.core.config import MockScenario, Settings, get_settings
 from app.db.models import (
     AiGeneration,
     Destination,
@@ -44,7 +44,7 @@ from app.db.models import (
     Place,
     Trip,
 )
-from app.generation import jobs, pipeline, ranking, records, repository
+from app.generation import fallback_planner, jobs, pipeline, ranking, records, repository
 from app.itinerary import repository as itinerary_repository
 from app.places import seed
 from app.schemas.ai import GenerationRequest, ItineraryOutput, ProviderResult
@@ -1534,3 +1534,100 @@ async def test_purge_expired_generations_keeps_plan_and_version(
     assert (
         await api_client.get(f"/api/v1/trips/{trip}/itinerary", headers=auth_user.headers)
     ).status_code == 200
+
+
+# IMP-606: meal slots (FR-083 AC1, TC-243; TC-372)
+
+
+@pytest.fixture
+def meal_slots_off(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setenv("FEATURES_DISABLED", "meal_slots")
+    get_settings.cache_clear()
+    yield
+    monkeypatch.undo()
+    get_settings.cache_clear()
+
+
+async def meal_days(
+    client: httpx.AsyncClient, session: AsyncSession, user: AuthUser, trip_id: str
+) -> list[tuple[str | None, list[str]]]:
+    """(theme, categories of the meal items) per saved day."""
+    read = await client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=user.headers)
+    assert read.status_code == 200, read.text
+    days = read.json()["days"]
+    ids = [uuid.UUID(i["place"]["id"]) for d in days for i in d["items"]]
+    categories = {
+        str(p.id): p.category for p in await session.scalars(select(Place).where(Place.id.in_(ids)))
+    }
+    return [
+        (
+            day["theme"],
+            [categories[i["place"]["id"]] for i in day["items"] if i["slot_type"] == "meal"],
+        )
+        for day in days
+    ]
+
+
+@pytest.mark.asyncio
+async def test_meal_tc_243_every_full_day_has_lunch_from_a_food_place_or_a_note(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    """The rule-based plan of the SAMPLE trip: one lunch from a food place, or the day note."""
+    response = await start(api_client, auth_user, trip, mode="rule_based")
+    assert response.status_code == 202, response.text
+    done = await poll(api_client, auth_user, response.json()["id"], submitted, sessions)
+    assert done["status"] == "completed", done
+
+    days = await meal_days(api_client, db_session, auth_user, trip)
+    assert len(days) == 3  # balanced pace: 480 active minutes, a lunch slot every day
+    for theme, meals in days:
+        assert meals == ["food"] or (
+            meals == [] and theme is not None and theme.endswith(fallback_planner.NO_FOOD_NOTE)
+        ), (theme, meals)
+
+
+@pytest.mark.asyncio
+async def test_meal_a_model_plan_saves_meals_only_on_food_places(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    response = await start(api_client, auth_user, trip)
+    assert response.status_code == 202, response.text
+    done = await poll(api_client, auth_user, response.json()["id"], submitted, sessions)
+    assert (done["status"], done["outcome"]) == ("completed", "model"), done
+
+    days = await meal_days(api_client, db_session, auth_user, trip)
+    assert any(meals for _, meals in days)
+    assert all(category == "food" for _, meals in days for category in meals)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["ai", "rule_based"])
+async def test_meal_tc_372_switched_off_generation_succeeds_without_meal_items(
+    meal_slots_off: None,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+    mode: str,
+) -> None:
+    response = await start(api_client, auth_user, trip, mode=mode)
+    assert response.status_code == 202, response.text
+    done = await poll(api_client, auth_user, response.json()["id"], submitted, sessions)
+    assert done["status"] == "completed", done
+
+    days = await meal_days(api_client, db_session, auth_user, trip)
+    assert days
+    assert all(meals == [] for _, meals in days)
+    assert not any(theme and fallback_planner.NO_FOOD_NOTE in theme for theme, _ in days)

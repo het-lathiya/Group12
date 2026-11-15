@@ -3,8 +3,10 @@
 Pure and deterministic: the same gr-1 request always gives the same io-1 answer, with no model,
 no I/O and no randomness, so the plan goes through steps 8 to 11 like a model answer. Per day:
 start at ``limits.day_start``; pick must-visit places first, then the day's hinted places, then
-the rest, each time the nearest one that still fits (ties by shortlist rank); one ``food`` place
-becomes the meal once the clock reaches the lunch window; stop at the pace limits or ``day_end``.
+the rest, each time the nearest one that still fits (ties by shortlist rank); when the request has
+a lunch slot (IMP-606), one ``food`` place becomes the meal once the clock reaches the lunch window,
+and a day that runs through the window without one says "No food place found nearby" in its theme
+(a day-level message, never an item note); stop at the pace limits or ``day_end``.
 Travel is the labelled distance estimate (§9.3.5) plus its buffer, the arithmetic step 9 repeats.
 
 Only shortlisted places on days 1..num_days are used, items never overlap, so no UNKNOWN_PLACE,
@@ -16,6 +18,7 @@ code with the mock provider (card step 6).
 
 from typing import Final
 
+from app.generation.presets import MEAL_WINDOWS
 from app.routing.estimate import BUFFER_MIN, estimate
 from app.schemas.ai import (
     GenerationRequest,
@@ -26,8 +29,7 @@ from app.schemas.ai import (
 )
 
 MODEL_ID: Final = "rule_based_planner_v1"  # IMD-43: only when mode rule_based was requested
-LUNCH_FROM: Final = 12 * 60
-LUNCH_TO: Final = 14 * 60
+NO_FOOD_NOTE: Final = "No food place found nearby"
 THEME_MAX: Final = 80
 SUMMARY: Final = "Plan built by rules, without AI."
 FOOD: Final = "food"
@@ -40,6 +42,10 @@ def _minutes(hhmm: str) -> int:
 
 def _hhmm(minutes: int) -> str:
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+LUNCH_FROM: Final = _minutes(MEAL_WINDOWS["lunch"][0])
+LUNCH_TO: Final = _minutes(MEAL_WINDOWS["lunch"][1])
 
 
 def _travel(previous: ShortlistPlace | None, place: ShortlistPlace, mode: str) -> int:
@@ -94,6 +100,7 @@ def plan_rule_based(request: GenerationRequest) -> ItineraryOutput:
     rank = {str(place.place_id): index for index, place in enumerate(request.shortlist)}
     remaining = list(request.shortlist)
     day_start, day_end = _minutes(limits.day_start), _minutes(limits.day_end)
+    lunch_slot = "lunch" in limits.meal_slots  # off with the 'meal_slots' switch (IMD-11)
     days: list[ItineraryDayOutput] = []
 
     for day_number in _day_numbers(request):
@@ -104,7 +111,7 @@ def plan_rule_based(request: GenerationRequest) -> ItineraryOutput:
         previous: ShortlistPlace | None = None
 
         while remaining and len(items) < limits.max_items_per_day:
-            lunch_due = not had_meal and LUNCH_FROM <= clock <= LUNCH_TO
+            lunch_due = lunch_slot and not had_meal and LUNCH_FROM <= clock <= LUNCH_TO
             pool = [p for p in remaining if _wanted(p, must, lunch_due, had_meal)]
             chosen = None
             for place in _by_preference(pool, previous, tiers, rank, mode):
@@ -131,14 +138,19 @@ def plan_rule_based(request: GenerationRequest) -> ItineraryOutput:
                     place_id=str(chosen.place_id),
                     start_time=_hhmm(clock - chosen.typical_duration_min),
                     duration_min=chosen.typical_duration_min,
-                    slot_type="meal" if is_meal else "activity",
+                    slot_type="meal" if is_meal and lunch_slot else "activity",
                     note="",
                 )
             )
             previous = chosen
 
         if items:
-            theme = f"Day {day_number} around {names[0]}"[:THEME_MAX]
+            theme = f"Day {day_number} around {names[0]}"
+            meals = any(item.slot_type == "meal" for item in items)
+            if lunch_slot and not meals and clock >= LUNCH_TO:  # the lunch slot stays empty
+                suffix = f" · {NO_FOOD_NOTE}"
+                theme = theme[: THEME_MAX - len(suffix)] + suffix
+            theme = theme[:THEME_MAX]
             days.append(ItineraryDayOutput(day_number=day_number, theme=theme, items=items))
 
     if not days:

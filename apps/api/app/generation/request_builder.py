@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.prompts import registry
 from app.ai.providers.base import ModelProvider
+from app.core.config import get_settings
+from app.core.flags import is_enabled
 from app.core.logging import redact_text
 from app.db.models import PlaceOpeningHours
 from app.generation import grouping, presets, records, repository, retrieval
@@ -51,7 +53,6 @@ from app.trips.schemas import PreferencesOut, TripOut
 
 DAY_START: Final = "09:00"
 DAY_END: Final = "19:00"
-MEAL_SLOTS: Final = ["lunch"]
 NOTES_MAX: Final = 500
 PHONE_MIN_DIGITS: Final = 9  # a date such as 2027-01-12 has 8 digits and is left alone
 REDACTED: Final = "[redacted]"
@@ -79,6 +80,7 @@ class RequestSettings:
     prompt_version: str
     contingency_pct: float
     scope: Scope = field(default_factory=lambda: Scope(kind="full", day_number=None))
+    meal_slots_enabled: bool = True  # the IMD-11 switch 'meal_slots' (IMP-606)
 
 
 def hours_summary(hours: Iterable[PlaceOpeningHours], weekdays: Sequence[int]) -> str:
@@ -163,7 +165,7 @@ def build_generation_request(
             max_active_minutes_per_day=pace.max_active_minutes_per_day,
             day_start=DAY_START,
             day_end=DAY_END,
-            meal_slots=MEAL_SLOTS,
+            meal_slots=presets.meal_slots(preferences.pace, enabled=settings.meal_slots_enabled),
         ),
         locked_items=list(locked_items),
         scope=settings.scope,
@@ -248,12 +250,13 @@ async def build(
 ) -> GenerationRequest:
     trip = await trips_service.get_trip(session, user_id, trip_id)
     prefs = await trips_service.get_preferences(session, user_id, trip_id)
+    meals_on = is_enabled(get_settings(), "meal_slots")
     candidates = await retrieval.ranked_shortlist(
         session,
         trip,
         prefs,
         prefs.must_visit_place_ids,
-        meal_slots_per_day=len(MEAL_SLOTS),
+        meal_slots_per_day=len(presets.meal_slots(prefs.pace, enabled=meals_on)),
         retrieved=retrieved,
     )
     dates = (trip.start_date + timedelta(days=offset) for offset in range(trip.num_days))
@@ -276,6 +279,7 @@ async def build(
             prompt_version=prompt_version,
             contingency_pct=await repository.contingency_pct(session, trip_id),
             scope=scope or Scope(kind="full", day_number=None),
+            meal_slots_enabled=meals_on,
         ),
     )
     meta = registry.load(prompt_template_id, prompt_version).meta
