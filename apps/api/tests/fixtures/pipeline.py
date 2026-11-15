@@ -68,6 +68,8 @@ class Journal:
                     "prompt_template_id": "itinerary_generate",
                     "prompt_version": "v1",
                     "model_id": self.model_id,
+                    "scope": request.scope.kind,
+                    "scope_day_number": request.scope.day_number,
                 },
             )
 

@@ -417,3 +417,51 @@ def test_request_builder_v1_builds_gr_1_and_v2_names_gr_2_in_its_meta() -> None:
     assert registry.load("itinerary_generate", "v1").meta.input_schema_version == "gr-1"
     meta = registry.load("itinerary_generate", "v2").meta
     assert (meta.input_schema_version, meta.output_schema_version) == ("gr-2", "io-2")
+
+
+# IMP-607: the scope uses the existing gr-1/gr-2 fields, with no contract extension.
+def test_regenerate_day_request_excludes_other_days_keeps_only_its_locks_and_budget() -> None:
+    places = shortlist()
+    excluded = places[-1].place_id
+    locked = LockedItem(day_number=2, place_id=FORT, start_time="11:30", duration_min=60)
+    other_lock = locked.model_copy(update={"day_number": 1, "place_id": excluded})
+    settings = replace(
+        SETTINGS,
+        scope=Scope(kind="day", day_number=2),
+        excluded_place_ids=frozenset({excluded}),
+        remaining_day_budget=Decimal("850.25"),
+    )
+    request = build(locked=[locked, other_lock], must_visit=[FORT, excluded], settings=settings)
+    assert request.locked_items == [locked]
+    assert excluded not in {p.place_id for p in request.shortlist}
+    assert excluded not in request.must_visit_place_ids
+    assert request.day_hints and {h.day_number for h in request.day_hints} == {2}
+    assert all(excluded not in h.place_ids for h in request.day_hints)
+    assert request.trip.budget.amount == "850.25"
+    assert request.trip.num_days == 3
+    assert GenerationRequest.model_validate(request.model_dump()) == request
+    grounded_request = ground(request, retrieved())
+    assert grounded_request.input_schema_version == "gr-2"
+    assert grounded_request.scope == request.scope
+    assert all(
+        p.place_id != excluded for p in grounded_request.context_passages if p.kind == "place"
+    )
+
+
+@pytest.mark.asyncio
+async def test_regenerate_mock_answers_only_the_requested_day_with_passage_citations() -> None:
+    from app.ai.providers.mock import MockProvider
+
+    request = ground(
+        build(settings=replace(SETTINGS, scope=Scope(kind="day", day_number=2))), retrieved()
+    )
+    result = await MockProvider("ok", app_env="test").generate_itinerary(request)
+    assert [day.day_number for day in result.output.days] == [2]
+    assert {
+        item.place_id for day in result.output.days for item in day.items
+    } <= request.shortlist_ids()
+    assert all(
+        set(item.source_ids) <= request.passage_ids()
+        for day in result.output.days
+        for item in day.items
+    )
