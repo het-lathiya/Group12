@@ -12,6 +12,16 @@ let scans = 0;
  * violation of any impact with its node targets, so a finding can be traced to an element.
  */
 export async function checkA11y(page: Page): Promise<void> {
+  // A mounted toast can still be fading; scan after the UI's animations settle.
+  await page.waitForFunction(() => {
+    const toasts = Array.from(document.querySelectorAll("[data-sonner-toast]"));
+    return (
+      toasts.every((toast) => toast.getAttribute("data-mounted") === "true") &&
+      document
+        .getAnimations()
+        .every((animation) => animation.playState !== "running")
+    );
+  });
   const { violations } = await new AxeBuilder({ page })
     .options({
       rules: Object.fromEntries(
