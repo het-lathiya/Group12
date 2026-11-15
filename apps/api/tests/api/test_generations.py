@@ -1808,3 +1808,55 @@ async def test_regenerate_snapshots_with_versions_off_and_applies_the_existing_a
     )
     assert any(v.reason == "regeneration" and v.plan_revision == 1 for v in versions)
     assert len(submitted) == 1
+
+
+@pytest.mark.asyncio
+async def test_regenerate_day_builds_gr_2_with_fixed_locks_exclusions_and_remaining_budget(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    generated_trip: str,
+) -> None:
+    from app.generation import request_builder
+    from app.schemas.ai import GroundedGenerationRequest, Scope
+
+    before = await itinerary(api_client, auth_user, generated_trip)
+    target = before["days"][1]
+    item = target["items"][0]
+    locked = await api_client.patch(
+        f"/api/v1/itinerary/items/{item['id']}",
+        json={"plan_revision": before["plan_revision"], "is_locked": True},
+        headers=auth_user.headers,
+    )
+    assert locked.status_code == 200, locked.text
+    response = await api_client.patch(
+        f"/api/v1/trips/{generated_trip}",
+        json={"budget": {"amount": "5000.00", "currency": "INR"}},
+        headers=auth_user.headers,
+    )
+    assert response.status_code == 200, response.text
+    request = await request_builder.build(
+        db_session,
+        trip_id=uuid.UUID(generated_trip),
+        user_id=auth_user.user_id,
+        prompt_template_id="itinerary_generate",
+        prompt_version="v2",
+        scope=Scope(kind="day", day_number=target["day_number"]),
+    )
+    assert isinstance(request, GroundedGenerationRequest)
+    assert request.prompt_version == "v2"
+    assert {hint.day_number for hint in request.day_hints} == {target["day_number"]}
+    excluded = {
+        i["place"]["id"]
+        for d in before["days"]
+        if d["day_number"] != target["day_number"]
+        for i in d["items"]
+    }
+    assert not excluded.intersection(request.shortlist_ids())
+    assert [(str(i.place_id), i.start_time) for i in request.locked_items] == [
+        (item["place"]["id"], item["start_time"])
+    ]
+    assert request.trip.budget is not None
+    from decimal import Decimal
+
+    assert Decimal("0.00") <= Decimal(request.trip.budget.amount) < Decimal("5000.00")
