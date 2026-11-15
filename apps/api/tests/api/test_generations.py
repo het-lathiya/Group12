@@ -201,6 +201,7 @@ async def queued_row(
     session: AsyncSession, user: AuthUser, trip_id: str, mode: str = "ai"
 ) -> uuid.UUID:
     """An active generation inserted directly, as another request for the trip would leave it."""
+    revision = await session.scalar(select(Trip.plan_revision).where(Trip.id == uuid.UUID(trip_id)))
     return await repository.create_queued(
         session,
         trip_id=uuid.UUID(trip_id),
@@ -211,7 +212,15 @@ async def queued_row(
         prompt_version="v1",
         mapping_version="pm-2",
         scope="full",
-        request_hash=records.request_hash({"trip_id": trip_id, "mode": mode}),
+        request_hash=records.request_hash(
+            {
+                "trip_id": trip_id,
+                "scope": "full",
+                "day_number": None,
+                "mode": mode,
+                "plan_revision": revision,
+            }
+        ),
     )
 
 
@@ -642,7 +651,7 @@ async def test_tc_139_saved_times_are_the_recalculation_and_not_the_models(
 
 
 @pytest.mark.asyncio
-async def test_a_second_generation_replaces_the_plan_and_clears_plan_stale(
+async def test_regenerate_a_second_generation_replaces_unlocked_items_and_clears_plan_stale(
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
     auth_user: AuthUser,
@@ -658,19 +667,31 @@ async def test_a_second_generation_replaces_the_plan_and_clears_plan_stale(
         sessions,
     )
     first_days, _ = await plan_rows(db_session, trip)
+    first_items = set(
+        await db_session.scalars(
+            select(ItineraryItem.id).where(ItineraryItem.trip_id == uuid.UUID(trip))
+        )
+    )
     await db_session.execute(update(Trip).where(Trip.id == uuid.UUID(trip)).values(plan_stale=True))
 
-    generation_id = await queued_row(db_session, auth_user, trip)
-    await jobs.run(generation_id, MockProvider("ok", app_env="test"), sessions)
-
-    done = await poll(api_client, auth_user, str(generation_id), submitted, sessions)
+    response = await api_client.post(
+        regenerate_url(trip), json={"plan_revision": 1}, headers=auth_user.headers
+    )
+    assert response.status_code == 202, response.text
+    done = await poll(api_client, auth_user, response.json()["id"], submitted, sessions)
     assert (done["status"], done["plan_revision"]) == ("completed", 2)
     second_days, _ = await plan_rows(db_session, trip)
     assert len(second_days) == len(first_days)
-    assert not set(second_days) & set(first_days)
+    second_items = set(
+        await db_session.scalars(
+            select(ItineraryItem.id).where(ItineraryItem.trip_id == uuid.UUID(trip))
+        )
+    )
+    assert second_items
+    assert first_items.isdisjoint(second_items)
     version = await db_session.get(ItineraryVersion, uuid.UUID(done["itinerary_version_id"]))
     assert version is not None
-    assert (version.version_no, version.reason, version.plan_revision) == (2, "generation", 2)
+    assert (version.version_no, version.reason, version.plan_revision) == (3, "regeneration", 2)
     trip_row = await db_session.get(Trip, uuid.UUID(trip), populate_existing=True)
     assert trip_row is not None
     assert (trip_row.plan_revision, trip_row.plan_stale) == (2, False)
@@ -1670,7 +1691,8 @@ async def test_regenerate_start_is_idempotent_snapshots_once_and_excludes_other_
     assert response.json()["scope"] == ("day" if day else "full")
     assert response.json()["day_number"] == day
     row = await db_session.get(AiGeneration, uuid.UUID(response.json()["id"]))
-    assert row is not None and row.scope_day_number == day
+    assert row is not None
+    assert row.scope_day_number == day
     versions = list(
         await db_session.scalars(
             select(ItineraryVersion).where(ItineraryVersion.trip_id == uuid.UUID(generated_trip))
@@ -1736,13 +1758,15 @@ async def test_regenerate_requires_a_plan_and_a_day_inside_the_trip(
     missing = await api_client.post(
         regenerate_url(trip), json={"plan_revision": 0}, headers=auth_user.headers
     )
-    assert missing.status_code == 409 and missing.json()["error"]["code"] == "CONFLICT"
+    assert missing.status_code == 409
+    assert missing.json()["error"]["code"] == "CONFLICT"
     initial = await start(api_client, auth_user, trip)
     await poll(api_client, auth_user, initial.json()["id"], submitted, sessions)
     outside = await api_client.post(
         regenerate_url(trip, 4), json={"plan_revision": 1}, headers=auth_user.headers
     )
-    assert outside.status_code == 422 and outside.json()["error"]["code"] == "INVALID_EDIT"
+    assert outside.status_code == 422
+    assert outside.json()["error"]["code"] == "INVALID_EDIT"
     extra = await api_client.post(
         regenerate_url(trip), json={"plan_revision": 1, "scope": "full"}, headers=auth_user.headers
     )
@@ -1773,7 +1797,7 @@ async def test_regenerate_tc_372_disabled_routes_leave_manual_editing_available(
     item = plan["days"][0]["items"][0]
     edited = await api_client.patch(
         f"/api/v1/itinerary/items/{item['id']}",
-        json={"plan_revision": 1, "note": "Manual edit"},
+        json={"plan_revision": 1, "duration_min": 60},
         headers=auth_user.headers,
     )
     assert edited.status_code == 200, edited.text
@@ -1872,12 +1896,12 @@ async def regenerate_row_hashes(
         text("""
         select 'day' as kind, d.id::text, md5(to_jsonb(d)::text) as hash
         from itinerary_days d where d.trip_id = :trip_id
-          and (:exclude_day is null or d.day_number <> :exclude_day)
+          and (cast(:exclude_day as integer) is null or d.day_number <> :exclude_day)
         union all
         select 'item', i.id::text, md5(to_jsonb(i)::text)
         from itinerary_items i join itinerary_days d on d.id = i.day_id
         where i.trip_id = :trip_id
-          and (:exclude_day is null or d.day_number <> :exclude_day)
+          and (cast(:exclude_day as integer) is null or d.day_number <> :exclude_day)
         order by 1, 2
     """),
         {"trip_id": uuid.UUID(trip_id), "exclude_day": exclude_day},
@@ -1887,6 +1911,7 @@ async def regenerate_row_hashes(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("day", [None, 2])
+@pytest.mark.parametrize("lock_index", [0, -1])
 async def test_regenerate_tc_213_tc_214_tc_215_tc_216_tc_313_preserves_locks_and_restores_snapshot(
     api_client: httpx.AsyncClient,
     db_session: AsyncSession,
@@ -1895,10 +1920,11 @@ async def test_regenerate_tc_213_tc_214_tc_215_tc_216_tc_313_preserves_locks_and
     submitted: list[Job],
     sessions: Sessions,
     day: int | None,
+    lock_index: int,
 ) -> None:
     before = await itinerary(api_client, auth_user, generated_trip)
     target = before["days"][1]
-    item = target["items"][0]
+    item = target["items"][lock_index]
     response = await api_client.patch(
         f"/api/v1/itinerary/items/{item['id']}",
         json={"plan_revision": before["plan_revision"], "is_locked": True},
@@ -1941,7 +1967,8 @@ async def test_regenerate_tc_213_tc_214_tc_215_tc_216_tc_313_preserves_locks_and
         locked.start_time,
         locked.duration_min,
     ) == fixed
-    assert locked.note == "Keep this note" and locked.note_origin == "user"
+    assert locked.note == "Keep this note"
+    assert locked.note_origin == "user"
     assert locked.source_chunk_ids == [old_citation]
     if day is not None:
         assert await regenerate_row_hashes(db_session, generated_trip, exclude_day=2) == old_hashes
@@ -2080,4 +2107,32 @@ async def test_regenerate_new_items_take_the_new_generation_citations(
             select(ItineraryItem).where(ItineraryItem.trip_id == uuid.UUID(generated_trip))
         )
     )
-    assert items and all(item.source_chunk_ids == [passage_id] for item in items)
+    assert items
+    assert all(item.source_chunk_ids == [passage_id] for item in items)
+
+
+@pytest.mark.asyncio
+async def test_regenerate_rule_based_day_keeps_other_days_and_their_theme_labels(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    generated_trip: str,
+    submitted: list[Job],
+    sessions: Sessions,
+) -> None:
+    before = await itinerary(api_client, auth_user, generated_trip)
+    hashes = await regenerate_row_hashes(db_session, generated_trip, exclude_day=2)
+    started = await api_client.post(
+        regenerate_url(generated_trip, 2),
+        json={"plan_revision": 1, "mode": "rule_based"},
+        headers=auth_user.headers,
+    )
+    assert started.status_code == 202, started.text
+    done = await poll(api_client, auth_user, started.json()["id"], submitted, sessions)
+    assert done["status"] == "completed", done
+    assert done["outcome"] == "fallback_rule_based"
+    after = await itinerary(api_client, auth_user, generated_trip)
+    assert [d for d in after["days"] if d["day_number"] != 2] == [
+        d for d in before["days"] if d["day_number"] != 2
+    ]
+    assert await regenerate_row_hashes(db_session, generated_trip, exclude_day=2) == hashes
