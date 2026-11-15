@@ -979,3 +979,105 @@ async def test_tc_180_validate_persists_closed_hours(
         await api_client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=auth_user.headers)
     ).json()
     assert any(f["code"] == "CLOSED_ON_DAY" for f in read["findings"])
+
+
+# IMP-609: API-35 summary (FR-094: TC-254, TC-255)
+
+
+@pytest.mark.asyncio
+async def test_tc_254_summary_lists_every_day_with_times_places_travel_and_labels(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, destination)
+    await generate(api_client, db_session, jobs_queue, auth_user, trip_id)
+    itinerary = (
+        await api_client.get(f"/api/v1/trips/{trip_id}/itinerary", headers=auth_user.headers)
+    ).json()
+    costs = (
+        await api_client.get(f"/api/v1/trips/{trip_id}/costs", headers=auth_user.headers)
+    ).json()
+
+    response = await api_client.get(f"/api/v1/trips/{trip_id}/summary", headers=auth_user.headers)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["trip"]["id"] == trip_id
+    # The same projection as API-24 and API-33: nothing recalculated for the print view.
+    assert body["days"] == itinerary["days"]
+    assert body["costs"] == costs
+    assert body["generated_at"].endswith("Z") or body["generated_at"].endswith("+00:00")
+    items = [item for day in body["days"] for item in day["items"]]
+    assert items
+    assert all(item["start_time"] and item["end_time"] for item in items)
+    assert all(item["place"]["hours_label"] for item in items)
+    assert all(item["cost"] is None or item["cost"]["label"] for item in items)
+    legs = [item["travel_from_previous"] for item in items if item["travel_from_previous"]]
+    assert legs
+    assert all(leg["source"] for leg in legs)
+    # AI-written themes carry their origin, so the page can show the AI badge.
+    assert all(day["theme_origin"] == ("ai" if day["theme"] else "none") for day in body["days"])
+
+
+@pytest.mark.asyncio
+async def test_tc_255_summary_shows_the_unresolved_warnings_of_the_current_plan(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    trip_id = await create_trip(api_client, auth_user, destination)
+    generation = await generate(api_client, db_session, jobs_queue, auth_user, trip_id)
+    revision = generation["plan_revision"]
+    db_session.add_all(
+        [
+            ItineraryWarning(
+                trip_id=uuid.UUID(trip_id),
+                plan_revision=revision,
+                code="HOURS_UNVERIFIED",
+                severity="info",
+                message="Opening hours unavailable.",
+                day_number=1,
+            ),
+            ItineraryWarning(
+                trip_id=uuid.UUID(trip_id),
+                plan_revision=revision - 1,
+                code="COST_INCOMPLETE",
+                severity="warning",
+                message="From an older revision.",
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    response = await api_client.get(f"/api/v1/trips/{trip_id}/summary", headers=auth_user.headers)
+
+    assert response.status_code == 200, response.text
+    messages = [finding["message"] for finding in response.json()["unresolved_findings"]]
+    assert "Opening hours unavailable." in messages
+    assert "From an older revision." not in messages
+
+
+@pytest.mark.asyncio
+async def test_summary_without_an_itinerary_or_of_another_user_is_404(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    destination: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    empty = await create_trip(api_client, auth_user, destination)
+    other = await make_user(db_session)
+    theirs = await create_trip(api_client, other, destination)
+    await generate(api_client, db_session, jobs_queue, other, theirs)
+
+    for trip_id in (empty, theirs):
+        response = await api_client.get(
+            f"/api/v1/trips/{trip_id}/summary", headers=auth_user.headers
+        )
+        assert response.status_code == 404, response.text
+        assert response.json()["error"]["code"] == "NOT_FOUND"
