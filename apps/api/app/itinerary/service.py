@@ -13,7 +13,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Final, Literal
 from uuid import UUID
 
 from sqlalchemy import Row
@@ -51,6 +51,9 @@ from app.validation.rules import HoursInfo, OpeningRow, ValidationContext
 from app.validation.schemas import Finding, ValidationSummary
 
 SNAPSHOT_SCHEMA = "snap-1"
+MAX_VERSIONS: Final = 20  # IMD-18
+# Switch 'versions' off: the current plan's version and one backup copy of the previous plan.
+BACKUP_VERSIONS: Final = 2
 
 
 @dataclass(frozen=True)
@@ -107,7 +110,21 @@ async def save_generated_plan(
         generation_id=generation_id,
         created_by=user_id,
     )
+    await retain_versions(session, trip_id)
     return SavedPlan(version_id=version.id, plan_revision=plan_revision)
+
+
+async def retain_versions(session: AsyncSession, trip_id: UUID) -> None:
+    """IMD-18 retention, after every version write: past MAX_VERSIONS versions delete the oldest
+    automatic ones; a named version and the newest version are never deleted. With the switch off
+    only BACKUP_VERSIONS automatic versions stay."""
+    heads = await repository.version_heads(session, trip_id)
+    if is_enabled(get_settings(), "versions"):
+        excess = len(heads) - MAX_VERSIONS
+    else:
+        excess = sum(name is None for _, name in heads) - BACKUP_VERSIONS
+    oldest_automatic = [version_id for version_id, name in reversed(heads[1:]) if name is None]
+    await repository.delete_versions(session, oldest_automatic[: max(excess, 0)])
 
 
 async def saved_plan_for_generation(session: AsyncSession, generation_id: UUID) -> SavedPlan | None:
