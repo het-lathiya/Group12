@@ -23,7 +23,7 @@ from app.budget import engine
 from app.budget import repository as budget_repository
 from app.budget.schemas import AmountRange
 from app.core.config import get_settings
-from app.core.errors import EndpointNotImplemented, NotFound, StalePlan
+from app.core.errors import NotFound, StalePlan
 from app.core.flags import is_enabled
 from app.db.models import AiGeneration, ItineraryDay, ItineraryItem, Place
 from app.itinerary import repository
@@ -97,7 +97,7 @@ async def save_generated_plan(
         "days": days,
         "budget_settings": await repository.budget_settings_snapshot(session, trip_id),
     }
-    version_id = await repository.insert_version(
+    version = await repository.insert_version(
         session,
         trip_id,
         reason="generation" if origin == "model" else "fallback",
@@ -107,7 +107,7 @@ async def save_generated_plan(
         generation_id=generation_id,
         created_by=user_id,
     )
-    return SavedPlan(version_id=version_id, plan_revision=plan_revision)
+    return SavedPlan(version_id=version.id, plan_revision=plan_revision)
 
 
 async def saved_plan_for_generation(session: AsyncSession, generation_id: UUID) -> SavedPlan | None:
@@ -162,13 +162,10 @@ async def cost_summary(session: AsyncSession, trip: TripOut) -> tuple[engine.Cos
     return await _summary(session, trip, days, await repository.plan_items(session, trip.id))
 
 
-async def get_itinerary(
-    session: AsyncSession, user_id: UUID, trip_id: UUID, version_id: UUID | None = None
-) -> ItineraryOut:
-    """API-24: the trip's current plan; a missing or foreign trip and an empty plan answer 404."""
+async def get_itinerary(session: AsyncSession, user_id: UUID, trip_id: UUID) -> ItineraryOut:
+    """API-24: the trip's current plan; a missing or foreign trip and an empty plan answer 404.
+    A stored version (``version_id``) is read by ``versions.read_version`` (IMP-610)."""
     trip = await trips_service.get_trip(session, user_id, trip_id)
-    if version_id is not None:
-        raise EndpointNotImplemented()  # reading a stored version is IMP-610 (IMD-37)
     days = await repository.plan_days(session, trip_id)
     if not days:
         raise NotFound(NO_ITINERARY)

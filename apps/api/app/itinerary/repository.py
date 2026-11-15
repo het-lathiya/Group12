@@ -4,7 +4,7 @@ takes the caller's session and opens no transaction of its own. budget_settings,
 trip_places and ai_generations are only read.
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import date, datetime, time, timedelta
 from typing import Any
 from uuid import UUID
@@ -234,7 +234,8 @@ async def insert_version(
     validation_summary: dict[str, Any],
     generation_id: UUID | None,
     created_by: UUID | None,
-) -> UUID:
+    name: str | None = None,
+) -> ItineraryVersion:
     """A version with version_no = the trip's highest + 1 (the trip row is locked by the caller).
 
     Its validation_summary always carries the repair counts (IMP-405), 0 when none were made."""
@@ -245,6 +246,7 @@ async def insert_version(
         trip_id=trip_id,
         version_no=(highest or 0) + 1,
         reason=reason,
+        name=name,
         plan_revision=plan_revision,
         snapshot=snapshot,
         validation_summary={"deterministic_repairs": 0, "repair_attempts": 0, **validation_summary},
@@ -253,7 +255,8 @@ async def insert_version(
     )
     session.add(row)
     await session.flush()
-    return row.id
+    await session.refresh(row, ["created_at"])
+    return row
 
 
 async def version_for_generation(
@@ -333,6 +336,27 @@ async def version_for_trip(
         ItineraryVersion.id == version_id, ItineraryVersion.trip_id == trip_id
     )
     return await session.scalar(query)
+
+
+async def list_versions(session: AsyncSession, trip_id: UUID) -> list[ItineraryVersion]:
+    query = (
+        select(ItineraryVersion)
+        .where(ItineraryVersion.trip_id == trip_id)
+        .order_by(ItineraryVersion.version_no.desc())
+    )
+    return list(await session.scalars(query))
+
+
+async def version_name_taken(session: AsyncSession, trip_id: UUID, name: str) -> bool:
+    query = select(
+        exists().where(ItineraryVersion.trip_id == trip_id, ItineraryVersion.name == name)
+    )
+    return bool(await session.scalar(query))
+
+
+async def places_by_ids(session: AsyncSession, place_ids: Collection[UUID]) -> list[Place]:
+    """Places of a snapshot, active or not (a version may name a place retired since)."""
+    return list(await session.scalars(select(Place).where(Place.id.in_(place_ids))))
 
 
 async def latest_completed_generation(session: AsyncSession, trip_id: UUID) -> AiGeneration | None:

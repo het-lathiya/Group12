@@ -234,3 +234,25 @@ MATRIX = (
     ),
     RouteCase("API-21", "GET", "/api/v1/trips/{trip_id}/saved-places", "foreign"),
 )
+
+
+# IMP-610 versions: API-38's version_id is A's newest version, looked up by test_ownership's
+# ``call`` (the matrix builds URLs from Owned alone).
+MATRIX = (
+    *MATRIX,
+    RouteCase("API-36", "GET", "/api/v1/trips/{trip_id}/versions", "foreign"),
+    RouteCase(
+        "API-37",
+        "POST",
+        "/api/v1/trips/{trip_id}/versions",
+        "foreign",
+        body=lambda _: {"plan_revision": 1, "name": "B's version"},
+    ),
+    RouteCase(
+        "API-38",
+        "POST",
+        "/api/v1/trips/{trip_id}/versions/{version_id}/restore",
+        "foreign",
+        body=lambda _: {"plan_revision": 1},
+    ),
+)
