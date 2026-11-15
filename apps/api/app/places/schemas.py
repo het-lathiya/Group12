@@ -4,15 +4,17 @@ Categories and tags are the enums of places/vocabulary.py, so the OpenAPI contra
 Suitability is true, false or null (unknown, FR-019 AC2); prices are IMD-05 money strings.
 """
 
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.db.models import DataSource as DataSourceRow
 from app.db.models import Destination as DestinationRow
 from app.db.models import Place as PlaceRow
+from app.db.models import PlaceOpeningHours as OpeningHoursRow
 from app.places.vocabulary import Category, SourceLabel, Tag, VerificationStatus
 from app.schemas.ai import HHMM
 from app.schemas.common import MoneyAmount
@@ -22,6 +24,10 @@ COORDINATE_PLACES = 6
 
 def _coordinate(value: Decimal) -> float:
     return round(float(value), COORDINATE_PLACES)
+
+
+def _hhmm(value: time | None) -> str | None:
+    return None if value is None else value.strftime("%H:%M")
 
 
 class Point(BaseModel):
@@ -100,9 +106,14 @@ class PlaceSummary(BaseModel):
     source_name: str | None = Field(
         None, description="Name of the place's data source; always set by API-16 (FR-016 AC2)"
     )
+    distance_m: int | None = Field(
+        None, description="Metres from near_lat/near_lon; set only when API-16 is given them"
+    )
 
     @classmethod
-    def from_row(cls, row: PlaceRow, source_name: str | None = None) -> "PlaceSummary":
+    def from_row(
+        cls, row: PlaceRow, source_name: str | None = None, distance_m: float | None = None
+    ) -> "PlaceSummary":
         price = None
         if row.price_min is not None and row.price_currency is not None:
             price = PlacePrice(
@@ -127,6 +138,7 @@ class PlaceSummary(BaseModel):
                 step_free=row.step_free, child_friendly=row.child_friendly, indoor=row.indoor
             ),
             source_name=source_name,
+            distance_m=None if distance_m is None else round(distance_m),
         )
 
 
@@ -159,3 +171,31 @@ class PlaceOut(PlaceSummary):
     source: PlaceSource
     saved: bool | None = Field(None, description="Set only when trip_id is given")
     must_visit: bool | None = Field(None, description="Set only when trip_id is given")
+
+    @classmethod
+    def from_rows(
+        cls, row: PlaceRow, source: DataSourceRow, hours: list[OpeningHoursRow]
+    ) -> "PlaceOut":
+        """Hours are listed only when the place has an hours label (FR-018 AC2): with
+        ``hours_label`` unavailable the list is empty and nothing is guessed."""
+        summary = PlaceSummary.from_row(row, source.name)
+        listed = [] if row.hours_label == SourceLabel.UNAVAILABLE else hours
+        return cls(
+            **summary.model_dump(),
+            description=row.description,
+            address=row.address,
+            website_url=row.website_url,
+            booking_url=row.booking_url,
+            hours=[
+                OpeningHours(
+                    weekday=h.weekday,
+                    is_closed=h.is_closed,
+                    open_time=_hhmm(h.open_time),
+                    close_time=_hhmm(h.close_time),
+                    closes_next_day=h.closes_next_day,
+                )
+                for h in listed
+            ],
+            hours_checked_on=row.hours_checked_on,
+            source=PlaceSource.model_validate(source, from_attributes=True),
+        )
