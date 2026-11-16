@@ -86,6 +86,7 @@ function send(request: Request, token: string | null): Promise<Response> {
 
 function redirectToSignIn(): void {
   const next = `${window.location.pathname}${window.location.search}`;
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- plain module outside React, so no router exists here
   window.location.assign(`/sign-in?next=${encodeURIComponent(next)}`);
 }
 
