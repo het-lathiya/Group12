@@ -64,3 +64,20 @@ export async function checkA11y(page: Page): Promise<void> {
   }
   expect(describe("critical"), "critical axe violations (NFR-025)").toEqual([]);
 }
+
+/**
+ * TC-383, §13.4: checkA11y, and serious violations fail too (the journey's scan, shared by the
+ * IMP-701 specs).
+ */
+export async function expectNoSeriousA11y(page: Page): Promise<void> {
+  const before = test.info().annotations.length;
+  await checkA11y(page);
+  expect(
+    test
+      .info()
+      .annotations.slice(before)
+      .filter((annotation) => annotation.type === "axe-serious")
+      .map((annotation) => annotation.description),
+    "serious axe violations (TC-383)",
+  ).toEqual([]);
+}

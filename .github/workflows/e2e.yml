@@ -1,11 +1,13 @@
-# End-to-end journey (IMP-216, IMP-414; specification §13, TC-369, TC-370). Runs on every push to
+# End-to-end journey and regression suite (IMP-216, IMP-414, IMP-701; specification §13, E2E-01 to
+# E2E-08, TC-369 to TC-376, TC-432). Runs on every push to
 # main and by manual dispatch (workflow_dispatch) on each pull request's branch before it is merged;
 # there is no nightly or pull_request trigger (IMD-185, which lifts IMD-183's one-E2E limit), so it
 # is not one of the six required checks. Dispatched with base_url, only the "staging" job runs,
 # against that deployment (IMD-137: only inside a staging window); a push never runs it.
 #
 # It starts the Supabase CLI local stack, migrates and seeds it, builds and starts the API with
-# AI_PROVIDER=MOCK and the web app, and runs the journey. No provider key exists here. The local
+# AI_PROVIDER=MOCK and the web app, and runs the journey and the regression specs; E2E-07 then gets
+# its own API on 8001 and web app on 3001 (IMD-33). No provider key exists here. The local
 # stack's keys exist only inside this job: they come from `supabase status` and are masked, and they
 # die with the stack.
 name: E2E
@@ -54,7 +56,7 @@ jobs:
     name: e2e
     if: ${{ !inputs.base_url }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 50
     # TC-372: the floor journey switches features off in the API and the web build; a push and an
     # empty input leave both empty (every feature on).
     env:
@@ -103,6 +105,7 @@ jobs:
           nohup .venv/bin/uvicorn app.main:app --port 8000 > "$RUNNER_TEMP/api.log" 2>&1 &
           curl -fsS --retry 30 --retry-delay 1 --retry-all-errors http://localhost:8000/health
 
+      # The server runs from a copy, so the provider-failure build below can reuse .next.
       - name: Build and start the web app
         working-directory: apps/web
         run: |
@@ -110,7 +113,8 @@ jobs:
           # The standalone output leaves out .next/static and public.
           cp -r .next/static .next/standalone/.next/static
           cp -r public .next/standalone/public
-          cd .next/standalone
+          cp -r .next/standalone "$RUNNER_TEMP/web-3000"
+          cd "$RUNNER_TEMP/web-3000"
           PORT=3000 HOSTNAME=0.0.0.0 nohup node server.js > "$RUNNER_TEMP/web.log" 2>&1 &
           curl -fsS --retry 30 --retry-delay 1 --retry-all-errors -o /dev/null http://localhost:3000/
 
@@ -138,6 +142,72 @@ jobs:
           PLAYWRIGHT_HTML_REPORT: playwright-report/itinerary-edit
         run: make e2e ARGS='itinerary-edit'
 
+      # IMP-701: E2E-01 to E2E-06, E2E-08, TC-374 and the @ext switch check (TC-432), at one width:
+      # the local stack allows 30 sign-ins per 5 minutes (supabase/config.toml), and the four-width
+      # runs above already use most of them. The floor run (features_disabled set) runs only the
+      # journey and the map specs, as at SG-6.
+      - name: Run the regression specs
+        if: ${{ !cancelled() && !inputs.features_disabled }}
+        env:
+          BASE_URL: http://localhost:3000
+          PLAYWRIGHT_HTML_REPORT: playwright-report/regression
+        run: make e2e ARGS='auth trip-create generate validate-costs reopen ownership keyboard extensions --project=chromium-1280'
+
+      # E2E-07, TC-371 (IMD-33): a second web build whose browser calls the API on 8001. Next.js
+      # inlines NEXT_PUBLIC_* at build time, so it is its own build, served from its own copy.
+      - name: Build and start the provider-failure web app on 3001
+        if: ${{ !cancelled() && !inputs.features_disabled }}
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_BASE_URL: http://localhost:8001/api/v1
+        run: |
+          # The first build's output was copied to web-3000; start this one clean.
+          rm -rf .next/standalone .next/static
+          npm run build
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public
+          cp -r .next/standalone "$RUNNER_TEMP/web-3001"
+          cd "$RUNNER_TEMP/web-3001"
+          PORT=3001 HOSTNAME=0.0.0.0 nohup node server.js > "$RUNNER_TEMP/web-3001.log" 2>&1 &
+          curl -fsS --retry 30 --retry-delay 1 --retry-all-errors -o /dev/null http://localhost:3001/
+
+      # The MOCK scenario is fixed per API process: the API on 8001 runs once with timeout and once
+      # with quota, and the run gets the same MOCK_PROVIDER_SCENARIO to pick its test. BASE_URL
+      # only stops Playwright from starting a dev server; the project uses 3001.
+      - name: Run provider failure with a timeout
+        if: ${{ !cancelled() && !inputs.features_disabled }}
+        env:
+          MOCK_PROVIDER_SCENARIO: timeout
+          ALLOWED_ORIGINS: http://localhost:3001
+          BASE_URL: http://localhost:3000
+          PLAYWRIGHT_HTML_REPORT: playwright-report/provider-failure-timeout
+        run: |
+          cd apps/api
+          nohup .venv/bin/uvicorn app.main:app --port 8001 > "$RUNNER_TEMP/api-8001-timeout.log" 2>&1 &
+          api_pid=$!
+          cd "$GITHUB_WORKSPACE"
+          # Stopped when the step ends, pass or fail, so the next scenario can take port 8001.
+          trap 'kill "$api_pid"; wait "$api_pid" || true' EXIT
+          curl -fsS --retry 30 --retry-delay 1 --retry-all-errors http://localhost:8001/health
+          make e2e ARGS='--project=provider-failure'
+
+      - name: Run provider failure with quota exhausted
+        if: ${{ !cancelled() && !inputs.features_disabled }}
+        env:
+          MOCK_PROVIDER_SCENARIO: quota
+          ALLOWED_ORIGINS: http://localhost:3001
+          BASE_URL: http://localhost:3000
+          PLAYWRIGHT_HTML_REPORT: playwright-report/provider-failure-quota
+        run: |
+          cd apps/api
+          nohup .venv/bin/uvicorn app.main:app --port 8001 > "$RUNNER_TEMP/api-8001-quota.log" 2>&1 &
+          api_pid=$!
+          cd "$GITHUB_WORKSPACE"
+          # Stopped when the step ends, pass or fail, so the next scenario can take port 8001.
+          trap 'kill "$api_pid"; wait "$api_pid" || true' EXIT
+          curl -fsS --retry 30 --retry-delay 1 --retry-all-errors http://localhost:8001/health
+          make e2e ARGS='--project=provider-failure'
+
       - name: Upload the Playwright report and the server logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -147,6 +217,8 @@ jobs:
             apps/web/playwright-report/
             ${{ runner.temp }}/api.log
             ${{ runner.temp }}/web.log
+            ${{ runner.temp }}/api-8001-*.log
+            ${{ runner.temp }}/web-3001.log
           retention-days: 14
 
   # TC-370: the same journey against a deployment. It signs in with the pre-created staging account

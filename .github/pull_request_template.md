@@ -39,5 +39,6 @@ Not run, with the reason: <none, or the command and why>
 
 - [ ] Every commit is authored and committed as the part owner, one author per commit, Conventional Commits starting with the task ID
 - [ ] The required checks are green: lint-types, unit, guards, attribution, audit, api
+- [ ] E2E specs touched by this change pass locally (make e2e)
 - [ ] No secret, key, token, connection string or personal data in code, tests, fixtures or logs
 - [ ] Merge with Rebase and merge only

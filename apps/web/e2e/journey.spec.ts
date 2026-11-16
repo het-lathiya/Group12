@@ -7,6 +7,9 @@ import { checkA11y } from "./axe";
 import { expect, test } from "./fixtures/trips";
 import { randomPassword, stagingAccount, uniqueEmail } from "./fixtures/users";
 
+// TC-372 (IMP-701): the same journey is the floor journey, run by the floor-journey project when
+// FEATURES_DISABLED and NEXT_PUBLIC_FEATURES_DISABLED list the nine cut-list switches; TC-373 is
+// its chromium-360 run.
 // TC-369 (US-153 AC1, IMP-414): sign up, create a trip with the wizard, generate, remove one item
 // and retime another, reload, open latest, and see the edits and the server totals persist. Local:
 // the local stack, `make seed` (Sampleton) and the API with AI_PROVIDER=MOCK. TC-370: the same spec
@@ -81,7 +84,7 @@ async function expectSavedDays(page: Page, days: Day[]) {
 }
 
 test(
-  "journey: sign up, create a trip, generate, edit, reload and open latest (TC-369, TC-370)",
+  "TC-369 TC-370 TC-372 TC-373 TC-374: journey: sign up, create a trip, generate, edit, reload and open latest",
   { tag: "@journey" },
   async ({ page, users, trips }) => {
     test.setTimeout(GENERATION_TIMEOUT_MS + 90_000);
