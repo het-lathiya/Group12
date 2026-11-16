@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { SourceBadge } from "@/components/labels/SourceBadge";
 import type { components } from "@/lib/api/schema";
 
@@ -11,15 +12,28 @@ const categories: Record<Costs["by_category"][number]["category"], string> = {
   contingency: "Contingency",
 };
 const cell = "border-b px-3 py-3 text-left tabular-nums";
+// Scroll regions take keyboard focus so narrow screens can scroll them (axe scrollable-region-focusable).
+const region =
+  "overflow-x-auto rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2";
 
 /** Both breakdowns are API-33 values; the browser never sums rows (IMD-172). */
 export function CostBreakdown({ costs }: { costs: Costs }) {
   const money = (value: string) => `${costs.currency} ${value}`;
+  const dailyId = useId();
+  const categoryId = useId();
   return (
     <div className="flex flex-col gap-6">
-      <div className="overflow-x-auto">
+      <div
+        className={region}
+        tabIndex={0}
+        role="region"
+        aria-labelledby={dailyId}
+      >
         <table className="w-full text-sm">
-          <caption className="mb-2 text-left text-lg font-semibold">
+          <caption
+            id={dailyId}
+            className="mb-2 text-left text-lg font-semibold"
+          >
             Daily cost estimates
           </caption>
           <thead>
@@ -54,9 +68,17 @@ export function CostBreakdown({ costs }: { costs: Costs }) {
           planning total.
         </p>
       </div>
-      <div className="overflow-x-auto">
+      <div
+        className={region}
+        tabIndex={0}
+        role="region"
+        aria-labelledby={categoryId}
+      >
         <table className="w-full text-sm">
-          <caption className="mb-2 text-left text-lg font-semibold">
+          <caption
+            id={categoryId}
+            className="mb-2 text-left text-lg font-semibold"
+          >
             Costs by category
           </caption>
           <thead>

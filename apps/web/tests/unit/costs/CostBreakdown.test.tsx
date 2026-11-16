@@ -60,6 +60,14 @@ it("TC-282: accessible tables show API amounts and labels, including unavailable
   expect(unavailable).not.toHaveTextContent("0.00");
   expect(within(category).getByText("Traveller input")).toBeInTheDocument();
 });
+it("IMP-507: both scroll regions are keyboard focusable and named by their captions", () => {
+  render(<CostBreakdown costs={costs} />);
+  for (const name of ["Daily cost estimates", "Costs by category"]) {
+    const [region] = screen.getAllByRole("region", { name });
+    expect(region).toHaveAttribute("tabindex", "0");
+  }
+  expect(screen.getAllByRole("region")).toHaveLength(2);
+});
 function Edit() {
   const edit = useRetimeItem("trip");
   return (
