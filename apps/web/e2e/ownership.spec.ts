@@ -51,13 +51,9 @@ test("E2E-08 TC-375: another user's itinerary, costs and versions URLs show noth
       path: "costs",
       shows: page.getByRole("heading", { name: "We could not find that" }),
     },
-    // The versions page reads API-24 first, and a 404 there shows its no-plan state (see the
-    // IMP-701 part record, open issues).
     {
       path: "versions",
-      shows: page
-        .getByRole("heading", { name: "We could not find that" })
-        .or(page.getByRole("heading", { name: "No itinerary yet" })),
+      shows: page.getByRole("heading", { name: "Trip not found" }),
     },
   ];
   for (const { path, shows } of pages) {

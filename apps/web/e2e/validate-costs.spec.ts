@@ -82,7 +82,9 @@ test("E2E-04: an overlap and a near budget show with their fixes, and the costs 
       panel.getByText(overlap!.message, { exact: true }).first(),
     ).toBeVisible();
     await expect(
-      panel.getByText(overlap!.suggested_fix!, { exact: true }).first(),
+      panel
+        .getByText(`Suggested fix: ${overlap!.suggested_fix!}`, { exact: true })
+        .first(),
     ).toBeVisible();
     await expectNoSeriousA11y(page);
   });

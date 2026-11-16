@@ -109,3 +109,58 @@ The failure names the test with its ID and the user step. The temporary files an
 - **Versions page for a foreign trip (E2E-08):** `/trips/[tripId]/versions` reads API-24 first, and its 404 shows the no-plan state "No itinerary yet" with a "Generate a plan" link instead of the not-found state. The page shows no data of A's trip, and every API answer is 404. `ownership.spec.ts` accepts either heading and records this here. The fix would be in the versions page (IMP-610 owner).
 - E2E-03's "progress passes through the statuses" is checked as the progress panel appearing and the itinerary opening. MOCK finishes in under a second, so the intermediate statuses are not asserted (that would be flaky).
 - `trip-create.spec.ts` keeps its fixed dates (2026-12-04 to 2026-12-06). They are still in the future, but they will need `daysFromNow` before December 2026.
+
+## RUN-081c follow-up (fixes of the first dispatch's failures)
+
+| Field | Value |
+| --- | --- |
+| Run | RUN-081c (continues RUN-081b, which stopped on the IMP-506 lock-toggle name) |
+| Owner | Krrish Kamani |
+| Status | PR_OPEN pending: specs fixed and statically checked; the E2E evidence comes from the lead's integration runs |
+| Base commit | 62eb1fc |
+
+### Changed files
+
+- `apps/web/e2e/itinerary-edit.spec.ts`: F-E1, the retime step reads A and B by ID from a fresh API-24 read and retimes the moved, unlocked item B to a different start inside A's interval; `retime()` refuses an unchanged value before it waits for the PATCH. The lock toggle is found by its new name `Locked <place>` (IMP-506, committed separately before this commit).
+- `apps/web/e2e/validate-costs.spec.ts`: F-E2, matches the whole paragraph `Suggested fix: <text>`.
+- `apps/web/e2e/provider-failure.spec.ts`: F-E3 under IMD-206, both TC-371 tests start from a fresh trip with no itinerary and press "Generate with AI" (API-22); a non-202 answer fails with its body. No API-31 regeneration case is kept.
+- `apps/web/e2e/ownership.spec.ts`: the versions page of another user's trip must show "Trip not found" (IMP-610 fix 10f3324, the open issue below is closed).
+- `apps/web/playwright.config.ts`: `FLOOR_BASE_URL` adds the `floor-journey` project against a separately built floor stack; retries stay 0.
+- `.github/workflows/e2e.yml`: `repeat_each` dispatch input (default 1, validated), passed as `--repeat-each` to every local-stack run; a floor-journey step on API 8002 and web 3002 with the nine cut-list switches off; its logs in the artefact. Triggers stay push to `main` and `workflow_dispatch`; `ubuntu-24.04`.
+- `docs/test-reports/e2e-sprint7.md`: sections 4 (F-E1 to F-E3) and 5 (result placeholders for the lead).
+- `docs/progress/parts/IMP-701-whole-task.md`: this section.
+
+### What each provider-failure assertion rests on
+
+- Timeout outcome `fallback_rule_based`: `apps/api/app/generation/records.py:22` (`CompletedOutcome`), set by `pipeline.py:432`. `fallback_reason` `provider_timeout`: `pipeline.py:423` stores the cause, `service.py:215` returns it; MOCK `timeout` raises `ProviderTimeout` (`app/ai/providers/mock.py:363`).
+- Quota `failed` / `provider_quota_exhausted`: `records.py:28`, `outcomes.py:12` and `NO_FALLBACK` (`outcomes.py:30`); `next_action` `retry_rule_based`: `outcomes.py:70` through `service.py:214`; `repair_attempts`: `schemas.py:51`, no repair call before a quota failure (IMD-44). Paused message: `GenerationProgress.tsx:200` shows `PausedAiNotice` (role status, "Build a rule-based plan"). Nothing saved: API-24 answers 404 `NOT_FOUND` with no itinerary (`app/itinerary/service.py:431`).
+- Rule-based option: `service.py:167` stores `model_id` `rule_based_planner_v1` (`fallback_planner.py:33`) for mode rule_based, `service.py:209` returns `mode` rule_based, and the pipeline makes no model call for it (`pipeline.py:631`); it completes `fallback_rule_based` (`pipeline.py:432`), so the itinerary page shows the FallbackNotice (`FallbackNotice.tsx:15`, `itinerary/page.tsx:446`).
+
+### Commands
+
+| Command | Result | Wall time |
+| --- | --- | --- |
+| `make test-web ARGS='tests/unit/itinerary/LockToggle.test.tsx tests/unit/itinerary'` (IMP-506 commit) | `Test Files  12 passed (12)`, `Tests  82 passed (82)` | 7.8 s |
+| `make lint` | exit 0: `All checks passed!`, `234 files already formatted`, `All matched files use Prettier code style!` | 9.6 s |
+| `npm run typecheck --prefix apps/web` | exit 0: `✓ Types generated successfully`, `tsc --noEmit` clean | 2.9 s |
+
+Not run in RUN-081c: `make e2e` (any spec). The lead runs every E2E invocation after integration, each with its own `--output` outside the repository.
+
+### Acceptance criteria (RUN-081c)
+
+| Criterion | Status | How |
+| --- | --- | --- |
+| F-E1 retime sends a PATCH and keeps the overlap (TC-376) | not verified, pending lead runs | RUN-081b showed the retime step passing on the same change; the full spec is pending |
+| F-E2 suggested fix shown (E2E-04) | not verified, pending lead runs | RUN-081b showed the warning assertions passing at every width |
+| TC-371 timeout and quota from a fresh trip (ACC-03, ACC-17) | not verified, pending lead runs | Assertions checked against the API code listed above; lint and typecheck pass |
+| TC-383 lock toggle name contains its label | verified (unit); E2E not verified, pending lead runs | `LockToggle.test.tsx` passes |
+| `make e2e` passes three consecutive times, no retries | not verified, pending lead runs | `retries: 0` in the config; `repeat_each` input added |
+| Triggers push to main and workflow_dispatch only; ubuntu-24.04 | verified | Read `.github/workflows/e2e.yml` |
+
+### Blockers
+
+- None for this part. The 360 px CostBreakdown scroll regions (IMP-507) are fixed in a separate commit of the integration branch; `validate-costs` at 360 px depends on it.
+
+### Proposed decisions
+
+- None.
