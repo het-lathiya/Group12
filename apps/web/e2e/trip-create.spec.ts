@@ -5,7 +5,7 @@ import type { Page, TestInfo } from "@playwright/test";
 import { checkA11y } from "./axe";
 import { expect, test } from "./fixtures/users";
 
-// TC-068 (FR-007 AC1, E2E-02 wizard part): sign in, create a trip with preferences and a must-visit
+// E2E-02, TC-068, TC-071 (FR-007 AC1): sign in, create a trip with preferences and a must-visit
 // place in the SAMPLE destination, and land on the generate page. Needs the local stack, the API
 // with AI_PROVIDER=MOCK and `make seed` (Sampleton).
 
@@ -34,7 +34,7 @@ async function snapshot(page: Page, info: TestInfo, step: string) {
 const stepHeading = (page: Page, name: string) =>
   page.getByRole("heading", { level: 2, name });
 
-test("trip-create: a new trip is saved step by step and opens the generate page (TC-068)", async ({
+test("E2E-02 TC-068 TC-071: a new trip is saved step by step, opens the generate page and is listed on the dashboard", async ({
   page,
   users,
 }, info) => {
@@ -107,4 +107,16 @@ test("trip-create: a new trip is saved step by step and opens the generate page 
   await page.getByRole("link", { name: "Generate itinerary" }).click();
   await expect(page).toHaveURL(`/trips/${tripId}/generate`);
   await checkA11y(page);
+
+  await test.step("See the trip on the dashboard as draft or ready", async () => {
+    await page.goto("/dashboard");
+    const card = page.getByRole("listitem").filter({
+      has: page.getByRole("heading", {
+        level: 3,
+        name: "Weekend in Sampleton",
+      }),
+    });
+    await expect(card).toHaveCount(1);
+    await expect(card).toContainText(/Draft|Ready/);
+  });
 });

@@ -1,5 +1,11 @@
-import type { APIRequestContext, Request } from "@playwright/test";
+import {
+  expect,
+  type APIRequestContext,
+  type Page,
+  type Request,
+} from "@playwright/test";
 
+import type { components } from "../../lib/api/schema";
 import { stagingAccount, test as usersTest } from "./users";
 
 /**
@@ -67,4 +73,166 @@ export const test = usersTest.extend<{ trips: TestTrips }>({
   },
 });
 
-export { expect } from "@playwright/test";
+export { expect };
+
+/**
+ * Shared steps of the IMP-701 specs (contract §J): sign in through the UI, then set up a planned
+ * SAMPLE trip through the API with the page's own token, as itinerary-edit.spec.ts does. No
+ * database access and no second user helper: users come from the `users` fixture.
+ */
+export type Session = { base: string; headers: { authorization: string } };
+type Itinerary = components["schemas"]["ItineraryOut"];
+type Generation = components["schemas"]["GenerationOut"];
+
+/** A date from today, so a run never reaches a fixed date. */
+export const daysFromNow = (days: number) =>
+  new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+
+/** Sign in with the form and return the API base and token of the page's first API call. */
+export async function signIn(
+  page: Page,
+  user: { email: string; password: string },
+): Promise<Session> {
+  const apiCall = page.waitForRequest(
+    (r) => r.url().includes("/api/v1/") && !!r.headers()["authorization"],
+  );
+  await page.goto("/sign-in?next=%2Fdashboard");
+  await page.getByLabel("Email").fill(user.email);
+  await page.getByLabel("Password", { exact: true }).fill(user.password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Your trips" }),
+  ).toBeVisible();
+  const request = await apiCall;
+  return {
+    base: `${new URL(request.url()).origin}/api/v1`,
+    headers: { authorization: request.headers()["authorization"] },
+  };
+}
+
+/** Sign out from the account menu (IMP-109). */
+export async function signOut(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Account menu" }).click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/sign-in$/);
+}
+
+export async function readItinerary(
+  page: Page,
+  { base, headers }: Session,
+  tripId: string,
+): Promise<Itinerary> {
+  const response = await page.request.get(`${base}/trips/${tripId}/itinerary`, {
+    headers,
+  });
+  expect(response.status()).toBe(200);
+  return (await response.json()) as Itinerary;
+}
+
+/** Wait for a generation's terminal status (API-23) and return it. */
+export async function finishedGeneration(
+  page: Page,
+  { base, headers }: Session,
+  generationId: string,
+): Promise<Generation> {
+  let generation: Generation | undefined;
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(
+          `${base}/generations/${generationId}`,
+          { headers },
+        );
+        generation = (await response.json()) as Generation;
+        return generation.status;
+      },
+      { timeout: 45_000 },
+    )
+    .toMatch(/^(completed|failed)$/);
+  return generation!;
+}
+
+/**
+ * A three-day Sampleton trip for two adults with the AI notice acknowledged (API-03) unless
+ * `acknowledgeNotice` is false, optionally
+ * one must-visit place found by name (API-16), and, unless `generate` is false, a completed plan
+ * built in `mode` (API-22, API-23).
+ */
+export async function plannedTrip(
+  page: Page,
+  session: Session,
+  options: {
+    title?: string;
+    mustVisit?: string;
+    mode?: "ai" | "rule_based";
+    generate?: boolean;
+    acknowledgeNotice?: boolean;
+  } = {},
+): Promise<{ tripId: string; itinerary?: Itinerary }> {
+  const { base, headers } = session;
+  const destinations = (await (
+    await page.request.get(`${base}/destinations`, { headers })
+  ).json()) as components["schemas"]["Destination"][];
+  const destination = destinations.find((item) => item.slug === "sampleton");
+  expect(destination, "the Sampleton seed (make seed)").toBeDefined();
+  const created = await page.request.post(`${base}/trips`, {
+    headers,
+    data: {
+      title: options.title ?? "Trip in Sampleton",
+      destination_id: destination!.id,
+      start_date: daysFromNow(30),
+      end_date: daysFromNow(32),
+      adults: 2,
+    },
+  });
+  expect(created.status()).toBe(201);
+  const { id: tripId } = (await created.json()) as { id: string };
+
+  const mustVisit: string[] = [];
+  if (options.mustVisit) {
+    const found = await page.request.get(`${base}/places`, {
+      headers,
+      params: {
+        destination_id: destination!.id,
+        q: options.mustVisit,
+        limit: 1,
+      },
+    });
+    expect(found.status()).toBe(200);
+    const { items } = (await found.json()) as { items: { id: string }[] };
+    expect(items.length, `a place matching "${options.mustVisit}"`).toBe(1);
+    mustVisit.push(items[0].id);
+  }
+  const preferences = await page.request.put(
+    `${base}/trips/${tripId}/preferences`,
+    {
+      headers,
+      data: {
+        interests: ["museum", "nature"],
+        must_visit_place_ids: mustVisit,
+      },
+    },
+  );
+  expect(preferences.status()).toBe(200);
+  if (options.acknowledgeNotice !== false) {
+    const notice = await page.request.patch(`${base}/me`, {
+      headers,
+      data: { ai_notice_acknowledged: true },
+    });
+    expect(notice.status()).toBe(200);
+  }
+  if (options.generate === false) return { tripId };
+
+  const started = await page.request.post(
+    `${base}/trips/${tripId}/generations`,
+    { headers, data: { mode: options.mode ?? "ai" } },
+  );
+  expect(started.status()).toBe(202);
+  const generation = await finishedGeneration(
+    page,
+    session,
+    ((await started.json()) as { id: string }).id,
+  );
+  expect(generation.status).toBe("completed");
+  return { tripId, itinerary: await readItinerary(page, session, tripId) };
+}

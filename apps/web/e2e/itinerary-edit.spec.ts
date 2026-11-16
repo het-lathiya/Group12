@@ -1,6 +1,14 @@
+import type { Page, Response } from "@playwright/test";
+
 import type { components } from "../lib/api/schema";
-import { checkA11y } from "./axe";
-import { expect, test } from "./fixtures/users";
+import { checkA11y, expectNoSeriousA11y } from "./axe";
+import {
+  expect,
+  plannedTrip,
+  readItinerary,
+  signIn,
+  test,
+} from "./fixtures/trips";
 
 type Itinerary = components["schemas"]["ItineraryOut"];
 type Version = components["schemas"]["VersionOut"];
@@ -204,4 +212,246 @@ test("TC-376: regenerate a day and all, then restore each pre-regeneration versi
         .filter((a) => a.type === "axe-serious"),
     ).toEqual([]);
   }
+});
+
+// E2E-05 and TC-376 card step 3 (IMP-701; FR-060, FR-061, FR-063, FR-064; TC-201; ACC-05, ACC-16):
+// every edit is made from the itinerary page and checked against the API's answer. A move reflows
+// the day's times (no overlap from a reorder alone), so the overlap is made by retiming the moved
+// item's neighbour onto its start.
+
+type EditResult = components["schemas"]["EditResultOut"];
+
+async function openDay(page: Page, dayNumber: number) {
+  if ((page.viewportSize()?.width ?? 0) < 768) {
+    await page.getByRole("tab", { name: `Day ${dayNumber}` }).click();
+  }
+  return page.getByRole("region", { name: `Day ${dayNumber}` });
+}
+
+const isItemEdit = (itemId: string, method: string) => (r: Response) =>
+  new URL(r.url()).pathname === `/api/v1/itinerary/items/${itemId}` &&
+  r.request().method() === method;
+
+/** Open an item's time editor, fill the given fields and save; returns API-26's answer. */
+async function retime(
+  page: Page,
+  item: { id: string; place: { name: string } },
+  values: { start?: string; duration?: number },
+): Promise<EditResult> {
+  await page
+    .getByRole("button", { name: `Edit time of ${item.place.name}` })
+    .click();
+  const form = page.getByRole("form", {
+    name: `Edit time of ${item.place.name}`,
+  });
+  if (values.start) await form.getByLabel("Start time").fill(values.start);
+  if (values.duration)
+    await form.getByLabel("Duration (minutes)").fill(String(values.duration));
+  const saved = page.waitForResponse(isItemEdit(item.id, "PATCH"));
+  await form.getByRole("button", { name: "Save" }).click();
+  const response = await saved;
+  expect(response.status()).toBe(200);
+  await expect(form).toBeHidden();
+  return (await response.json()) as EditResult;
+}
+
+const otherDuration = (minutes: number) =>
+  minutes < 465 ? minutes + 15 : minutes - 15;
+
+test("E2E-05 TC-376: move, overlap, remove, retime, lock, regenerate day 2, save a version, change, restore and reload", async ({
+  page,
+  users,
+}) => {
+  test.setTimeout(180_000);
+  await page.route("https://tiles.openfreemap.org/**", (route) =>
+    route.abort(),
+  );
+  const user = await users.create("edit-regression");
+  const session = await test.step("Sign in", () => signIn(page, user));
+  const { tripId, itinerary } =
+    await test.step("Create and generate a trip with a must-visit museum", () =>
+      plannedTrip(page, session, {
+        title: "Edits in Sampleton",
+        mustVisit: "museum",
+      }));
+  const mustVisitDay = itinerary!.days.find((day) =>
+    day.items.some((item) => item.must_visit),
+  );
+  const mustVisit = mustVisitDay?.items.find((item) => item.must_visit);
+  expect(mustVisit, "the must-visit place is planned").toBeDefined();
+  const day1 = itinerary!.days[0];
+  expect(day1.items.length, "day 1 has two items").toBeGreaterThanOrEqual(2);
+  const [a, b] = day1.items;
+  await page.goto(`/trips/${tripId}/itinerary`);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Your itinerary" }),
+  ).toBeVisible();
+
+  await test.step("Move day 1's second item up with the keyboard", async () => {
+    const column = await openDay(page, 1);
+    const moved = page.waitForResponse(isItemEdit(b.id, "PATCH"));
+    await column
+      .getByRole("button", { name: `Move ${b.place.name} up` })
+      .press("Enter");
+    expect((await moved).status()).toBe(200);
+    await expect(column.getByRole("heading", { level: 3 }).first()).toHaveText(
+      b.place.name,
+    );
+  });
+
+  await test.step("Retime the first item onto the moved item's start (overlap)", async () => {
+    const plan = await readItinerary(page, session, tripId);
+    const start = plan.days[0].items[0].start_time;
+    await openDay(page, 1);
+    const result = await retime(page, a, { start });
+    const overlap = result.findings.find((f) => f.code === "OVERLAP");
+    expect(overlap, "an OVERLAP finding").toBeDefined();
+    await expect(
+      page
+        .getByRole("region", { name: /^Plan checks/ })
+        .getByText(overlap!.message, { exact: true })
+        .first(),
+    ).toBeAttached();
+  });
+
+  await test.step("Remove the must-visit item", async () => {
+    await openDay(page, mustVisitDay!.day_number);
+    await page
+      .getByRole("button", { name: `Remove ${mustVisit!.place.name}` })
+      .click();
+    const removed = page.waitForResponse(isItemEdit(mustVisit!.id, "DELETE"));
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Remove", exact: true })
+      .click();
+    const response = await removed;
+    expect(response.status()).toBe(200);
+    const result = (await response.json()) as EditResult;
+    expect(result.findings.map((f) => f.code)).toContain("MUST_VISIT_MISSING");
+    await expect(
+      page.getByText(`Removed ${mustVisit!.place.name}`),
+    ).toBeVisible();
+  });
+
+  const day2 = (await readItinerary(page, session, tripId)).days[1];
+  expect(day2.items.length, "day 2 has two items").toBeGreaterThanOrEqual(2);
+  const [locked, changed] = day2.items;
+
+  await test.step("Change the duration of a day 2 item", async () => {
+    await openDay(page, 2);
+    const result = await retime(page, changed, {
+      duration: otherDuration(changed.duration_min),
+    });
+    const after = result.changed_days
+      .flatMap((day) => day.items)
+      .find((item) => item.id === changed.id);
+    expect(after?.duration_min).toBe(otherDuration(changed.duration_min));
+  });
+
+  await test.step("Lock the first item of day 2", async () => {
+    const column = await openDay(page, 2);
+    const locking = page.waitForResponse(isItemEdit(locked.id, "PATCH"));
+    await column
+      .getByRole("button", { name: `Lock ${locked.place.name}` })
+      .click();
+    expect((await locking).status()).toBe(200);
+    await expect(
+      column.getByRole("button", { name: `Unlock ${locked.place.name}` }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  await test.step("Regenerate day 2 and keep the locked item's time", async () => {
+    const lockedBefore = (
+      await readItinerary(page, session, tripId)
+    ).days[1].items.find((item) => item.id === locked.id)!;
+    const started = page.waitForResponse(
+      (r) =>
+        r.url().endsWith("/days/2/regenerate") &&
+        r.request().method() === "POST",
+    );
+    await page
+      .getByRole("button", { name: "Regenerate day 2", exact: true })
+      .click();
+    expect((await started).status()).toBe(202);
+    // GenerationProgress's terminal state for an inline regeneration.
+    await expect(
+      page.getByText("Regeneration complete.", { exact: true }),
+    ).toBeVisible({ timeout: 45_000 });
+    const after = await readItinerary(page, session, tripId);
+    const kept = after.days[1].items.find((item) => item.is_locked);
+    expect(kept?.place.id).toBe(lockedBefore.place.id);
+    expect(kept?.start_time).toBe(lockedBefore.start_time);
+  });
+
+  const savedPlan = content(await readItinerary(page, session, tripId));
+  const versionNo = await test.step("Save a version", async () => {
+    await page
+      .getByRole("navigation", { name: "Main" })
+      .getByRole("link", { name: "Versions", exact: true })
+      .click();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Versions" }),
+    ).toBeVisible();
+    await page.getByLabel("Version name").fill("Before the change");
+    const saved = page.waitForResponse(
+      (r) =>
+        r.url().endsWith(`/trips/${tripId}/versions`) &&
+        r.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Save version" }).click();
+    const response = await saved;
+    expect(response.status()).toBe(201);
+    await expect(
+      page.getByRole("list", { name: "Saved versions" }),
+    ).toContainText("Before the change");
+    return ((await response.json()) as Version).version_no;
+  });
+
+  await test.step("Change the plan", async () => {
+    await page.getByRole("link", { name: "Back to itinerary" }).click();
+    const plan = await readItinerary(page, session, tripId);
+    const item = plan.days[0].items.find((i) => !i.is_locked)!;
+    await openDay(page, 1);
+    await retime(page, item, { duration: otherDuration(item.duration_min) });
+    expect(content(await readItinerary(page, session, tripId))).not.toEqual(
+      savedPlan,
+    );
+  });
+
+  await test.step("Restore the saved version", async () => {
+    await page
+      .getByRole("navigation", { name: "Main" })
+      .getByRole("link", { name: "Versions", exact: true })
+      .click();
+    await page
+      .getByRole("button", {
+        name: `Restore version ${versionNo}`,
+        exact: true,
+      })
+      .click();
+    const restored = page.waitForResponse(
+      (r) => r.url().endsWith("/restore") && r.request().method() === "POST",
+    );
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Restore", exact: true })
+      .click();
+    const response = await restored;
+    expect(response.status()).toBe(200);
+    expect(content((await response.json()) as Itinerary)).toEqual(savedPlan);
+  });
+
+  await test.step("Reload the itinerary and see the restored plan", async () => {
+    await page.goto(`/trips/${tripId}/itinerary`);
+    await page.reload();
+    const plan = await readItinerary(page, session, tripId);
+    expect(content(plan)).toEqual(savedPlan);
+    for (const day of plan.days) {
+      const column = await openDay(page, day.day_number);
+      await expect(column.locator("time")).toHaveText(
+        day.items.map((item) => item.start_time),
+      );
+    }
+    await expectNoSeriousA11y(page);
+  });
 });

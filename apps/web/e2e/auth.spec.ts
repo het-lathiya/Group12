@@ -43,7 +43,7 @@ const inMain = (page: Page) => page.getByRole("main");
 const dashboardHeading = (page: Page) =>
   page.getByRole("heading", { level: 1, name: "Your trips" });
 
-test("auth: sign-up rejects empty and weak input per field (TC-053)", async ({
+test("E2E-01 TC-053: sign-up rejects empty and weak input per field", async ({
   page,
 }) => {
   const signUpCalls: string[] = [];
@@ -93,7 +93,7 @@ test("auth: sign-up rejects empty and weak input per field (TC-053)", async ({
   }
 });
 
-test("auth: a valid sign-up creates one account and signs in or asks for confirmation (TC-051)", async ({
+test("E2E-01 TC-051: a valid sign-up creates one account and signs in or asks for confirmation", async ({
   page,
   users,
 }) => {
@@ -111,7 +111,7 @@ test("auth: a valid sign-up creates one account and signs in or asks for confirm
   expect(await users.countByEmail(email)).toBe(1);
 });
 
-test("auth: sign-up with an existing email shows the neutral notice and creates no second account (TC-052)", async ({
+test("E2E-01 TC-052: sign-up with an existing email shows the neutral notice and creates no second account", async ({
   page,
   users,
 }) => {
@@ -130,7 +130,7 @@ test("auth: sign-up with an existing email shows the neutral notice and creates 
   await expect(page).toHaveURL(/\/sign-in\?next=%2Fdashboard$/);
 });
 
-test("auth: wrong credentials say only that the email or password is incorrect", async ({
+test("E2E-01: wrong credentials say only that the email or password is incorrect", async ({
   page,
   users,
 }) => {
@@ -144,7 +144,7 @@ test("auth: wrong credentials say only that the email or password is incorrect",
   await expect(page).toHaveURL(/\/sign-in$/);
 });
 
-test("auth: sign-in opens the dashboard, survives reload, and Back after sign-out shows no private data (TC-054, TC-056)", async ({
+test("E2E-01 TC-054 TC-056: sign-in opens the dashboard, survives reload, and Back after sign-out shows no private data", async ({
   page,
   users,
 }) => {
