@@ -19,12 +19,17 @@ on:
         description: "Staging web URL for the staging job; empty runs the local-stack job"
         required: false
         default: ""
+      features_disabled:
+        description: "Comma-separated switch names for FEATURES_DISABLED and NEXT_PUBLIC_FEATURES_DISABLED (TC-372 floor journey)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
+# The floor run (features_disabled set) and the full run of one branch must not cancel each other.
 concurrency:
-  group: e2e-${{ github.ref }}
+  group: e2e-${{ github.ref }}-${{ inputs.features_disabled }}
   cancel-in-progress: true
 
 # shell: bash adds pipefail, so a failure inside a pipe fails the step.
@@ -50,6 +55,11 @@ jobs:
     if: ${{ !inputs.base_url }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    # TC-372: the floor journey switches features off in the API and the web build; a push and an
+    # empty input leave both empty (every feature on).
+    env:
+      FEATURES_DISABLED: ${{ inputs.features_disabled }}
+      NEXT_PUBLIC_FEATURES_DISABLED: ${{ inputs.features_disabled }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -120,8 +130,9 @@ jobs:
         run: make e2e ARGS='map'
 
       # IMP-607 TC-376: regeneration and restoring its pre-regeneration version.
+      # Skipped when regeneration or versions is switched off: their routes answer 404 (IMD-11).
       - name: Run itinerary editing and restore
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !contains(inputs.features_disabled, 'regeneration') && !contains(inputs.features_disabled, 'versions') }}
         env:
           BASE_URL: http://localhost:3000
           PLAYWRIGHT_HTML_REPORT: playwright-report/itinerary-edit
