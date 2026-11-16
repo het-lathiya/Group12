@@ -80,7 +80,7 @@ it("locks with Space and unlocks with Enter, announces the server state and send
   button.focus();
   await user.keyboard(" ");
   const locked = await screen.findByRole("button", {
-    name: `Unlock ${ITEM.place.name}`,
+    name: `Locked ${ITEM.place.name}`,
   });
   expect(locked).toHaveAttribute("aria-pressed", "true");
   expect(locked).toHaveTextContent("Locked");
@@ -99,7 +99,7 @@ it("hides the lock control and indicator when locks are disabled", async () => {
   setup(true);
   await screen.findByRole("heading", { name: ITEM.place.name });
   expect(
-    screen.queryByRole("button", { name: /^(Lock|Unlock) / }),
+    screen.queryByRole("button", { name: /^(Lock|Locked) / }),
   ).not.toBeInTheDocument();
   expect(screen.queryByText("Locked")).not.toBeInTheDocument();
 });

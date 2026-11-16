@@ -190,7 +190,7 @@ function LockToggle({ item, edit }: { item: Item; edit: ItemEditContext }) {
       <Button
         variant="outline"
         aria-pressed={item.is_locked}
-        aria-label={`${item.is_locked ? "Unlock" : "Lock"} ${item.place.name}`}
+        aria-label={`${item.is_locked ? "Locked" : "Lock"} ${item.place.name}`}
         disabled={busy}
         onClick={() =>
           lock.mutate({

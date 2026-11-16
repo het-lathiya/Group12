@@ -356,7 +356,7 @@ test("E2E-05 TC-376: move, overlap, remove, retime, lock, regenerate day 2, save
       .click();
     expect((await locking).status()).toBe(200);
     await expect(
-      column.getByRole("button", { name: `Unlock ${locked.place.name}` }),
+      column.getByRole("button", { name: `Locked ${locked.place.name}` }),
     ).toHaveAttribute("aria-pressed", "true");
   });
 
