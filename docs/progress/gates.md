@@ -520,7 +520,104 @@ Confirmed by: Kirtan (gate owner) — pending
 
 ## SG-6 end of week 6: MVP feature freeze (IMP-699)
 
-Status: not run
+Status: **pass with listed gaps** (IMD-201)
+
+- Run: RUN-080, IMP-699 whole-task, owner Kirtan, 16 November 2026. Index: [sprint-6.md](sprint-6.md). Deferred list: [deferred.md](deferred.md).
+- Gate commit: the head of this PR (`feat/IMP-699-sg6-gate`); base `fd7ae14` (`main` after #285). The E2E evidence ran on `4c4375e`, the branch head after the tooling commit; the last commit (this documentation) was pushed afterwards and needed no new E2E dispatch, because it changes only `docs/progress/`.
+- Scope of this result: no `.env` file was read, and no staging URL, AWS or Gemini call was made in this run. Staging is off (IMD-137), so every staging criterion is **not verifiable** and is an open item for the staging window of Wednesday 18 November 2026 (IMD-201). No staging criterion is claimed as passed.
+- Sprint 6 cards: 19 parts on 9 cards (50 points) are merged (#281 to #285). IMP-603 (DATA) waits for the members' curated files until Thursday 19 November 2026; IMP-611 (HUMAN) has its templates merged and its session pending. IMP-612 and IMP-613 (extensions) are cut (IMD-65, IMD-186); a switched-off extension counts as satisfied for the gate card (specification §11.2).
+- Tooling change in this PR (Kirtan, `ci(e2e): IMP-699 …`): `.github/workflows/e2e.yml` gets a `workflow_dispatch` input `features_disabled` (string, default `""`). When set, the local-stack job passes it to both the API (`FEATURES_DISABLED`) and the web build and server (`NEXT_PUBLIC_FEATURES_DISABLED`). The concurrency group includes the input, so the floor run and the full run of one branch do not cancel each other (the first dispatch pair on `dec3130` showed that: run 43806947411 was cancelled by the second dispatch). The step "Run itinerary editing and restore" (TC-376) is skipped when `regeneration` or `versions` is in the input, because their routes answer 404 then (IMD-11). Push runs and an empty input behave as before. `journey.spec.ts` needed no guard: the journey uses only features outside the cut list (a fresh local account has no trips to delete; remove, retime, move, Open latest and Costs are not switched), and it passed with all nine off. `runs-on` stays `ubuntu-24.04`.
+- Decisions used: IMD-11 and IMD-47 (switches), IMD-37 (extension routes may answer 501 until SG-7), IMD-65 (extensions cut), IMD-137 (staging off), IMD-167 (no cut-list switch applied), IMD-185 (E2E by dispatch), IMD-186, IMD-187 to IMD-199 (Sprint 6), IMD-200 (prompt v3 stays inactive) and IMD-201 (SG-6 passes with listed gaps; feature freeze), the last two recorded in `docs/spec/DECISION_REGISTER.md` in this pull request.
+
+### Criteria
+
+| # | Criterion (card IMP-699 acceptance and steps; §14.1 SG-6 row) | Result | Evidence |
+| --- | --- | --- | --- |
+| 1 | Acceptance 1 / step 1: every MVP/MVP-S FR is Done with tests or listed as cut with the checkpoint decision | PASS | [Requirement coverage](sprint-6.md#requirement-coverage-sg-6-step-1): 88 of 88 Done (63 MVP, 25 MVP-S), 0 cut, 0 gap; tests in the suites of rows 2a and 2d. FR-114, FR-115 and FR-120 also name Sprint 7 cards (IMP-703, IMP-705) |
+| 2a | Acceptance 2 / step 2: `make check` green | PASS | Local run on `4c4375e` with a throwaway PostgreSQL 16 + pgvector (stopped afterwards): exit 0; `1204 passed` (unit), `91 passed, 2 deselected` (contract), `565 passed` (api), `71 passed` (authz), `Tests  283 passed (283)` (web). `main` at the base: [CI 43806482129](https://github.com/het-lathiya/Group12/actions/runs/43806482129) (push, `fd7ae14`, success). CI on this PR: read on the PR before merge |
+| 2b | Acceptance 2 / step 2: full journey with all switches on (TC-369) | PASS | [E2E 43807014448](https://github.com/het-lathiya/Group12/actions/runs/43807014448) (workflow_dispatch on `4c4375e`, success): journey `4 passed (35.9s)`, map `8 passed (20.1s)`, itinerary-edit (TC-376 regenerate and restore) `4 passed (27.6s)`; staging job skipped |
+| 2c | Acceptance 2 / step 2: floor journey with all nine cut-list switches off (TC-372) | PASS | [E2E 43807026528](https://github.com/het-lathiya/Group12/actions/runs/43807026528) (workflow_dispatch on `4c4375e`, `features_disabled=versions,trip_management,contingency,budget_alerts,wishlist,alternatives,regeneration,locks,meal_slots`, success; the job log shows both variables set): journey `4 passed (34.0s)`, map `8 passed (18.2s)`; itinerary-edit skipped by design (its features are off). API halves of TC-372 are in the CI `api` job (switch-off tests of IMP-605, IMP-607, IMP-608, IMP-610) |
+| 2d | Step 2: `make e2e` on `main` | PASS | [E2E 43806482078](https://github.com/het-lathiya/Group12/actions/runs/43806482078) (push, `fd7ae14`, success) |
+| 3 | Acceptance 3 / step 3: staging journey with GEMINI (sign in, create, generate, validate costs, edit, regenerate a day, restore a version, summary) | NOT VERIFIABLE (staging off) | Open item, Kirtan and Het (Gemini key), due Wed 18 Nov 2026 (IMD-201). Below the staging level: rows 2b and 2c with MOCK; Gemini v3 evaluation run `20261116T042246Z-gemini` ([RUN-079](parts/RUN-079-v3-evaluation.md)) |
+| 4 | Card tests: `make smoke URL=<staging api url>` (new cases of `apps/api/tests/smoke/test_deployed.py`) | NOT VERIFIABLE (staging off) | Not run. Open item, Kirtan, due Wed 18 Nov 2026 |
+| 5 | Acceptance 4 / step 4: `docs/progress/deferred.md` exists (unfinished stories, disabled switches, T1 items not started, owner and reason) | PASS | [deferred.md](deferred.md) |
+| 6 | Acceptance 4 / step 5: freeze entry | PASS | "Feature freeze" below |
+| 7 | Acceptance 5 / step 6: IMP-612 and IMP-613 done (TC-409 to TC-412, TC-425 to TC-430) or switched off; Sprint 7 extension plan recorded | PASS (cut) | IMP-612 cut (IMD-65, IMD-186), IMP-613 cut (IMD-65); neither is built (no route, table or screen); "Sprint 7 extension plan" below |
+| 8 | §14.1 SG-6: zero 501 MVP routes (extension routes may answer 501 until SG-7, IMD-37) | PASS | `grep` of `apps/api/app`: `EndpointNotImplemented` is defined in `core/errors.py` and raised nowhere; `contracts/openapi.v1.json` holds 36 operations, none declaring 501. MVP routes answering 501: 0. Extension routes: none exist |
+| 9 | §14.1 SG-6: all MVP contracts frozen; any change needs a decision entry | PASS (recorded) | "Feature freeze" below; contract stability rule of §9.1 |
+| 10 | §14.1 SG-6 acceptable defects: usability findings scheduled for Sprint 7 | PASS (scheduled) | IMP-611 session pending (IMD-201); findings go to Sprint 7 (IMP-704). "Usability findings" below |
+| 11 | §9.1: no severity 1 or 2 defect in the gate's scope | PASS on the listed basis | Known defects below. The staging Gemini `config_error` is staging-only and moved to 18 Nov 2026 |
+| 12 | §14.1 SG-6 evidence: `deferred.md`, freeze entry, CI runs | PASS | Rows 2a to 2d, 5, 6 |
+
+Summary over the 15 rows: **PASS 13** (rows 1, 2a, 2b, 2c, 2d, 5 to 12) / **FAIL 0** / **NOT VERIFIABLE 2** (rows 3 and 4, staging off).
+
+### Known defects
+
+Severity per IMD-41 (§14.1): 1 blocks a journey or exposes data; 2 breaks a requirement with no workaround; 3 has a workaround; 4 cosmetic.
+
+| Defect | Severity | Owner | Status since SG-5 |
+| --- | --- | --- | --- |
+| Gemini generations on staging end `failed` / `config_error` (SG-4 operator run); local live smoke and evaluation runs succeed | major, staging only (would be 2 if staging were in scope) | Kirtan, Het | **open**; staging window Wed 18 Nov 2026 |
+| Under prompt v2 the model writes "AI-written" into its notes and reuses places for meals (baseline-1) | minor (3); the validator rejects repeated places, which shortens plans | Manya, Nidhi | **open**: v2 stays active; v3 fixes the wording but failed the IMD-195 gate (14 duplicate-place items in 3 of 45 Gemini attempts) and is not activated (IMD-200); v4 may follow in Sprint 7 |
+| IMP-608: no budget alert banner in the itinerary cost strip (the itinerary page has no cost strip; the alert shows on the Costs page) | minor (3) | Krrish, Manal | new; Sprint 7 triage |
+| Destructive Button hover about 4.40:1 (PD-RUN-071b-1) | — | Manasvi | **fixed** in RUN-075 (#281, [record](parts/RUN-075-hover-contrast.md)) |
+| TC-385 live-stack label review and screenshots not done | minor (4, evidence gap) | Manasvi | open |
+| Provider spending limit is Awaiting validation | minor (risk) | Kirtan | open |
+| CI: a pull-request edit should run only `attribution`; not yet observed at runtime | minor (4) | Kirtan | open |
+
+No severity 1 or 2 defect is known in the local and CI scope.
+
+### Cut-list flags
+
+- Nine MVP cut-list switches in cut order (§1.2): `versions` (C-11), `trip_management` (F-52), `contingency` (F-22), `budget_alerts` (F-20), `wishlist` (F-08), `alternatives` (F-14), `regeneration` (F-15), `locks` (C-02), `meal_slots` (F-40); the same names and order in `apps/web/lib/flags.ts`.
+- Extension switches (§2.5): `ranking_explain`, `nl_intake`, `day_explain`, `optimise_order`, `rain_swap`, `today_view`, `budget_fit`, `context_cards`, `packing`.
+- Applied: none. `FEATURES_DISABLED` defaults to `""` (`apps/api/app/core/config.py`); `.env.example` and the workflows leave both variables empty; the staging repository variable was not read. Every cut-list feature is built and on; the floor run (row 2c) shows the app works with all nine off. Extensions are off by decision, not by configuration, because none is built (IMD-65, IMD-187).
+
+### Feature freeze
+
+In force from Sprint 7 (IMD-201): only defects, hardening, documents, data loading (IMP-603) and the planned Sprint 7 and 8 cards are merged. Every MVP contract (OpenAPI v1, AI schemas, tables 0001 to 0007, finding and error codes, environment variable names, switch names) is frozen; any change needs a decision entry, the updated contract files and a passing contract test in the same pull request (§9.1 contract stability rule), approved by the integration lead.
+
+### Sprint 7 extension plan
+
+IMP-708 to IMP-713 are **cut** (IMD-65) and are not built in Sprint 7; IMP-515, IMP-612 and IMP-613 stay cut. Sprint 7 carries the quality cards IMP-701 to IMP-707 and the gate IMP-799. SG-7's "every extension done or switched off and listed" is met by this list and [deferred.md](deferred.md).
+
+### Usability findings
+
+IMP-611 session 1 runs on staging in or right after the window of Wed 18 November 2026 (Junaid, Krrish; plan and findings templates in `docs/acceptance/usability-1/`). Its findings become backlog items scheduled for Sprint 7 and are fixed under IMP-704 (Manasvi, Junaid).
+
+### Working-agreement audit (IMD-68)
+
+From `gh pr view <n> --json mergedBy,reviewDecision,statusCheckRollup`. All were merged by the operator account `het-lathiya`. Branch protection keeps 0 required approvals (IMD-185).
+
+| PR | reviewDecision | mergedBy | Check runs in the rollup | Meets the agreement |
+| --- | --- | --- | --- | --- |
+| #281 | none | het-lathiya | 6 success | **no**: no approval |
+| #282 | none | het-lathiya | 6 success | **no**: no approval |
+| #283 | none | het-lathiya | 6 success | **no**: no approval |
+| #284 | none | het-lathiya | 6 success | **no**: no approval |
+| #285 | none | het-lathiya | 6 success | **no**: no approval |
+
+Summary: 5 merged, 0 with an approval, all checks green. Nothing was changed on these pull requests.
+
+### Gate decision
+
+**Pass with listed gaps** (IMD-201). The feature freeze is in force from Sprint 7. Staging criteria (rows 3 and 4) and the SG-4/SG-5 staging items are due in one window by Wed 18 November 2026; IMP-603 by Thu 19 November 2026.
+
+### Open items
+
+| Item | Owner | Due | Source |
+| --- | --- | --- | --- |
+| Staging GEMINI primary journey including regenerate a day, restore a version and summary | Kirtan, Het (Gemini key) | Wed 18 November 2026 | row 3, IMD-201 |
+| `make smoke` against staging with the new smoke cases | Kirtan | Wed 18 November 2026 | row 4 |
+| SG-5 and SG-4 staging items (Gemini `config_error`, timeout fallback, generation cap, edit totals, RAG index line, ACC-19, NFR-050, TC-438, CORS) | Kirtan, Het | Wed 18 November 2026 | SG-5 open items |
+| IMP-603 destination 2 curated files and load | Junaid, Manya, Kirtan | Thu 19 November 2026 (else deferred) | IMD-201 |
+| IMP-611 usability session 1 on staging | Junaid, Krrish | in or right after the staging window | IMD-201 |
+| IMP-114 interviews (PR #201, draft) | Junaid, Krrish | Thu 19 November 2026 | SG-4 |
+| Optional prompt v4 and its IMD-195 evaluation | Manya | Sprint 7 | IMD-200 |
+| IMP-608 alert in the itinerary cost strip (triage) | Krrish, Manal | Sprint 7 | IMP-608 budget-alert record |
+| The remaining SG-5 open items without a date (screenshots, TC-384, TC-385, recordings, OpenFreeMap terms, `infra/aws` stdin, IMD-120 data checks, TC-334 thresholds, production environment) | as listed at SG-5 | as listed at SG-5 | SG-5 |
+
+Confirmed by: Kirtan (gate owner) — pending
 
 ## SG-7 end of week 7: release candidate and extension freeze (IMP-799)
 
