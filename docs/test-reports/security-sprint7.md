@@ -44,3 +44,20 @@ Note 1: the default Turbopack build (`npm run build`) cannot run in this worktre
 | F-1 | 3 (low), not a failed TC | The verifier does not check the `iss` claim: a token signed with the project's own key but carrying `iss: https://evil.example/auth/v1` is accepted (`TokenVerifier(jwt_secret=…).verify(make_token(…, iss=…))` returns the user). §3.4 rule 2 and §6.2 list header missing, malformed, expired, wrong audience and bad signature, not issuer, so the code meets the binding rule; the card's step 2 says "wrong-issuer tokens" and IMD-140 says "audience, issuer, expiry and algorithm rules are unchanged". A token from another issuer is refused because its signature fails (TC-347 row). Exploiting the gap needs the project's signing key, which already allows minting any token. | Proposed decision PD-RUN-081-2; no code change without it (adding an issuer check needs the expected issuer on every environment, e.g. `${SUPABASE_URL}/auth/v1`) |
 
 No severity-1 or severity-2 defect was found. No failed security item blocks SG-7 from this run; the staging rows above stay open.
+
+## CORS, headers and secret-scan review (part headers-secret-scan)
+
+| TC | Check | Commit | Date | Command | Result line | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| TC-351 | `/api/v1/trips`: the ALLOWED_ORIGINS origin gets Access-Control-Allow-Origin on preflight and on a simple (401) request, with no allow-credentials; three unknown origins (including a suffix look-alike and `null`) get none; TRACE preflight refused | cf3fd89 | 2026-11-16 | `make test-authz` | `86 passed, 14 skipped, 1 warning in 43.03s` | passed |
+| TC-352 (headers) | Security response headers | — | 2026-11-16 | — | not run | not verified — §6 and A1 §11 name no header list (PD-RUN-081-1); the HTTPS part needs the staging window (IMD-137), Kirtan runs |
+
+Secret-scan configuration review (gitleaks 8.30.1):
+
+| Item | Finding | Severity |
+| --- | --- | --- |
+| Allowlist files | No `.gitleaks.toml`, `.gitleaksignore` or other gitleaks config is tracked (`git ls-files \| grep -i gitleaks` prints nothing), so the default rule set runs with no allowlist | none: nothing over-broad |
+| Inline allows | `git grep -n "gitleaks:allow"` prints nothing | none |
+| ci.yml guards | Binary pinned to v8.30.1 with sha256 verified before use; `--redact` keeps any finding's value out of the log; pull requests scan `--no-merges BASE..HEAD`, pushes to main scan the full history; a tracked real `.env` file fails the job | none |
+| Pre-commit | `.pre-commit-config.yaml` pins the gitleaks hook to the same v8.30.1 | none |
+| Test secrets | Test signing keys are derived at import with sha256 (`tests/fixtures/auth.py`, the IMP-702 foreign-issuer key), so no secret-like literal is committed and no allowlist is needed | none |
