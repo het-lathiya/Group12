@@ -102,7 +102,7 @@ function Versions() {
             </Button>
           }
         />
-      ) : itinerary.data ? (
+      ) : itinerary.data && versions.data ? (
         <>
           <form
             onSubmit={save}
