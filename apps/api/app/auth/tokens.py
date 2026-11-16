@@ -2,7 +2,8 @@
 
 With ``SUPABASE_JWKS_URL`` set, tokens are verified with the project's published asymmetric keys
 (5 s fetch timeout, key set cached 10 minutes); otherwise with HS256 and ``SUPABASE_JWT_SECRET``.
-Every token must carry ``exp``, a UUID ``sub`` and ``aud`` = ``authenticated``; ``exp`` and ``iat``
+Every token must carry ``iss`` matching the configured Supabase Auth issuer (IMD-204),
+``exp``, a UUID ``sub`` and ``aud`` = ``authenticated``; ``exp`` and ``iat``
 are checked with 30 s of clock leeway (IMD-140). Any failure is the same 401 UNAUTHENTICATED with
 the same message, so a caller never learns which check failed. A key set that cannot be fetched
 (and no cached key matches) is 503 SERVICE_UNAVAILABLE. Tokens are never logged.
@@ -23,7 +24,7 @@ from app.core.errors import ServiceUnavailable, Unauthenticated
 logger = logging.getLogger(__name__)
 
 AUDIENCE = "authenticated"
-REQUIRED_CLAIMS = ["exp", "sub", "aud"]
+REQUIRED_CLAIMS = ["exp", "sub", "aud", "iss"]
 HS256 = ["HS256"]
 # Asymmetric algorithms Supabase signing keys use; "none" and HMAC are never accepted with JWKS.
 JWKS_ALGORITHMS = ["ES256", "RS256", "EdDSA"]
@@ -71,7 +72,10 @@ def claims_from_payload(payload: dict[str, Any]) -> TokenClaims:
 class TokenVerifier:
     """Verifies one bearer token per call; built from the settings by ``verifier_for``."""
 
-    def __init__(self, *, jwt_secret: str = "", key_source: SigningKeySource | None = None) -> None:
+    def __init__(
+        self, *, issuer: str, jwt_secret: str = "", key_source: SigningKeySource | None = None
+    ) -> None:
+        self._issuer = issuer
         self._jwt_secret = jwt_secret
         self._key_source = key_source
 
@@ -96,14 +100,14 @@ class TokenVerifier:
             raise _reject(type(exc).__name__) from exc
         return signing_key.key
 
-    @staticmethod
-    def _decode(token: str, key: Any, algorithms: list[str]) -> TokenClaims:
+    def _decode(self, token: str, key: Any, algorithms: list[str]) -> TokenClaims:
         try:
             payload = jwt.decode(
                 token,
                 key,
                 algorithms=algorithms,
                 audience=AUDIENCE,
+                issuer=self._issuer,
                 leeway=CLOCK_LEEWAY_S,
                 options={"require": REQUIRED_CLAIMS},
             )
@@ -115,6 +119,7 @@ class TokenVerifier:
 def verifier_for(settings: Settings) -> TokenVerifier:
     """JWKS when SUPABASE_JWKS_URL is set, otherwise HS256 with SUPABASE_JWT_SECRET (IMD-04)."""
     jwks_url = settings.supabase_jwks_url.strip()
+    issuer = settings.supabase_url.rstrip("/") + "/auth/v1"
     if jwks_url:
-        return TokenVerifier(key_source=jwks_client(jwks_url))
-    return TokenVerifier(jwt_secret=settings.supabase_jwt_secret.get_secret_value())
+        return TokenVerifier(issuer=issuer, key_source=jwks_client(jwks_url))
+    return TokenVerifier(issuer=issuer, jwt_secret=settings.supabase_jwt_secret.get_secret_value())

@@ -27,6 +27,8 @@ from app.main import create_app
 # Test-only HS256 secret, derived at import so no secret-like literal sits in the repository.
 TEST_JWT_SECRET = hashlib.sha256(b"imp-108 pytest only, never a real Supabase secret").hexdigest()
 AUDIENCE = "authenticated"
+TEST_SUPABASE_URL = "http://127.0.0.1:54321"
+TEST_ISSUER = TEST_SUPABASE_URL + "/auth/v1"
 
 
 def make_token(
@@ -45,6 +47,7 @@ def make_token(
     payload: dict[str, Any] = {
         "sub": str(user_id),
         "aud": "anon" if wrong_aud else AUDIENCE,
+        "iss": TEST_ISSUER,
         "exp": now - 60 if expired else now + 600,
         # A few seconds back: PyJWT has no leeway, so iat = now fails if the wall clock steps back.
         "iat": now - 120 if expired else now - 5,
@@ -68,6 +71,7 @@ def auth_test_settings(**overrides: Any) -> Settings:
         # Never connected to: requests reach the test database through the db_session override.
         "database_url": "postgresql+psycopg://unused:unused@127.0.0.1:9/unused",
         "supabase_jwt_secret": TEST_JWT_SECRET,
+        "supabase_url": TEST_SUPABASE_URL,
         "supabase_jwks_url": "",
         **overrides,
     }

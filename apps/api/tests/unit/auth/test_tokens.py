@@ -13,6 +13,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from fastapi import Depends, FastAPI
 from fixtures.auth import (
+    TEST_ISSUER,
     TEST_JWT_SECRET,
     auth_test_settings,
     bearer,
@@ -32,7 +33,7 @@ OTHER_SECRET = TEST_JWT_SECRET[::-1]
 
 
 def verify(token: str, verifier: TokenVerifier | None = None) -> TokenClaims:
-    verifier = verifier or TokenVerifier(jwt_secret=TEST_JWT_SECRET)
+    verifier = verifier or TokenVerifier(issuer=TEST_ISSUER, jwt_secret=TEST_JWT_SECRET)
     return asyncio.run(verifier.verify(token))
 
 
@@ -66,8 +67,13 @@ def test_a_helper_token_outlasts_a_backward_clock_step() -> None:
         make_token(USER_ID, omit=["aud"]),
         make_token(USER_ID, omit=["exp"]),
         make_token(USER_ID, omit=["sub"]),
+        make_token(USER_ID, omit=["iss"]),
         make_token("not-a-uuid"),
-        jwt.encode({"sub": str(USER_ID), "aud": "authenticated", "exp": 9999999999}, None, "none"),
+        jwt.encode(
+            {"iss": TEST_ISSUER, "sub": str(USER_ID), "aud": "authenticated", "exp": 9999999999},
+            None,
+            "none",
+        ),
         "not.a.token",
         "",
     ],
@@ -79,6 +85,7 @@ def test_a_helper_token_outlasts_a_backward_clock_step() -> None:
         "no aud",
         "no exp",
         "no sub",
+        "no issuer",
         "sub not a UUID",
         "alg none",
         "garbage",
@@ -92,9 +99,32 @@ def test_tc_347_every_bad_token_is_the_same_unauthenticated(token: str) -> None:
     assert raised.value.message == Unauthenticated.default_message
 
 
+def test_tc_347_wrong_issuer_matches_the_bad_signature_401_envelope() -> None:
+    foreign = make_token(USER_ID, iss="https://evil.example/auth/v1")
+    with pytest.raises(Unauthenticated):
+        verify(foreign, verifier_for(auth_test_settings()))
+
+    app = create_app(auth_test_settings())
+    app.dependency_overrides[deps.db_session] = no_database
+
+    async def call() -> list[httpx.Response]:
+        async with client_for(app) as client:
+            return [
+                await client.get("/api/v1/me", headers=bearer(token))
+                for token in (foreign, make_token(USER_ID, secret=OTHER_SECRET))
+            ]
+
+    for response in asyncio.run(call()):
+        assert response.status_code == 401
+        error = response.json()["error"]
+        assert error["code"] == "UNAUTHENTICATED"
+        assert error["message"] == Unauthenticated.default_message
+        assert error["details"] == []
+
+
 def test_without_a_secret_or_jwks_url_tokens_cannot_be_checked() -> None:
     with pytest.raises(ServiceUnavailable):
-        verify(make_token(USER_ID), TokenVerifier(jwt_secret=""))
+        verify(make_token(USER_ID), TokenVerifier(issuer=TEST_ISSUER, jwt_secret=""))
 
 
 def test_verifier_uses_hs256_without_a_jwks_url() -> None:
@@ -123,17 +153,23 @@ class FakeKeySource:
 
 
 def rs256_token(**overrides: Any) -> str:
-    payload = {"sub": str(USER_ID), "aud": "authenticated", "exp": 9999999999, **overrides}
+    payload = {
+        "iss": TEST_ISSUER,
+        "sub": str(USER_ID),
+        "aud": "authenticated",
+        "exp": 9999999999,
+        **overrides,
+    }
     return jwt.encode(payload, PRIVATE_KEY, algorithm="RS256", headers={"kid": "test-key"})
 
 
 def test_jwks_verifies_an_asymmetric_token() -> None:
-    claims = verify(rs256_token(), TokenVerifier(key_source=FakeKeySource()))
+    claims = verify(rs256_token(), TokenVerifier(issuer=TEST_ISSUER, key_source=FakeKeySource()))
     assert claims.user_id == USER_ID
 
 
 def test_jwks_rejects_an_hs256_token_and_a_wrong_audience() -> None:
-    verifier = TokenVerifier(key_source=FakeKeySource())
+    verifier = TokenVerifier(issuer=TEST_ISSUER, key_source=FakeKeySource())
     with pytest.raises(Unauthenticated):
         verify(make_token(USER_ID), verifier)
     with pytest.raises(Unauthenticated):
@@ -141,7 +177,9 @@ def test_jwks_rejects_an_hs256_token_and_a_wrong_audience() -> None:
 
 
 def test_jwks_unknown_key_is_unauthenticated() -> None:
-    verifier = TokenVerifier(key_source=FakeKeySource(jwt.PyJWKClientError("no matching kid")))
+    verifier = TokenVerifier(
+        issuer=TEST_ISSUER, key_source=FakeKeySource(jwt.PyJWKClientError("no matching kid"))
+    )
     with pytest.raises(Unauthenticated):
         verify(rs256_token(), verifier)
 
@@ -149,7 +187,7 @@ def test_jwks_unknown_key_is_unauthenticated() -> None:
 def test_jwks_that_cannot_be_fetched_is_service_unavailable() -> None:
     error = jwt.PyJWKClientConnectionError("fetch failed")
     with pytest.raises(ServiceUnavailable):
-        verify(rs256_token(), TokenVerifier(key_source=FakeKeySource(error)))
+        verify(rs256_token(), TokenVerifier(issuer=TEST_ISSUER, key_source=FakeKeySource(error)))
 
 
 def test_verifier_uses_jwks_when_the_url_is_set() -> None:
@@ -240,13 +278,19 @@ class LocalJwksClient(jwt.PyJWKClient):
 
 def es256_token(**overrides: Any) -> str:
     now = int(time.time())
-    payload = {"sub": str(USER_ID), "aud": "authenticated", "iat": now, "exp": now + 600}
+    payload = {
+        "iss": TEST_ISSUER,
+        "sub": str(USER_ID),
+        "aud": "authenticated",
+        "iat": now,
+        "exp": now + 600,
+    }
     return jwt.encode({**payload, **overrides}, ES256_KEY, "ES256", headers={"kid": ES256_KID})
 
 
 def es256_verify(token: str) -> TokenClaims:
     verifier = TokenVerifier(
-        key_source=LocalJwksClient("https://jwks.invalid/.well-known/jwks.json")
+        issuer=TEST_ISSUER, key_source=LocalJwksClient("https://jwks.invalid/.well-known/jwks.json")
     )
     return verify(token, verifier)
 
@@ -266,3 +310,23 @@ def test_an_expired_es256_token_is_refused() -> None:
     now = int(time.time())
     with pytest.raises(Unauthenticated):
         es256_verify(es256_token(iat=now - 700, exp=now - 60))
+
+
+@pytest.mark.parametrize("trailing_slash", ["", "/"])
+def test_the_issuer_comes_from_supabase_url(trailing_slash: str) -> None:
+    url = "https://project.example.test"
+    verifier = verifier_for(auth_test_settings(supabase_url=url + trailing_slash))
+    assert verify(make_token(USER_ID, iss=url + "/auth/v1"), verifier).user_id == USER_ID
+    with pytest.raises(Unauthenticated):
+        verify(make_token(USER_ID), verifier)
+
+
+@pytest.mark.parametrize("issuer", ["https://evil.example/auth/v1", ""])
+def test_jwks_refuses_a_foreign_or_empty_issuer(issuer: str) -> None:
+    payload: dict[str, Any] = {"iss": issuer}
+    with pytest.raises(Unauthenticated):
+        verify(
+            rs256_token(**payload), TokenVerifier(issuer=TEST_ISSUER, key_source=FakeKeySource())
+        )
+    with pytest.raises(Unauthenticated):
+        es256_verify(es256_token(**payload))
