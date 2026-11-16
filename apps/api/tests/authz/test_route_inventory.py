@@ -191,6 +191,9 @@ PUBLIC_OPERATIONS = frozenset({("GET", "/health"), ("GET", "/health/ready")})  #
 FOREIGN_KEY = hashlib.sha256(b"imp-702 another issuer, pytest only").hexdigest()
 
 MORE_BAD_TOKENS = {
+    "wrong issuer with valid signature": bearer(
+        make_token(uuid.uuid4(), iss="https://evil.example/auth/v1")
+    ),
     "signed by another issuer": bearer(
         make_token(uuid.uuid4(), secret=FOREIGN_KEY, iss="https://evil.example/auth/v1")
     ),
