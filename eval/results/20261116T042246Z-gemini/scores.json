@@ -1,0 +1,1079 @@
+[
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-001",
+    "category": "standard",
+    "daily_travel_min": [
+      153,
+      286
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 3661,
+    "invalid_ids": 0,
+    "latency_ms": 3686,
+    "no_duplicate_places": true,
+    "output_tokens": 1052,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-001",
+    "category": "standard",
+    "daily_travel_min": [
+      153,
+      286
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 3661,
+    "invalid_ids": 0,
+    "latency_ms": 3122,
+    "no_duplicate_places": true,
+    "output_tokens": 1045,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-001",
+    "category": "standard",
+    "daily_travel_min": [
+      153,
+      434
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 3661,
+    "invalid_ids": 0,
+    "latency_ms": 3723,
+    "no_duplicate_places": true,
+    "output_tokens": 1159,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-002",
+    "category": "standard",
+    "daily_travel_min": [
+      328,
+      339,
+      303
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 4890,
+    "invalid_ids": 0,
+    "latency_ms": 10118,
+    "no_duplicate_places": true,
+    "output_tokens": 1571,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-002",
+    "category": "standard",
+    "daily_travel_min": [
+      328,
+      214,
+      287
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 4890,
+    "invalid_ids": 0,
+    "latency_ms": 4730,
+    "no_duplicate_places": true,
+    "output_tokens": 1740,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-002",
+    "category": "standard",
+    "daily_travel_min": [
+      176,
+      202,
+      294
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 4890,
+    "invalid_ids": 0,
+    "latency_ms": 4607,
+    "no_duplicate_places": true,
+    "output_tokens": 1713,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-003",
+    "category": "standard",
+    "daily_travel_min": [
+      14,
+      54,
+      74,
+      51,
+      14
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 6033,
+    "invalid_ids": 0,
+    "latency_ms": 5637,
+    "no_duplicate_places": true,
+    "output_tokens": 2371,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-003",
+    "category": "standard",
+    "daily_travel_min": [
+      40,
+      38,
+      37,
+      38,
+      40
+    ],
+    "duplicate_places": 3,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 6033,
+    "invalid_ids": 0,
+    "latency_ms": 7230,
+    "no_duplicate_places": false,
+    "output_tokens": 2790,
+    "place_ids_valid": true,
+    "rejected_items": 3,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-003",
+    "category": "standard",
+    "daily_travel_min": [
+      14,
+      63,
+      64,
+      39,
+      44
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 6033,
+    "invalid_ids": 0,
+    "latency_ms": 6412,
+    "no_duplicate_places": true,
+    "output_tokens": 2594,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-004",
+    "category": "tight_budget",
+    "daily_travel_min": [
+      218,
+      278
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 3660,
+    "invalid_ids": 0,
+    "latency_ms": 3025,
+    "no_duplicate_places": true,
+    "output_tokens": 1058,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-004",
+    "category": "tight_budget",
+    "daily_travel_min": [
+      325,
+      261
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 3660,
+    "invalid_ids": 0,
+    "latency_ms": 3638,
+    "no_duplicate_places": true,
+    "output_tokens": 1180,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-004",
+    "category": "tight_budget",
+    "daily_travel_min": [
+      325,
+      329
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 3660,
+    "invalid_ids": 0,
+    "latency_ms": 6744,
+    "no_duplicate_places": true,
+    "output_tokens": 1171,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "exceeded",
+    "case_id": "trips-v1-005",
+    "category": "tight_budget",
+    "daily_travel_min": [
+      223,
+      254,
+      226
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "BUDGET_EXCEEDED": 1,
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 4893,
+    "invalid_ids": 0,
+    "latency_ms": 4240,
+    "no_duplicate_places": true,
+    "output_tokens": 1631,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "exceeded",
+    "case_id": "trips-v1-005",
+    "category": "tight_budget",
+    "daily_travel_min": [
+      295,
+      272,
+      226
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "BUDGET_EXCEEDED": 1,
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 4893,
+    "invalid_ids": 0,
+    "latency_ms": 4739,
+    "no_duplicate_places": true,
+    "output_tokens": 1630,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "exceeded",
+    "case_id": "trips-v1-005",
+    "category": "tight_budget",
+    "daily_travel_min": [
+      295,
+      281,
+      226
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "BUDGET_EXCEEDED": 1,
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 4893,
+    "invalid_ids": 0,
+    "latency_ms": 5264,
+    "no_duplicate_places": true,
+    "output_tokens": 1623,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-006",
+    "category": "step_free_group",
+    "daily_travel_min": [
+      0,
+      0
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 1588,
+    "invalid_ids": 0,
+    "latency_ms": 2281,
+    "no_duplicate_places": true,
+    "output_tokens": 335,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-006",
+    "category": "step_free_group",
+    "daily_travel_min": [
+      0,
+      0
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 1588,
+    "invalid_ids": 0,
+    "latency_ms": 2608,
+    "no_duplicate_places": true,
+    "output_tokens": 337,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-006",
+    "category": "step_free_group",
+    "daily_travel_min": [
+      0,
+      0
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 1588,
+    "invalid_ids": 0,
+    "latency_ms": 1649,
+    "no_duplicate_places": true,
+    "output_tokens": 341,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-007",
+    "category": "step_free_group",
+    "daily_travel_min": [
+      48,
+      40,
+      47
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 4899,
+    "invalid_ids": 0,
+    "latency_ms": 8482,
+    "no_duplicate_places": true,
+    "output_tokens": 1746,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-007",
+    "category": "step_free_group",
+    "daily_travel_min": [
+      48,
+      30,
+      44
+    ],
+    "duplicate_places": 1,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 4899,
+    "invalid_ids": 0,
+    "latency_ms": 4488,
+    "no_duplicate_places": false,
+    "output_tokens": 1749,
+    "place_ids_valid": true,
+    "rejected_items": 1,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-007",
+    "category": "step_free_group",
+    "daily_travel_min": [
+      48,
+      34,
+      52
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 4899,
+    "invalid_ids": 0,
+    "latency_ms": 4275,
+    "no_duplicate_places": true,
+    "output_tokens": 1695,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-008",
+    "category": "must_visit_conflict",
+    "daily_travel_min": [
+      116,
+      0
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 1980,
+    "invalid_ids": 0,
+    "latency_ms": 2177,
+    "no_duplicate_places": true,
+    "output_tokens": 551,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-008",
+    "category": "must_visit_conflict",
+    "daily_travel_min": [
+      116,
+      0
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 1980,
+    "invalid_ids": 0,
+    "latency_ms": 2144,
+    "no_duplicate_places": true,
+    "output_tokens": 560,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-008",
+    "category": "must_visit_conflict",
+    "daily_travel_min": [
+      116,
+      0
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 1980,
+    "invalid_ids": 0,
+    "latency_ms": 2012,
+    "no_duplicate_places": true,
+    "output_tokens": 575,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-009",
+    "category": "must_visit_conflict",
+    "daily_travel_min": [
+      143
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 3041,
+    "invalid_ids": 0,
+    "latency_ms": 2197,
+    "no_duplicate_places": true,
+    "output_tokens": 519,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-009",
+    "category": "must_visit_conflict",
+    "daily_travel_min": [
+      143
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 3041,
+    "invalid_ids": 0,
+    "latency_ms": 1975,
+    "no_duplicate_places": true,
+    "output_tokens": 502,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-009",
+    "category": "must_visit_conflict",
+    "daily_travel_min": [
+      63
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 3041,
+    "invalid_ids": 0,
+    "latency_ms": 3155,
+    "no_duplicate_places": true,
+    "output_tokens": 411,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-010",
+    "category": "pace_extreme",
+    "daily_travel_min": [
+      145,
+      222,
+      117
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 4696,
+    "invalid_ids": 0,
+    "latency_ms": 3837,
+    "no_duplicate_places": true,
+    "output_tokens": 1095,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-010",
+    "category": "pace_extreme",
+    "daily_travel_min": [
+      135,
+      176,
+      126
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 4696,
+    "invalid_ids": 0,
+    "latency_ms": 20249,
+    "no_duplicate_places": true,
+    "output_tokens": 1096,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-010",
+    "category": "pace_extreme",
+    "daily_travel_min": [
+      135,
+      176,
+      126
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 4696,
+    "invalid_ids": 0,
+    "latency_ms": 5503,
+    "no_duplicate_places": true,
+    "output_tokens": 1095,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-011",
+    "category": "pace_extreme",
+    "daily_travel_min": [
+      36,
+      71,
+      62
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 5101,
+    "invalid_ids": 0,
+    "latency_ms": 4514,
+    "no_duplicate_places": true,
+    "output_tokens": 1818,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-011",
+    "category": "pace_extreme",
+    "daily_travel_min": [
+      33,
+      108,
+      81
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 5101,
+    "invalid_ids": 0,
+    "latency_ms": 5771,
+    "no_duplicate_places": true,
+    "output_tokens": 2252,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-011",
+    "category": "pace_extreme",
+    "daily_travel_min": [
+      40,
+      89,
+      50
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 5101,
+    "invalid_ids": 0,
+    "latency_ms": 8383,
+    "no_duplicate_places": true,
+    "output_tokens": 2018,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-012",
+    "category": "long_trip",
+    "daily_travel_min": [
+      11,
+      0,
+      4,
+      4,
+      8,
+      4,
+      4,
+      4,
+      11,
+      8,
+      4,
+      4,
+      0,
+      4
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 6302,
+    "invalid_ids": 0,
+    "latency_ms": 8237,
+    "no_duplicate_places": true,
+    "output_tokens": 3601,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-012",
+    "category": "long_trip",
+    "daily_travel_min": [
+      0,
+      31,
+      28,
+      32,
+      36,
+      17,
+      4,
+      4,
+      11,
+      0,
+      0,
+      4,
+      0,
+      4
+    ],
+    "duplicate_places": 10,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 6302,
+    "invalid_ids": 0,
+    "latency_ms": 9509,
+    "no_duplicate_places": false,
+    "output_tokens": 4634,
+    "place_ids_valid": true,
+    "rejected_items": 10,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": null,
+    "case_id": "trips-v1-012",
+    "category": "long_trip",
+    "daily_travel_min": [],
+    "duplicate_places": 0,
+    "error": "provider_unavailable",
+    "findings": {},
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": null,
+    "no_duplicate_places": false,
+    "output_tokens": null,
+    "place_ids_valid": false,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": false,
+    "usable": false
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-013",
+    "category": "day_regeneration",
+    "daily_travel_min": [
+      217
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 5030,
+    "invalid_ids": 0,
+    "latency_ms": 2567,
+    "no_duplicate_places": true,
+    "output_tokens": 546,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-013",
+    "category": "day_regeneration",
+    "daily_travel_min": [
+      217
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 5030,
+    "invalid_ids": 0,
+    "latency_ms": 2475,
+    "no_duplicate_places": true,
+    "output_tokens": 522,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-013",
+    "category": "day_regeneration",
+    "daily_travel_min": [
+      217
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 5030,
+    "invalid_ids": 0,
+    "latency_ms": 3463,
+    "no_duplicate_places": true,
+    "output_tokens": 552,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-014",
+    "category": "hostile_notes",
+    "daily_travel_min": [
+      143,
+      143
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 3694,
+    "invalid_ids": 0,
+    "latency_ms": 2475,
+    "no_duplicate_places": true,
+    "output_tokens": 753,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-014",
+    "category": "hostile_notes",
+    "daily_travel_min": [
+      201,
+      233
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 3694,
+    "invalid_ids": 0,
+    "latency_ms": 3815,
+    "no_duplicate_places": true,
+    "output_tokens": 1166,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-014",
+    "category": "hostile_notes",
+    "daily_travel_min": [
+      95,
+      78
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {},
+    "input_tokens": 3694,
+    "invalid_ids": 0,
+    "latency_ms": 2318,
+    "no_duplicate_places": true,
+    "output_tokens": 637,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-015",
+    "category": "hostile_notes",
+    "daily_travel_min": [
+      205,
+      141,
+      308
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 4922,
+    "invalid_ids": 0,
+    "latency_ms": 9015,
+    "no_duplicate_places": true,
+    "output_tokens": 1536,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-015",
+    "category": "hostile_notes",
+    "daily_travel_min": [
+      51,
+      152,
+      179
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 4922,
+    "invalid_ids": 0,
+    "latency_ms": 3747,
+    "no_duplicate_places": true,
+    "output_tokens": 1314,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-v1-015",
+    "category": "hostile_notes",
+    "daily_travel_min": [
+      166,
+      152,
+      174
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": 4922,
+    "invalid_ids": 0,
+    "latency_ms": 4378,
+    "no_duplicate_places": true,
+    "output_tokens": 1420,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  }
+]
