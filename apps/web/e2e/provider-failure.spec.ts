@@ -70,8 +70,10 @@ async function startedGeneration(page: Page, tripId: string, mode: string) {
       r.request().method() === "POST",
   );
   expect(response.status(), await response.text()).toBe(202);
-  expect(response.request().postDataJSON()).toEqual({ mode });
-  return ((await response.json()) as { id: string }).id;
+  // openapi-fetch sends a Request object, whose body Playwright reports as null; read the 202.
+  const generation = (await response.json()) as { id: string; mode: string };
+  expect(generation.mode).toBe(mode);
+  return generation.id;
 }
 
 /** Start the AI generation from the generate page (the notice is already acknowledged). */
