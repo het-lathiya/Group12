@@ -174,3 +174,108 @@ async def test_tc_058_a_body_naming_another_user_is_rejected(
     # TC-057: the handler sees the token's user, never one from the request.
     assert accepted.status_code == 200
     assert accepted.json() == {"user_id": str(auth_user.user_id), "title": "Trip"}
+
+
+# IMP-702 (TC-344, TC-347, TC-431, TC-432): the contract file, more token failures and the cut
+# extension routes.
+
+import hashlib  # noqa: E402  # IMP-702 append-only block
+import json  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from route_matrix import MATRIX, REFERENCE  # noqa: E402
+
+CONTRACT = Path(__file__).resolve().parents[4] / "contracts" / "openapi.v1.json"
+PUBLIC_OPERATIONS = frozenset({("GET", "/health"), ("GET", "/health/ready")})  # API-01, API-02
+# A key that is not the project's: a token another issuer signed (derived, no secret-like literal).
+FOREIGN_KEY = hashlib.sha256(b"imp-702 another issuer, pytest only").hexdigest()
+
+MORE_BAD_TOKENS = {
+    "signed by another issuer": bearer(
+        make_token(uuid.uuid4(), secret=FOREIGN_KEY, iss="https://evil.example/auth/v1")
+    ),
+    "algorithm none": bearer(make_token(uuid.uuid4(), algorithm="none", secret="")),
+    "no exp": bearer(make_token(uuid.uuid4(), omit=["exp"])),
+    "sub not a uuid": bearer(make_token("not-a-uuid")),
+    "not a jwt": bearer("not.a.jwt"),
+    "basic scheme": {"Authorization": "Basic dXNlcjpwYXNz"},
+}
+
+
+def contract_operations() -> list[tuple[str, str, dict[str, Any]]]:
+    paths = json.loads(CONTRACT.read_text(encoding="utf-8"))["paths"]
+    return [(m.upper(), p, op) for p, ops in paths.items() for m, op in ops.items()]
+
+
+def test_tc_344_inventory_every_contract_operation_is_owned_or_reference_and_needs_a_bearer() -> (
+    None
+):
+    listed = {(case.method, case.path) for case in MATRIX} | REFERENCE
+    unlisted, open_ = [], []
+    for method, path, operation in contract_operations():
+        if (method, path) in PUBLIC_OPERATIONS:
+            continue
+        if (method, path) not in listed:
+            unlisted.append(f"{method} {path}")
+        if {"HTTPBearer": []} not in operation.get("security", []):
+            open_.append(f"{method} {path}")
+    assert unlisted == []
+    assert open_ == []
+    served = {(m, p) for m, p, _ in contract_operations()}
+    assert served >= listed  # no stale matrix entry the contract does not declare
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("token", MORE_BAD_TOKENS, ids=str)
+async def test_tc_347_inventory_more_bad_tokens_are_refused_everywhere(token: str) -> None:
+    app = app_without_database()
+    reachable = []
+    async with client_for(app) as client:
+        for method, path in protected_routes(app):
+            url = PATH_PARAMETER.sub(str(uuid.uuid4()), path)
+            response = await client.request(method, url, headers=MORE_BAD_TOKENS[token])
+            if response.status_code != 401 or response.json()["error"]["code"] != "UNAUTHENTICATED":
+                reachable.append(f"{method} {path} -> {response.status_code}")
+    assert reachable == []
+
+
+# §6.6 extension endpoints (API-43, API-63 to API-75); every card that would build them is cut.
+EXTENSION_ROUTES = (
+    ("API-43", "GET", "/api/v1/trips/{trip_id}/packing-list"),
+    ("API-63", "GET", "/api/v1/trips/{trip_id}/places/{place_id}/why"),
+    ("API-64", "POST", "/api/v1/trip-intake"),
+    ("API-65", "POST", "/api/v1/trips/{trip_id}/itinerary/days/{day_number}/explanation"),
+    ("API-66", "GET", "/api/v1/trips/{trip_id}/itinerary/days/{day_number}/optimise"),
+    ("API-67", "POST", "/api/v1/trips/{trip_id}/itinerary/days/{day_number}/optimise"),
+    ("API-68", "GET", "/api/v1/trips/{trip_id}/weather"),
+    ("API-69", "POST", "/api/v1/trips/{trip_id}/itinerary/swap-days"),
+    ("API-70", "GET", "/api/v1/trips/{trip_id}/today"),
+    ("API-71", "GET", "/api/v1/trips/{trip_id}/budget-fit"),
+    ("API-72", "GET", "/api/v1/places/{place_id}/context"),
+    ("API-73", "GET", "/api/v1/destinations/{destination_id}/context"),
+    ("API-74", "POST", "/api/v1/trips/{trip_id}/packing-list/refine"),
+    ("API-75", "PATCH", "/api/v1/trips/{trip_id}/packing-list/items/{item_id}"),
+)
+
+
+@pytest.mark.asyncio
+async def test_tc_432_extension_routes_are_not_mounted_and_answer_404() -> None:
+    # IMD-65: no extension route is mounted, so each answers 404 NOT_FOUND like an unknown route,
+    # even with a valid token. When a card mounts one, this fails until its cases are added.
+    app = app_without_database()
+    mounted = {(m, p) for m, p in route_inventory(app)}
+    assert [api for api, m, p in EXTENSION_ROUTES if (m, p) in mounted] == []
+    headers = bearer(make_token(uuid.uuid4()))
+    async with client_for(app) as client:
+        for api_id, method, path in EXTENSION_ROUTES:
+            url = PATH_PARAMETER.sub("1", path) if "{day_number}" in path else path
+            response = await client.request(
+                method, PATH_PARAMETER.sub(str(uuid.uuid4()), url), headers=headers
+            )
+            assert response.status_code == 404, api_id
+            assert response.json()["error"]["code"] == "NOT_FOUND", api_id
+
+
+@pytest.mark.parametrize("route", EXTENSION_ROUTES, ids=lambda r: r[0])
+def test_tc_431_extension_ownership_case(route: tuple[str, str, str]) -> None:
+    pytest.skip("cut by IMD-65")

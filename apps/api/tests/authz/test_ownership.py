@@ -315,3 +315,80 @@ async def call(  # wraps the call above for the one route with a version_id
         json=case.body(owned) if case.body else None,
         headers=user.headers,
     )
+
+
+# IMP-702 (TC-346, TC-348): a body naming a user on every real route with a body, and a child
+# resource of A reached through B's own trip.
+
+WITH_BODY = [case for case in MATRIX if case.body is not None]
+
+
+@pytest.mark.asyncio
+async def test_tc_348_a_body_user_id_is_refused_on_every_owned_route(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    users: tuple[AuthUser, AuthUser],
+    owned: Owned,
+) -> None:
+    # A calls each route on A's own resources with an extra user_id naming B: 422, nothing changes.
+    a, b = users
+    before = await a_state(client, db_session, owned)
+    accepted = []
+    for case in WITH_BODY:
+        assert case.body is not None
+        body = {**case.body(owned), "user_id": str(b.user_id)}
+        if "{version_id}" in case.path:
+            listed = await client.get(f"/api/v1/trips/{owned.trip_id}/versions", headers=a.headers)
+            url = case.path.format(trip_id=owned.trip_id, version_id=listed.json()[0]["id"])
+        else:
+            url = case.url(owned)
+        response = await client.request(
+            case.method, url, params=case.params, json=body, headers=a.headers
+        )
+        error = response.json().get("error", {})
+        fields = [detail.get("field") for detail in error.get("details", [])]
+        if (
+            response.status_code != 422
+            or error.get("code") != "VALIDATION_ERROR"
+            or fields != ["user_id"]
+        ):
+            accepted.append(f"{case.id} -> {response.status_code} {fields}")
+        assert str(b.user_id) not in response.text
+    assert accepted == []
+    assert await a_state(client, db_session, owned) == before
+
+
+@pytest.mark.asyncio
+async def test_tc_346_a_version_of_a_cannot_be_restored_through_b_trip(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    users: tuple[AuthUser, AuthUser],
+    owned: Owned,
+) -> None:
+    a, b = users
+    listed = await client.get(f"/api/v1/trips/{owned.trip_id}/versions", headers=a.headers)
+    version_id = listed.json()[0]["id"]
+    created = await client.post(
+        "/api/v1/trips",
+        json={
+            "title": "B's trip",
+            "destination_id": str(owned.destination_id),
+            "start_date": "2026-12-04",
+            "end_date": "2026-12-06",
+            "adults": 1,
+        },
+        headers=b.headers,
+    )
+    assert created.status_code == 201, created.text
+    before = await a_state(client, db_session, owned)
+
+    response = await client.post(
+        f"/api/v1/trips/{created.json()['id']}/versions/{version_id}/restore",
+        json={"plan_revision": 0},
+        headers=b.headers,
+    )
+
+    assert response.status_code == 404, response.text
+    assert response.json()["error"]["code"] == "NOT_FOUND"
+    assert [value for value in owned.secrets() if value in response.text] == []
+    assert await a_state(client, db_session, owned) == before
