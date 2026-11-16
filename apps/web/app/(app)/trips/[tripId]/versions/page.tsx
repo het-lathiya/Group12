@@ -17,6 +17,7 @@ import {
   useItinerary,
   useRestoreVersion,
   useSaveVersion,
+  useTrip,
   useVersions,
 } from "@/lib/api/queries";
 import { isEnabled } from "@/lib/flags";
@@ -39,6 +40,10 @@ function Versions() {
   const revision = itinerary.data?.plan_revision;
   const noPlan =
     itinerary.error instanceof ApiError && itinerary.error.status === 404;
+  const trip = useTrip(tripId, true);
+  const failed = noPlan ? trip : itinerary;
+  const error = versions.error ?? failed.error;
+  const tripNotFound = error instanceof ApiError && error.status === 404;
 
   const save = (event: FormEvent) => {
     event.preventDefault();
@@ -65,7 +70,29 @@ function Versions() {
           Back to itinerary
         </Link>
       </header>
-      {noPlan ? (
+      {versions.isPending ||
+      itinerary.isPending ||
+      (noPlan && trip.isPending) ? (
+        <LoadingSkeleton shape="text" count={5} label="Loading versions" />
+      ) : tripNotFound ? (
+        <EmptyState
+          title="Trip not found"
+          description="This trip does not exist or is not available to you."
+          action={
+            <Button asChild>
+              <Link href="/dashboard">Back to dashboard</Link>
+            </Button>
+          }
+        />
+      ) : error ? (
+        <ErrorState
+          error={error}
+          onRetry={() => {
+            void versions.refetch();
+            void failed.refetch();
+          }}
+        />
+      ) : noPlan ? (
         <EmptyState
           title="No itinerary yet"
           description="Versions appear once a plan has been generated."
@@ -75,17 +102,7 @@ function Versions() {
             </Button>
           }
         />
-      ) : versions.isPending || itinerary.isPending ? (
-        <LoadingSkeleton shape="text" count={5} label="Loading versions" />
-      ) : versions.error || itinerary.error ? (
-        <ErrorState
-          error={versions.error ?? itinerary.error}
-          onRetry={() => {
-            void versions.refetch();
-            void itinerary.refetch();
-          }}
-        />
-      ) : (
+      ) : itinerary.data ? (
         <>
           <form
             onSubmit={save}
@@ -139,7 +156,7 @@ function Versions() {
             }
           />
         </>
-      )}
+      ) : null}
     </div>
   );
 }
