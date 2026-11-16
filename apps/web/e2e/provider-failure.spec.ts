@@ -22,37 +22,29 @@ import {
 // http://localhost:8001/api/v1 on port 3001, then
 // `MOCK_PROVIDER_SCENARIO=timeout make e2e ARGS='--project=provider-failure'`.
 
-type Version = components["schemas"]["VersionOut"];
-
 const SCENARIO = process.env.MOCK_PROVIDER_SCENARIO ?? "";
 // FALLBACK_TEXT of components/generation/FallbackNotice.tsx.
 const FALLBACK_TEXT =
   "Built by rules because the AI service was unavailable or its answer failed checks";
 // ERROR_CATALOGUE.AI_QUOTA_REACHED.what (lib/api/errors.ts), shown by PausedAiNotice.
 const PAUSED_TEXT = "Today's AI planning limit is reached";
+// Mode rule_based stores this model id and makes no provider call (app/generation/service.py).
+const RULE_BASED_MODEL = "rule_based_planner_v1";
 
-/** A trip with an earlier rule-based plan and a named version, as E2E-07's precondition. */
-async function tripWithSavedVersion(page: Page, session: Session) {
-  const { tripId, itinerary } = await plannedTrip(page, session, {
+/**
+ * IMD-206: a fresh trip with no itinerary, so API-22 accepts the generation (it answers 409
+ * CONFLICT for a trip that already has one, §6.4).
+ */
+async function freshTrip(page: Page, session: Session) {
+  const { tripId } = await plannedTrip(page, session, {
     title: `Provider ${SCENARIO} in Sampleton`,
-    mode: "rule_based",
+    generate: false,
   });
-  const saved = await page.request.post(
-    `${session.base}/trips/${tripId}/versions`,
-    {
-      headers: session.headers,
-      data: {
-        name: "Before the failure",
-        plan_revision: itinerary!.plan_revision,
-      },
-    },
-  );
-  expect(saved.status()).toBe(201);
-  return { tripId, ...(await snapshot(page, session, tripId)) };
+  return { tripId, trip: await tripDetails(page, session, tripId) };
 }
 
-/** The trip's details, versions and plan revision, to show that a failure changed none of them. */
-async function snapshot(
+/** The trip's details, to show that a failure changed none of them. */
+async function tripDetails(
   page: Page,
   { base, headers }: Session,
   tripId: string,
@@ -60,34 +52,34 @@ async function snapshot(
   const trip = (await (
     await page.request.get(`${base}/trips/${tripId}`, { headers })
   ).json()) as components["schemas"]["TripOut"];
-  const versions = (await (
-    await page.request.get(`${base}/trips/${tripId}/versions`, { headers })
-  ).json()) as Version[];
   return {
-    trip: {
-      title: trip.title,
-      destination_id: trip.destination_id,
-      start_date: trip.start_date,
-      end_date: trip.end_date,
-      adults: trip.adults,
-      budget: trip.budget,
-    },
-    versions,
+    title: trip.title,
+    destination_id: trip.destination_id,
+    start_date: trip.start_date,
+    end_date: trip.end_date,
+    adults: trip.adults,
+    budget: trip.budget,
   };
+}
+
+/** Wait for a POST of API-22 and return its generation id; a non-202 answer logs its body. */
+async function startedGeneration(page: Page, tripId: string, mode: string) {
+  const response = await page.waitForResponse(
+    (r) =>
+      new URL(r.url()).pathname === `/api/v1/trips/${tripId}/generations` &&
+      r.request().method() === "POST",
+  );
+  expect(response.status(), await response.text()).toBe(202);
+  expect(response.request().postDataJSON()).toEqual({ mode });
+  return ((await response.json()) as { id: string }).id;
 }
 
 /** Start the AI generation from the generate page (the notice is already acknowledged). */
 async function generateWithAi(page: Page, tripId: string) {
   await page.goto(`/trips/${tripId}/generate`);
-  const started = page.waitForResponse(
-    (r) =>
-      new URL(r.url()).pathname === `/api/v1/trips/${tripId}/generations` &&
-      r.request().method() === "POST",
-  );
+  const started = startedGeneration(page, tripId, "ai");
   await page.getByRole("button", { name: "Generate with AI" }).click();
-  const response = await started;
-  expect(response.status()).toBe(202);
-  return ((await response.json()) as { id: string }).id;
+  return started;
 }
 
 /** Retime the first item of day 1 from the itinerary page; the edit must save (API-26). */
@@ -121,7 +113,7 @@ async function editStillWorks(page: Page, session: Session, tripId: string) {
   expect((await saved).status()).toBe(200);
 }
 
-test("E2E-07 TC-371: a provider timeout gives the labelled rule-based plan and keeps the earlier version", async ({
+test("E2E-07 TC-371: a provider timeout gives the labelled rule-based plan and saves it", async ({
   page,
   users,
 }) => {
@@ -132,8 +124,8 @@ test("E2E-07 TC-371: a provider timeout gives the labelled rule-based plan and k
   test.setTimeout(120_000);
   const user = await users.create("timeout");
   const session = await test.step("Sign in", () => signIn(page, user));
-  const before = await test.step("Create a trip with a saved version", () =>
-    tripWithSavedVersion(page, session));
+  const before = await test.step("Create a trip without a plan", () =>
+    freshTrip(page, session));
 
   const generationId = await test.step("Generate with AI", () =>
     generateWithAi(page, before.tripId));
@@ -147,11 +139,11 @@ test("E2E-07 TC-371: a provider timeout gives the labelled rule-based plan and k
     expect(generation.status).toBe("completed");
     expect(generation.outcome).toBe("fallback_rule_based");
     expect(generation.fallback_reason).toBe("provider_timeout");
-    const after = await snapshot(page, session, before.tripId);
-    expect(after.trip).toEqual(before.trip);
-    for (const version of before.versions) {
-      expect(after.versions).toContainEqual(version);
-    }
+    const plan = await readItinerary(page, session, before.tripId);
+    expect(plan.days.flatMap((day) => day.items).length).toBeGreaterThan(0);
+    expect(await tripDetails(page, session, before.tripId)).toEqual(
+      before.trip,
+    );
     await expectNoSeriousA11y(page);
   });
 
@@ -170,10 +162,8 @@ test("E2E-07 TC-371: a provider quota pause offers the rule-based plan and chang
   test.setTimeout(120_000);
   const user = await users.create("quota");
   const session = await test.step("Sign in", () => signIn(page, user));
-  const before = await test.step("Create a trip with a saved version", () =>
-    tripWithSavedVersion(page, session));
-  const revision = (await readItinerary(page, session, before.tripId))
-    .plan_revision;
+  const before = await test.step("Create a trip without a plan", () =>
+    freshTrip(page, session));
 
   const generationId = await test.step("Generate with AI", () =>
     generateWithAi(page, before.tripId));
@@ -191,36 +181,30 @@ test("E2E-07 TC-371: a provider quota pause offers the rule-based plan and chang
     expect(generation.next_action).toBe("retry_rule_based");
     // IMD-44: quota ends the job at once, with no retry and no repair call.
     expect(generation.repair_attempts).toBe(0);
-    const after = await snapshot(page, session, before.tripId);
-    expect(after).toEqual({ trip: before.trip, versions: before.versions });
-    expect(
-      (await readItinerary(page, session, before.tripId)).plan_revision,
-    ).toBe(revision);
+    expect(await tripDetails(page, session, before.tripId)).toEqual(
+      before.trip,
+    );
+    // Nothing was saved: the trip still has no itinerary (API-24).
+    const plan = await page.request.get(
+      `${session.base}/trips/${before.tripId}/itinerary`,
+      { headers: session.headers },
+    );
+    expect(plan.status()).toBe(404);
     await expectNoSeriousA11y(page);
   });
 
   await test.step("Build the rule-based plan", async () => {
-    const started = page.waitForResponse(
-      (r) =>
-        new URL(r.url()).pathname ===
-          `/api/v1/trips/${before.tripId}/generations` &&
-        r.request().method() === "POST",
-    );
+    const started = startedGeneration(page, before.tripId, "rule_based");
     await page.getByRole("button", { name: "Build a rule-based plan" }).click();
-    const response = await started;
-    expect(response.status()).toBe(202);
-    expect(response.request().postDataJSON()).toEqual({ mode: "rule_based" });
+    const generationId = await started;
     await expect(page).toHaveURL(`/trips/${before.tripId}/itinerary`, {
       timeout: 60_000,
     });
     await expect(page.getByText(FALLBACK_TEXT)).toBeVisible();
-    const generation = await finishedGeneration(
-      page,
-      session,
-      ((await response.json()) as { id: string }).id,
-    );
-    // Mode rule_based makes no provider call (FR-036, pipeline step 2).
+    const generation = await finishedGeneration(page, session, generationId);
+    // Mode rule_based makes no further provider call (FR-036, ACC-17).
     expect(generation.mode).toBe("rule_based");
+    expect(generation.model_id).toBe(RULE_BASED_MODEL);
     expect(generation.outcome).toBe("fallback_rule_based");
   });
 

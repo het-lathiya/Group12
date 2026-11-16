@@ -215,9 +215,8 @@ test("TC-376: regenerate a day and all, then restore each pre-regeneration versi
 });
 
 // E2E-05 and TC-376 card step 3 (IMP-701; FR-060, FR-061, FR-063, FR-064; TC-201; ACC-05, ACC-16):
-// every edit is made from the itinerary page and checked against the API's answer. A move reflows
-// the day's times (no overlap from a reorder alone), so the overlap is made by retiming the moved
-// item's neighbour onto its start.
+// Every edit is made from the itinerary page and checked against the API's answer. The must-visit
+// item is locked, so the moved, unlocked item is retimed into its interval to keep an overlap.
 
 type EditResult = components["schemas"]["EditResultOut"];
 
@@ -244,6 +243,16 @@ async function retime(
   const form = page.getByRole("form", {
     name: `Edit time of ${item.place.name}`,
   });
+  const currentStart = await form.getByLabel("Start time").inputValue();
+  const currentDuration = Number(
+    await form.getByLabel("Duration (minutes)").inputValue(),
+  );
+  expect(
+    (values.start !== undefined && values.start !== currentStart) ||
+      (values.duration !== undefined && values.duration !== currentDuration),
+    "the editor must receive a changed value before waiting for PATCH",
+  ).toBe(true);
+  if (values.start) expect(values.start).toMatch(/^([01]\d|2[0-3]):[0-5]\d$/);
   if (values.start) await form.getByLabel("Start time").fill(values.start);
   if (values.duration)
     await form.getByLabel("Duration (minutes)").fill(String(values.duration));
@@ -299,11 +308,21 @@ test("E2E-05 TC-376: move, overlap, remove, retime, lock, regenerate day 2, save
     );
   });
 
-  await test.step("Retime the first item onto the moved item's start (overlap)", async () => {
+  await test.step("Retime the moved unlocked item to a different overlapping start", async () => {
     const plan = await readItinerary(page, session, tripId);
-    const start = plan.days[0].items[0].start_time;
+    const items = plan.days.flatMap((day) => day.items);
+    const neighbour = items.find((item) => item.id === a.id)!;
+    const moved = items.find((item) => item.id === b.id)!;
+    expect(moved.is_locked).toBe(false);
+    const [hours, minutes] = neighbour.start_time.split(":").map(Number);
+    const minute =
+      hours * 60 +
+      minutes +
+      (neighbour.start_time === moved.start_time ? 1 : 0);
+    const start = `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+    expect(start).not.toBe(moved.start_time);
     await openDay(page, 1);
-    const result = await retime(page, a, { start });
+    const result = await retime(page, moved, { start });
     const overlap = result.findings.find((f) => f.code === "OVERLAP");
     expect(overlap, "an OVERLAP finding").toBeDefined();
     await expect(

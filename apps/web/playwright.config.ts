@@ -24,6 +24,8 @@ const floor = [
   const off = parseDisabledFeatures(raw);
   return CUT_LIST.every((name) => off.has(name));
 });
+// A separately built floor stack lets a full local run cover TC-372 alongside enabled features.
+const floorBaseURL = process.env.FLOOR_BASE_URL;
 
 const desktop = devices["Desktop Chrome"];
 
@@ -52,12 +54,16 @@ export default defineConfig({
       testMatch: PROVIDER_FAILURE_SPEC,
       use: { ...desktop, baseURL: providerFailureURL },
     },
-    ...(floor
+    ...(floor || floorBaseURL
       ? [
           {
             name: "floor-journey",
             testMatch: /journey\.spec\.ts$/,
-            use: { ...desktop, viewport: { width: 1280, height: 900 } },
+            use: {
+              ...desktop,
+              baseURL: floorBaseURL ?? baseURL,
+              viewport: { width: 1280, height: 900 },
+            },
           },
         ]
       : []),
