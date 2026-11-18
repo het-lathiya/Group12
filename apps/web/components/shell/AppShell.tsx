@@ -88,21 +88,21 @@ function NavLinks({
   const itemClass =
     layout === "top"
       ? "inline-flex min-h-touch items-center gap-2 rounded-lg px-3 text-sm font-medium"
-      : "flex min-h-touch flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-1 text-xs font-medium";
+      : "flex min-h-touch min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg text-xs font-medium";
 
   return (
     <ul
       className={cn(
         "flex",
         layout === "top"
-          ? "items-center gap-1"
-          : "w-full gap-1 overflow-x-auto",
+          ? "flex-wrap items-center justify-end gap-1"
+          : "w-full",
       )}
     >
       {items.map(({ label, icon: Icon, href }) => (
         <li
           key={label}
-          className={cn(layout === "bottom" && "flex min-w-16 flex-1")}
+          className={cn(layout === "bottom" && "flex min-w-11 flex-auto")}
         >
           {href ? (
             <Link
@@ -124,7 +124,10 @@ function NavLinks({
             >
               <Icon aria-hidden="true" className="size-5 shrink-0" />
               {label}
-              <span className="sr-only"> (open a trip first)</span>
+              <span className="sr-only hidden lg:inline">
+                {" "}
+                (open a trip first)
+              </span>
             </span>
           )}
         </li>
@@ -195,17 +198,17 @@ export function AppShell({ children, variant = "app" }: AppShellProps) {
       </a>
 
       <header className="border-b bg-background">
-        <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4">
+        <div className="mx-auto flex min-h-16 w-full max-w-6xl items-center justify-between gap-4 px-4 py-2">
           <Link
             href={isApp ? "/dashboard" : "/"}
-            className="inline-flex min-h-touch items-center rounded-lg font-heading text-lg font-semibold text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring"
+            className="inline-flex min-h-touch shrink-0 items-center rounded-lg font-heading text-lg font-semibold text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring"
           >
             {APP_NAME}
           </Link>
 
           {isApp ? (
-            <div className="flex items-center gap-2">
-              <nav aria-label="Main" className="hidden md:block">
+            <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+              <nav aria-label="Main" className="hidden min-w-0 md:block">
                 <NavLinks items={items} pathname={pathname} layout="top" />
               </nav>
               <AccountMenu />

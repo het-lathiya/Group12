@@ -105,6 +105,41 @@ describe("AppShell (TC-278)", () => {
     );
   });
 
+  it("renders every trip tab by its accessible name in navigation order", () => {
+    navigation.pathname = "/trips/trip-1/itinerary";
+    navigation.params = { tripId: "trip-1" };
+    renderShell();
+
+    const labels = [
+      "Trips",
+      "Itinerary",
+      "Costs",
+      "Explore",
+      "Summary",
+      "Versions",
+      "Profile",
+    ];
+    for (const nav of screen.getAllByRole("navigation", { name: "Main" })) {
+      const links = within(nav).getAllByRole("link");
+      expect(links).toHaveLength(labels.length);
+      labels.forEach((label, index) => {
+        expect(within(nav).getByRole("link", { name: label })).toBe(
+          links[index],
+        );
+      });
+    }
+  });
+
+  it("hides the open-trip hints at narrow widths", () => {
+    renderShell();
+
+    const hints = screen.getAllByText("(open a trip first)");
+    expect(hints).toHaveLength(10);
+    for (const hint of hints) {
+      expect(hint).toHaveClass("sr-only", "hidden", "lg:inline");
+    }
+  });
+
   it("has a skip link as the first focusable element that moves focus to main", async () => {
     const user = userEvent.setup();
     renderShell();
