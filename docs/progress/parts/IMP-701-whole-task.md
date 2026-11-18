@@ -2,17 +2,23 @@
 
 | Field | Value |
 | --- | --- |
-| Run | RUN-081 |
+| Run | RUN-081 implementation; RUN-081b/RUN-081c fixes; RUN-081d final local evidence (18 November 2026) |
 | Card | IMP-701 End-to-end regression suite for all primary scenarios |
-| Part | Whole task (3 points) |
-| Owner | Krrish |
-| Status | PARTIAL (specs, projects and workflow written and statically checked; no E2E run on this machine, evidence is the CI dispatch of the PR head) |
-| Base commit | a4c2a0b |
-| Branch | wt/S7A-e (PR branch `feat/IMP-701-e2e-regression`, opened by the operator) |
+| Part | Whole task (3 points, counted once) |
+| Owner | Krrish Kamani |
+| Status | Local acceptance verified except the CI broken-assertion demonstration; PR #287 remains unmerged and its RUN-081d dispatch has not occurred at this evidence commit |
+| Base commit | 180c88a (RUN-081d); original implementation base a4c2a0b |
+| Checked code head | b6051a8; three full E2E runs without code changes |
+| Branch | wt/S7A-K-081d; integration branch feat/S7-A-e2e-security |
+| PR | [#287](https://github.com/het-lathiya/Group12/pull/287) |
 
-## Changed files
+## This part's current change
 
-- `docs/test-reports/e2e-sprint7.md` (created): the E2E-01 to E2E-08 gap list, written first; the three `--repeat-each=3` runs marked not run; the CI dispatch section.
+Only `docs/test-reports/e2e-sprint7.md` and this part record change in K3. They record real RUN-081c and RUN-081d results, elapsed times, earlier deterministic failures, the empty flaky list and each acceptance criterion. No product code, contract or migration changes in K3. The complete command/result tables are in [the Sprint 7 E2E report](../../test-reports/e2e-sprint7.md).
+
+## Historical implementation files (RUN-081 / RUN-081c)
+
+- `docs/test-reports/e2e-sprint7.md` (created): the E2E-01 to E2E-08 gap list, written first; the original local-run limitation, now superseded by the recorded integration evidence; the CI dispatch section.
 - `apps/web/e2e/generate.spec.ts` (created; the card says "modify", but the file did not exist): E2E-03.
 - `apps/web/e2e/validate-costs.spec.ts` (created): E2E-04.
 - `apps/web/e2e/reopen.spec.ts` (created): E2E-06, TC-217.
@@ -29,46 +35,65 @@
 - `.github/pull_request_template.md` (modified): checkbox "E2E specs touched by this change pass locally (make e2e)".
 - `docs/progress/parts/IMP-701-whole-task.md`: this record.
 
-## How the card steps were met
+## How the card steps are met
 
-- **Step 2, titles and steps.** Every new test title starts with its E2E or TC ID, and every user action is a `test.step("<user action>")`, so a failure names the step (US-141 AC2).
-- **Step 3 (TC-376).** A move reflows the day's times, so a reorder alone never overlaps (API test `test_edits_a_move_shifts_the_following_start_times_and_renumbers`). The spec moves day 1's second item up by keyboard and then retimes the other item onto its start, which gives `OVERLAP` (PR-06 saves it). Then it removes the must-visit item (`MUST_VISIT_MISSING`), changes a duration, locks a day 2 item, regenerates day 2 (the locked item keeps its place and start), saves a named version, changes the plan, restores the version and reloads.
-- **Step 4 (E2E-07).** The MOCK scenario is fixed per API process (`MOCK_PROVIDER_SCENARIO`, `app/core/config.py`). The spec reads the same variable and skips the test of the other scenario, with that reason. Timeout: FallbackNotice text, `fallback_rule_based` with `provider_timeout`, earlier versions and trip details unchanged, and an edit saves. Quota: PausedAiNotice ("Today's AI planning limit is reached") with "Build a rule-based plan", `failed` with `provider_quota_exhausted`, `next_action` `retry_rule_based`, `repair_attempts` 0. The plan revision, versions and trip stay unchanged. The rule-based build sends `mode: rule_based`, ends `fallback_rule_based` and an edit saves. "No further provider call" is shown in the browser only as mode `rule_based`, which makes no provider call by design (pipeline step 2). The breaker that refuses a second AI call is proven by the API tests.
-- **Step 4, E2E-04 without `flawed`.** The shared CI API runs scenario `ok`, so `validate-costs.spec.ts` makes the flaws itself: a budget equal to the planning total gives `BUDGET_NEAR` (IMD-29), and a retime onto the previous start gives `OVERLAP`. The missing must-visit place of the `flawed` scenario is covered by E2E-05 (removal gives `MUST_VISIT_MISSING`).
-- **Step 5.** `floor-journey` runs `journey.spec.ts` at 1280 px. It exists only when both `FEATURES_DISABLED` and `NEXT_PUBLIC_FEATURES_DISABLED` list the nine cut-list switches (`versions, trip_management, contingency, budget_alerts, wishlist, alternatives, regeneration, locks, meal_slots`, from `FEATURE_NAMES` in `lib/flags.ts`, the IMP-699 order). The servers read those variables, not the specs. In CI the floor journey stays the existing `features_disabled` dispatch input (IMP-699). With that input, `make e2e ARGS='journey'` also runs `floor-journey`. The 360 px project is the existing `chromium-360` (TC-373). The keyboard-only journey is `keyboard.spec.ts`, and the journey itself stays keyboard-driven.
-- **Step 6.** No fixed waits existed. The new specs wait on GenerationProgress's terminal states and on API-23 with `expect.poll`.
-- **Step 7.** Triggers are unchanged: push to `main` and `workflow_dispatch` (`base_url`, `features_disabled`). **The nightly cron of the card stays off by IMD-185** (E2E on every push to main and by dispatch on each pull request; there is no nightly or pull_request trigger). The HTML report is uploaded as before, with one report folder per step.
-- **Step 9.** The nine extensions are cut and not built (IMD-65). One test per extension skips with `cut by IMD-65 (switch off)`. One test that is not skipped opens `/dashboard`, `/trips/new`, the itinerary and the costs page once their data has rendered. It checks that no extension button or link is shown, and that `/trips/[tripId]/today` and `/packing` answer 404. No extension is enabled.
+- **Steps 1–2:** the report preserves the pre-implementation E2E-01..08 gap list. New spec titles identify the E2E/TC case and use `test.step` for user actions. The existing local `fixtures/users.ts` creates test users; no second user helper was added.
+- **Step 3 (TC-376):** editing makes an overlap through a changed retime, removes a must-visit item, changes duration, locks a day 2 item, regenerates day 2 while preserving its place/time, saves a version, changes the plan, restores and reloads. F-E1 reads fresh item IDs after the move and refuses an unchanged retime before waiting for PATCH.
+- **Step 4 (E2E-04):** with scenario `ok`, costs specs set the budget near the estimate and retime to create overlap; `Suggested fix: <text>` is matched as a whole paragraph (F-E2). Removal in E2E-05 covers the missing must-visit finding.
+- **Step 4 (E2E-07, IMD-206):** timeout and quota start with a fresh trip without an itinerary. Timeout saves the labelled rule-based plan and then an edit. Quota gives `failed` / `provider_quota_exhausted`, `next_action: retry_rule_based`, no saved itinerary and no repair attempt; the explicit rule-based build uses `mode: rule_based`, completes `fallback_rule_based` and saves. A second generation on an existing itinerary is correctly a 409 and is not a precondition here. Fix `180c88a` reads generation mode from the 202 body, rather than nullable request JSON.
+- **Step 5:** four width projects cover 360/768/1280/1920 px; `keyboard.spec.ts` uses Tab/Enter and axe scans; the separate `floor-journey` stack on API 8002/web 3002 disables `versions,trip_management,contingency,budget_alerts,wishlist,alternatives,regeneration,locks,meal_slots`. `FLOOR_BASE_URL` includes it alongside enabled-feature projects in each full local run.
+- **Step 6 (IMD-203):** three separate full `make e2e` invocations pass consecutively on unchanged `b6051a8`, retries 0; quota passes after each. There are no fixed sleeps in the specs, and assertions wait for terminal states/API results. The flaky list is empty, 0 of 3 full runs failing or flaky.
+- **Steps 7–8:** `e2e.yml` retains push-to-main and `workflow_dispatch`, `ubuntu-24.04`, uploaded HTML reports and retries 0; `repeat_each` is validated and passed to every local-stack invocation. The full workflow has a separate floor step plus provider timeout/quota steps. The nightly cron stays off by IMD-185/IMD-202. The PR template includes “E2E specs touched by this change pass locally (make e2e)”.
+- **Step 9:** all nine extensions remain cut under IMD-65. At each width nine tests skip with the cut-list reason and one absence/404 test passes. No enabled extension exists to claim as exercised.
 
-## Workflow (`.github/workflows/e2e.yml`)
+## RUN-081c results and stop (historical)
 
-- `timeout-minutes` goes from 30 to 50 (a second web build and two provider-failure runs).
-- The web app on 3000 now runs from a copy (`$RUNNER_TEMP/web-3000`), so the second build can reuse `.next`.
-- New step **Run the regression specs**: `auth trip-create generate validate-costs reopen ownership keyboard extensions --project=chromium-1280`, report `playwright-report/regression`. It uses one width because the local stack allows 30 sign-ins and sign-ups per 5 minutes (`supabase/config.toml`): journey 4 plus map 8 plus itinerary-edit 8 plus regression 13.
-- New step **Build and start the provider-failure web app on 3001**: `NEXT_PUBLIC_API_BASE_URL=http://localhost:8001/api/v1` (inlined at build time), served from `$RUNNER_TEMP/web-3001`.
-- New steps **Run provider failure with a timeout** and **… with quota exhausted**: each starts its own API on 8001 with `MOCK_PROVIDER_SCENARIO` and `ALLOWED_ORIGINS=http://localhost:3001`, runs `make e2e ARGS='--project=provider-failure'` with the same scenario, and stops that API on exit (trap), pass or fail. Reports go to `playwright-report/provider-failure-timeout` and `-quota`. The extra server logs go into the uploaded artefact.
-- All new steps are skipped on the floor run (`features_disabled` set), which runs the journey and the map specs, as at SG-6.
-- `runs-on` stays `ubuntu-24.04`; the staging job is unchanged.
+After integrating F-E1/F-E2/F-E3, the targeted suite reports `8 passed (1.1m)` for itinerary editing (65.61 s), `4 passed (15.9s)` for costs (17.24 s), `5 passed (1.1m)` for journey including floor (65.83 s), `4 passed (14.0s)` for ownership (15.00 s), and `36 skipped`, `4 passed (9.1s)` for `@ext` (10.06 s). The initial provider timeout reports `1 failed`, `1 skipped` (4.80 s): the request-body mode assertion at `provider-failure.spec.ts:73` reads null. Fix `180c88a` is the one RUN-081c fix round; afterward timeout reports `1 skipped`, `1 passed (8.7s)` (9.68 s), and quota `1 skipped`, `1 passed (8.2s)` (9.01 s).
 
-## Commands
+| Full run at 180c88a | Exact result | Full wall | Quota result / wall | Combined wall |
+| --- | --- | --- | --- | --- |
+| 1 | `3 failed`; `37 skipped`; `79 passed (4.1m)` | 246.67 s | `1 skipped`; `1 passed (8.2s)` / 9.63 s | 259 s |
+| 2 | `3 failed`; `37 skipped`; `79 passed (4.0m)` | 238.74 s | `1 skipped`; `1 passed (8.8s)` / 10.38 s | 249 s |
+| 3 | `3 failed`; `37 skipped`; `79 passed (4.3m)` | 259.47 s | `1 skipped`; `1 passed (8.4s)` / 9.51 s | 269 s |
 
-| Command | Result |
-| --- | --- |
-| `cd apps/web && npx tsc --noEmit` | exit 0, no output |
-| `npx eslint e2e playwright.config.ts` | exit 0, no output |
-| `npx prettier --check e2e playwright.config.ts ../../.github/workflows/e2e.yml` | `All matched files use Prettier code style!` |
-| `npx playwright test --list` | `Total: 118 tests in 13 files` (chromium-360 29, chromium-768 29, chromium-1280 29, chromium-1920 29, provider-failure 2) |
-| `npx playwright test --list --grep @ext` | `Total: 40 tests in 1 file` (10 per width project) |
-| `npx playwright test --list --project=provider-failure` | `Total: 2 tests in 1 file` |
-| `FEATURES_DISABLED=<nine> NEXT_PUBLIC_FEATURES_DISABLED=<nine> npx playwright test --list --project=floor-journey` | `Total: 1 test in 1 file` |
-| `make lint` | `All checks passed!`; `232 files already formatted`; ESLint `✖ 1 problem (0 errors, 1 warning)` (the existing warning in `lib/api/client.ts`); `All matched files use Prettier code style!` |
-| `make typecheck` (web part) | `✓ Types generated successfully`, `tsc --noEmit` clean |
+Every full run fails identically in `smoke.spec.ts:87` at 360 px (Profile clipped) and 768 px, plus `auth.spec.ts:147` TC-054/TC-056 at 768 px (page width 894 > 768). This is AppShell's main-origin navigation overflow after Explore/Summary/Versions were added (`428b68c`, `3769bab`, `b991141` on main `a4c2a0b`), not a flaky test. The used fix round and IMD-206's attribute-only boundary stopped RUN-081c without a push. Its `make check` had passed (426.76 s; web 286 tests), but its three E2E runs did not pass.
 
-`.github/pull_request_template.md` was already not Prettier-formatted before this change. The repository's `format:check` covers only `apps/web`.
+## RUN-081d final verification
 
-### Broken-assertion demo (local only, not committed)
+IMD-207 (`21ba8d5`, Nidhi) authorizes the layout defect fix. Manasvi's M2 (`c038433`, integrated as `b6051a8`) keeps every tab, route and keyboard order, wraps the desktop nav, fits seven phone tabs with 44 px minimum targets and uses `sr-only hidden lg:inline` on hints.
 
-The real suite cannot run here, so the reporter's behaviour was shown with a throwaway spec and config, outside the commit and without a web server. The test was titled `E2E-04: deliberately broken assertion (local demo, not committed)`, and its second `test.step` expects text that is absent. Command: `npx playwright test -c .imp701-demo/demo.config.ts` (retries 0, list and HTML reporters). The run ended with exit code 1, and the output lines were:
+Before fix: `smoke` reports `2 failed`, `10 passed (10.9s)` (wall 12.21 s); `auth` reports `1 failed`, `19 passed (13.4s)` (14.30 s), reproducing the same 360/768 failures. Final M2 source: `smoke` `12 passed (10.0s)` (10.88 s), `auth` `20 passed (16.3s)` (17.18 s). The unchanged external open-trip check reports `4 passed (24.9s)` (25.92 s): all seven links visible/unclipped at all four widths, page fits viewport, targets at least 44 px, Profile reached by Tab, existing keyboard order, visible focus rings, no serious/critical axe violations. The first candidate's deterministic Summary-label clipping at 360 px was repaired before the M2 commit and before these final runs. AppShell's final unit run is `Test Files  1 passed (1)`, `Tests  7 passed (7)`, duration 1.83 s; accessible names/order and narrow-width hint classes are asserted.
+
+The integrated main web build's tree equals `b6051a8`; provider and floor builds use the integrated checkout. Each invocation writes outside the repository to its own output folder in `/home/hetlathiya/S7A-081d-evidence/`.
+
+| Command / phase | Exact result lines | Wall time | Evidence log |
+| --- | --- | --- | --- |
+| `make check` (once) | exit 0; `All checks passed!`; `Success: no issues found in 123 source files`; `Contracts: 6 kept, 0 broken.`; `openapi-check: contracts/ and apps/web/lib/api/schema.d.ts are up to date`; `1210 passed, 1 warning in 19.85s`; `91 passed, 2 deselected, 1 warning in 20.52s`; `590 passed, 1 warning in 250.28s (0:04:10)`; `87 passed, 14 skipped, 1 warning in 50.41s`; `Test Files  43 passed (43)`; `Tests  288 passed (288)` | 401.43 s | `check.log` |
+| Integrated `make e2e ARGS='smoke'` | `12 passed (10.5s)` | 11.52 s | `lead-smoke.log` |
+| Integrated `make e2e ARGS='auth'` | `20 passed (14.3s)` | 15.20 s | `lead-auth.log` |
+| Full `make e2e`, run 1 | `37 skipped`; `82 passed (3.9m)` | 237.09 s | `full1.log` |
+| Quota after run 1 | `1 skipped`; `1 passed (8.2s)` | 9.21 s | `full1-quota.log` |
+| Full `make e2e`, run 2 | `37 skipped`; `82 passed (4.1m)` | 247.23 s | `full2.log` |
+| Quota after run 2 | `1 skipped`; `1 passed (8.4s)` | 9.27 s | `full2-quota.log` |
+| Full `make e2e`, run 3 | `37 skipped`; `82 passed (4.1m)` | 248.37 s | `full3.log` |
+| Quota after run 3 | `1 skipped`; `1 passed (8.3s)` | 9.07 s | `full3-quota.log` |
+
+All full/quota invocations exit 0 with workers 2, retries 0 and no code change between runs. Full logs each start `Running 119 tests using 2 workers`: 82 pass, 36 cut-extension skips and one complementary quota skip. Each quota follow-up skips timeout and passes quota. Combined full/quota/scenario-switch wall times: 248.22 s, 259.91 s, 259.36 s. No full-run fix round was used. **Flaky-test list: empty (0 of 3 full runs).**
+
+## Acceptance criteria (current)
+
+| Criterion | Status | How |
+| --- | --- | --- |
+| `make e2e` passes locally three consecutive times with MOCK and no retries | verified | RUN-081d full runs 1–3 at `b6051a8`: each `37 skipped`, `82 passed`; provider quota follow-up passes after each. No code changes between runs; `retries: 0`; IMD-203 permits three separate full invocations. |
+| Specs exist and pass for E2E-01 to E2E-08 and TC-369, TC-371, TC-372, TC-373, TC-374, TC-375, TC-376 | verified locally | All three full logs include auth, trip creation, generation, costs, editing/lock/regenerate/restore, reopen/stale-plan, ownership, keyboard and the separate floor project; the provider timeout passes in each full run and quota in each follow-up. |
+| A deliberately broken assertion makes CI fail and the report names the test and failing user step | local reporter behavior verified; CI portion not verified | The RUN-081 local demo in the part record exits 1, reports `1 failed`, and names `E2E-04: deliberately broken assertion (local demo, not committed)` and `See the planning total from the API`. No deliberately broken assertion was dispatched to CI. |
+| Floor journey passes with all nine cut-list features disabled (TC-372) | verified locally | `[floor-journey]` passes in full runs 1–3 against API 8002/web 3002 built with all nine switches disabled; `FLOOR_BASE_URL` includes this project in each full invocation. |
+| No spec needs a Gemini key, hosted Supabase project or network beyond the local stack | verified locally and by inspection | All three runs use MOCK and the CLI local stack; `fixtures/users.ts` refuses non-local hosts. Map tests abort remote tiles or serve a local style, and edit specs abort tiles. No provider or hosted-project credential is required. |
+| `make e2e ARGS='--grep @ext'` passes for enabled extensions and skips disabled ones with a reason | verified for the current cut-list configuration | RUN-081c targeted `@ext`: `36 skipped`, `4 passed (9.1s)`; each RUN-081d full run also passes the four absence/404 checks and skips the nine cut extensions at each of four widths with the IMD-65 reason. There are no enabled extensions. |
+
+## RUN-081 broken-assertion demo (historical, local only, not committed)
+
+When the real suite could not run during RUN-081, the reporter's behaviour was shown with a throwaway spec and config, outside the commit and without a web server. The test was titled `E2E-04: deliberately broken assertion (local demo, not committed)`, and its second `test.step` expects text that is absent. Command: `npx playwright test -c .imp701-demo/demo.config.ts` (retries 0, list and HTML reporters). The run ended with exit code 1, and the output lines were:
 
 ```text
   ✘  1 [chromium-1280] › .imp701-demo/demo.spec.ts:3:5 › E2E-04: deliberately broken assertion (local demo, not committed) (1.2s)
@@ -77,90 +102,24 @@ The real suite cannot run here, so the reporter's behaviour was shown with a thr
   1 failed
 ```
 
-The failure names the test with its ID and the user step. The temporary files and their report were deleted. The suite's own run is the CI dispatch of the PR head.
+The failure names the test with its ID and the user step. The temporary files and their report were deleted. This proves local reporter behavior only; the deliberately broken assertion has not been dispatched to CI.
 
-### Not run
 
-- `make e2e` (any spec), the three `--repeat-each=3` runs and `make e2e ARGS='--grep @ext'`: this machine has no Docker, so the Supabase local stack cannot start. Evidence = the CI dispatch of the PR head (one run).
-- `make test` and `make check`: no API, web-unit or schema change in this part. The web unit tests are unaffected, because only `e2e/`, the Playwright config and CI files changed.
-
-## Acceptance criteria
-
-| Criterion | Status | How |
-| --- | --- | --- |
-| `make e2e` passes three consecutive times with MOCK and no retries configured | not verified | `retries: 0` is set (verified in the config). The three local runs were not run (no Docker) and are marked not run in `docs/test-reports/e2e-sprint7.md` |
-| Specs exist and pass for E2E-01 to E2E-08 and TC-369, TC-371 to TC-376 | specs exist: verified (`--list`); pass: not verified locally, pending CI dispatch | `npx playwright test --list` lists every spec and title |
-| A broken assertion fails CI and the report shows the test name and the failing user step | verified locally with a throwaway spec (above); CI not verified (pending dispatch) | Demo output above |
-| Floor journey passes with all nine cut-list features disabled (TC-372) | not verified in this run | Project `floor-journey` listed with the nine switches set. CI evidence is the `features_disabled` dispatch (passed at SG-6, run 43807026528, before this change) |
-| No spec needs a Gemini key, a hosted Supabase project or network beyond the local stack | verified by reading | Specs use MOCK, the local stack (the `users` fixture refuses non-local hosts) and the API. Map tiles are aborted in the edit specs |
-| `--grep @ext` passes for enabled extensions and skips disabled ones with the reason | not verified locally, pending CI dispatch | 9 skips with `cut by IMD-65 (switch off)` plus 1 absence test per project, listed |
-
-## Blockers
-
-- No Docker on the operator machine, so no local E2E run. Evidence comes from one CI dispatch of the PR head (IMD-185; IMD-193 for a CI-only failure).
-
-## Proposed decisions
-
-- **PD-IMP-701-1 (nightly cron):** the card's nightly cron (step 7) stays off by IMD-185. The proposal is to record that IMP-701's acceptance is met by push-to-main runs plus the PR dispatch.
-- **PD-IMP-701-2 (local sign-in limit):** if the CI run hits the local stack's limit of 30 sign-ins per 5 minutes (HTTP 429 on `/auth/v1/token`), raise `[auth.rate_limit] sign_in_sign_ups` in `supabase/config.toml` for the local stack only, rather than cutting widths further. Until then, the regression step runs at one width.
-
-## Open issues
-
-- **Versions page for a foreign trip (E2E-08):** `/trips/[tripId]/versions` reads API-24 first, and its 404 shows the no-plan state "No itinerary yet" with a "Generate a plan" link instead of the not-found state. The page shows no data of A's trip, and every API answer is 404. `ownership.spec.ts` accepts either heading and records this here. The fix would be in the versions page (IMP-610 owner).
-- E2E-03's "progress passes through the statuses" is checked as the progress panel appearing and the itinerary opening. MOCK finishes in under a second, so the intermediate statuses are not asserted (that would be flaky).
-- `trip-create.spec.ts` keeps its fixed dates (2026-12-04 to 2026-12-06). They are still in the future, but they will need `daysFromNow` before December 2026.
-
-## RUN-081c follow-up (fixes of the first dispatch's failures)
-
-| Field | Value |
-| --- | --- |
-| Run | RUN-081c (continues RUN-081b, which stopped on the IMP-506 lock-toggle name) |
-| Owner | Krrish Kamani |
-| Status | PR_OPEN pending: specs fixed and statically checked; the E2E evidence comes from the lead's integration runs |
-| Base commit | 62eb1fc |
-
-### Changed files
-
-- `apps/web/e2e/itinerary-edit.spec.ts`: F-E1, the retime step reads A and B by ID from a fresh API-24 read and retimes the moved, unlocked item B to a different start inside A's interval; `retime()` refuses an unchanged value before it waits for the PATCH. The lock toggle is found by its new name `Locked <place>` (IMP-506, committed separately before this commit).
-- `apps/web/e2e/validate-costs.spec.ts`: F-E2, matches the whole paragraph `Suggested fix: <text>`.
-- `apps/web/e2e/provider-failure.spec.ts`: F-E3 under IMD-206, both TC-371 tests start from a fresh trip with no itinerary and press "Generate with AI" (API-22); a non-202 answer fails with its body. No API-31 regeneration case is kept.
-- `apps/web/e2e/ownership.spec.ts`: the versions page of another user's trip must show "Trip not found" (IMP-610 fix 10f3324, the open issue below is closed).
-- `apps/web/playwright.config.ts`: `FLOOR_BASE_URL` adds the `floor-journey` project against a separately built floor stack; retries stay 0.
-- `.github/workflows/e2e.yml`: `repeat_each` dispatch input (default 1, validated), passed as `--repeat-each` to every local-stack run; a floor-journey step on API 8002 and web 3002 with the nine cut-list switches off; its logs in the artefact. Triggers stay push to `main` and `workflow_dispatch`; `ubuntu-24.04`.
-- `docs/test-reports/e2e-sprint7.md`: sections 4 (F-E1 to F-E3) and 5 (result placeholders for the lead).
-- `docs/progress/parts/IMP-701-whole-task.md`: this section.
-
-### What each provider-failure assertion rests on
+## Provider-failure assertion basis (IMD-206)
 
 - Timeout outcome `fallback_rule_based`: `apps/api/app/generation/records.py:22` (`CompletedOutcome`), set by `pipeline.py:432`. `fallback_reason` `provider_timeout`: `pipeline.py:423` stores the cause, `service.py:215` returns it; MOCK `timeout` raises `ProviderTimeout` (`app/ai/providers/mock.py:363`).
 - Quota `failed` / `provider_quota_exhausted`: `records.py:28`, `outcomes.py:12` and `NO_FALLBACK` (`outcomes.py:30`); `next_action` `retry_rule_based`: `outcomes.py:70` through `service.py:214`; `repair_attempts`: `schemas.py:51`, no repair call before a quota failure (IMD-44). Paused message: `GenerationProgress.tsx:200` shows `PausedAiNotice` (role status, "Build a rule-based plan"). Nothing saved: API-24 answers 404 `NOT_FOUND` with no itinerary (`app/itinerary/service.py:431`).
 - Rule-based option: `service.py:167` stores `model_id` `rule_based_planner_v1` (`fallback_planner.py:33`) for mode rule_based, `service.py:209` returns `mode` rule_based, and the pipeline makes no model call for it (`pipeline.py:631`); it completes `fallback_rule_based` (`pipeline.py:432`), so the itinerary page shows the FallbackNotice (`FallbackNotice.tsx:15`, `itinerary/page.tsx:446`).
 
-### Commands
+## Remaining verification and blockers
 
-| Command | Result | Wall time |
-| --- | --- | --- |
-| `make test-web ARGS='tests/unit/itinerary/LockToggle.test.tsx tests/unit/itinerary'` (IMP-506 commit) | `Test Files  12 passed (12)`, `Tests  82 passed (82)` | 7.8 s |
-| `make lint` | exit 0: `All checks passed!`, `234 files already formatted`, `All matched files use Prettier code style!` | 9.6 s |
-| `npm run typecheck --prefix apps/web` | exit 0: `✓ Types generated successfully`, `tsc --noEmit` clean | 2.9 s |
+No blocker remains for the local regression runs. At K3 commit time, the required lead push and one `e2e.yml` dispatch (`repeat_each=3`) follow integration of this evidence, so no RUN-081d CI URL/result exists yet. The lead records the actual URL/result in the RUN-081d SYNC REPORT and checkpoint. CI execution on the pushed head and a deliberately broken assertion in CI remain not verified; a local failure demo is not a CI demonstration. Live/staging and manual device/screen-reader verification are outside these MOCK results.
 
-Not run in RUN-081c: `make e2e` (any spec). The lead runs every E2E invocation after integration, each with its own `--output` outside the repository.
+## Decisions and open issues
 
-### Acceptance criteria (RUN-081c)
-
-| Criterion | Status | How |
-| --- | --- | --- |
-| F-E1 retime sends a PATCH and keeps the overlap (TC-376) | not verified, pending lead runs | RUN-081b showed the retime step passing on the same change; the full spec is pending |
-| F-E2 suggested fix shown (E2E-04) | not verified, pending lead runs | RUN-081b showed the warning assertions passing at every width |
-| TC-371 timeout and quota from a fresh trip (ACC-03, ACC-17) | not verified, pending lead runs | Assertions checked against the API code listed above; lint and typecheck pass |
-| TC-383 lock toggle name contains its label | verified (unit); E2E not verified, pending lead runs | `LockToggle.test.tsx` passes |
-| `make e2e` passes three consecutive times, no retries | not verified, pending lead runs | `retries: 0` in the config; `repeat_each` input added |
-| Triggers push to main and workflow_dispatch only; ubuntu-24.04 | verified | Read `.github/workflows/e2e.yml` |
-
-### Blockers
-
-- None for this part. The 360 px CostBreakdown scroll regions (IMP-507) are fixed in a separate commit of the integration branch; `validate-costs` at 360 px depends on it.
-
-### Proposed decisions
-
-- None.
+- PD-IMP-701-1 is resolved by IMD-202: nightly stays off under IMD-185.
+- PD-IMP-701-2 is resolved by IMD-203: local/CI `sign_in_sign_ups` is 300; hosted configuration is unchanged.
+- The foreign-trip versions-page issue is closed by Jeel's `10f3324`; `ownership.spec.ts` requires “Trip not found” and passes in the targeted RUN-081c and all three RUN-081d full runs.
+- Intermediate MOCK progress statuses are not individually timed: the panel and terminal outcome are asserted to avoid timing-dependent checks.
+- `trip-create.spec.ts` retains 4–6 December 2026 dates; conversion to relative dates is a later maintenance item, not part of this evidence-only commit.
+- Proposed decisions: none. No contracts changed or migrations added.
