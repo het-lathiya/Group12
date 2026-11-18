@@ -1,4 +1,4 @@
-import { AppNav, Footer } from "@/components/ui";
+import { AuthGate } from "@/components/shell";
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  return (<><AppNav />{children}<Footer /></>);
+  return <AuthGate>{children}</AuthGate>;
 }

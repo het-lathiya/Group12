@@ -6,6 +6,12 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Icon, Logo } from "@/components/ui";
 import { destinations } from "@/lib/data";
+import { supabase } from "@/lib/api";
+
+function nextPath() {
+  const n = new URLSearchParams(window.location.search).get("next");
+  return n && n.startsWith("/") && !n.startsWith("//") ? n : "/dashboard/";
+}
 
 const slides = [
   { ...destinations[2], place: "Lake Pichola Sunset Cruise", meta: "Day 3 • ★ 4.9 • ₹900 / pp", tip: "Board at 5:30 PM for golden hour" },
@@ -43,12 +49,41 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
 
   useEffect(() => { const t = setInterval(() => setSlide((x) => (x + 1) % slides.length), 4500); return () => clearInterval(t); }, []);
 
-  const submit = (e: React.FormEvent) => {
+  const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [name, setName] = useState("");
+
+  useEffect(() => {
+    supabase().auth.getSession().then(({ data }) => { if (data.session) router.replace(nextPath()); });
+  }, [router]);
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!emailOk || pw.length < 8) { setShake((x) => x + 1); return; }
-    // TODO: wire to Supabase auth like apps/web in Group12
+    setErr(null); setInfo(null);
+    if (!emailOk || pw.length < 8) { setShake((x) => x + 1); setErr(!emailOk ? "Enter a valid email." : "Password must be at least 8 characters."); return; }
     setLoading(true);
-    setTimeout(() => { setLoading(false); setDone(true); setTimeout(() => router.push("/dashboard"), 700); }, 1100);
+    try {
+      if (up) {
+        const { data, error } = await supabase().auth.signUp({ email, password: pw, options: { data: { display_name: name || undefined }, emailRedirectTo: `${window.location.origin}/dashboard/` } });
+        if (error) throw error;
+        if (!data.session) { setLoading(false); setInfo("Account created. Check your email to confirm it, then sign in."); return; }
+      } else {
+        const { error } = await supabase().auth.signInWithPassword({ email, password: pw });
+        if (error) throw error;
+      }
+      setLoading(false); setDone(true);
+      setTimeout(() => router.push(nextPath()), 600);
+    } catch (e2) {
+      setLoading(false); setShake((x) => x + 1);
+      setErr(e2 instanceof Error ? e2.message : "Sign-in failed.");
+    }
+  };
+
+  const sendMagic = async () => {
+    setErr(null);
+    if (!emailOk) { setShake((x) => x + 1); setErr("Enter your email first."); return; }
+    const { error } = await supabase().auth.signInWithOtp({ email, options: { emailRedirectTo: `${window.location.origin}/dashboard/`, shouldCreateUser: false } });
+    if (error) setErr(error.message); else setMagic(true);
   };
 
   const cur = slides[slide];
@@ -64,7 +99,7 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
         <motion.div key={mode} initial="hidden" animate="show" transition={{ staggerChildren: 0.07, delayChildren: 0.1 }} className="mx-auto my-auto w-full max-w-sm py-12">
           <motion.div variants={item} className="mb-6 inline-flex rounded-full bg-sky p-1 text-xs font-semibold">
             {[["in", "Sign in", "/sign-in"], ["up", "Sign up", "/sign-up"]].map(([m, l, h]) => (
-              <Link key={m} href={h} className={`relative rounded-full px-4 py-1.5 ${mode === m ? "text-white" : "text-muted"}`}>
+              <Link key={m} href={h + "/"} className={`relative rounded-full px-4 py-1.5 ${mode === m ? "text-white" : "text-muted"}`}>
                 {mode === m && <motion.span layoutId="authtab" className="absolute inset-0 rounded-full bg-slate" />}
                 <span className="relative">{l}</span>
               </Link>
@@ -79,7 +114,7 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
           <motion.form key={shake} onSubmit={submit} noValidate animate={shake ? { x: [0, -10, 10, -6, 6, 0] } : {}} transition={{ duration: 0.4 }} className="mt-8 space-y-4">
             {up && (
               <motion.label variants={item} className="block"><span className="label text-muted">Full name</span>
-                <div className="relative mt-1.5"><Icon name="person" className="absolute left-3.5 top-3.5 text-muted" /><input className="input pl-11" placeholder="Your name" /></div>
+                <div className="relative mt-1.5"><Icon name="person" className="absolute left-3.5 top-3.5 text-muted" /><input value={name} onChange={(e) => setName(e.target.value)} className="input pl-11" placeholder="Your name" /></div>
               </motion.label>
             )}
             <motion.label variants={item} className="block"><span className="label text-muted">Email</span>
@@ -112,6 +147,14 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
               </AnimatePresence>
             </motion.label>
 
+            <AnimatePresence>
+              {(err || info) && (
+                <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+                  className={`flex items-start gap-2 rounded-xl p-3 text-[13px] ${err ? "bg-coral-wash text-coral-deep" : "bg-mint-wash text-mint"}`}>
+                  <Icon name={err ? "error" : "mark_email_read"} className="!text-[16px]" />{err ?? info}
+                </motion.p>
+              )}
+            </AnimatePresence>
             <motion.button variants={item} whileHover={{ scale: loading || done ? 1 : 1.02 }} whileTap={{ scale: 0.97 }} disabled={loading || done}
               className={`btn-primary relative w-full overflow-hidden !py-3 ${done ? "!bg-mint !shadow-none" : ""}`}>
               <AnimatePresence mode="wait" initial={false}>
@@ -132,7 +175,7 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
           </motion.form>
 
           <motion.div variants={item} className="my-6 flex items-center gap-3 text-xs text-muted"><span className="h-px flex-1 bg-line" />or<span className="h-px flex-1 bg-line" /></motion.div>
-          <motion.button variants={item} whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} onClick={() => setMagic(true)}
+          <motion.button variants={item} whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} onClick={sendMagic}
             className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-white py-3 text-sm font-semibold hover:bg-canvas">
             <AnimatePresence mode="wait" initial={false}>
               {magic ? (
@@ -144,7 +187,7 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
           </motion.button>
           <motion.p variants={item} className="mt-8 text-center text-sm text-body">
             {up ? "Already have an account? " : "New to TripBook? "}
-            <Link href={up ? "/sign-in" : "/sign-up"} className="font-semibold text-coral hover:underline">{up ? "Sign in" : "Create one"}</Link>
+            <Link href={up ? "/sign-in/" : "/sign-up/"} className="font-semibold text-coral hover:underline">{up ? "Sign in" : "Create one"}</Link>
           </motion.p>
         </motion.div>
       </div>
