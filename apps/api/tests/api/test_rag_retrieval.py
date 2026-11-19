@@ -237,7 +237,10 @@ async def test_tc_451_filters_and_must_visit_are_unchanged_by_the_semantic_part(
     vector = await shortlist(db_session, trip_id, auth_user, result)
 
     assert result.mode == "vector"
-    assert result.place_similarity[must.id] == min(result.place_similarity.values())
+    # The must-visit place is the least similar; compare within 1e-6 because float
+    # rounding of the cosine differs by platform (about 4e-9 on Apple Silicon).
+    least = min(result.place_similarity.values())
+    assert abs(result.place_similarity[must.id] - least) <= 1e-6
     assert must.id in {c.place.id for c in vector}
     assert {c.place.step_free for c in vector if not c.must_visit} == {True}
     lexical = await shortlist(db_session, trip_id, auth_user, None)
