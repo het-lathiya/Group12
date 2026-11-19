@@ -3,6 +3,7 @@
 A web app where a signed-in traveller describes a trip and gets a day-wise, costed, editable itinerary. The plan is proposed from a shortlist of curated places, then every place, time, travel gap and price is validated and recalculated by the backend; a rule-based planner takes over when the AI provider fails.
 
 The binding details are in [docs/spec/IMPLEMENTATION_SPEC.md](docs/spec/IMPLEMENTATION_SPEC.md); the working rules for contributors are in [CLAUDE.md](CLAUDE.md).
+Pull requests are opened by their designated member from the link the team PR broker prepares: [docs/guides/pr-broker.md](docs/guides/pr-broker.md).
 
 ## Prerequisites
 
