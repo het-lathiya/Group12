@@ -44,3 +44,20 @@ Environment variable names and placeholders live only in `.env.example`; real va
 | `docs/` | Specification, progress records, decisions, guides, test reports, acceptance |
 | `eval/` | Evaluation datasets, results and reports |
 | `.github/` | CI and deployment workflows, pull request template, CODEOWNERS |
+
+## Documentation
+
+- [Software requirements specification](docs/srs.md)
+- [Architecture](docs/architecture.md)
+- [API](docs/api.md)
+- [Test plan](docs/test-plan.md)
+- [User guide](docs/guides/user-guide.md)
+- [Deployment guide](docs/guides/deployment-guide.md)
+- [Stage 2](docs/stage2/README.md)
+- [Final evaluation baseline](eval/reports/final-baseline.md)
+- [Cost and latency report](docs/test-reports/cost-latency-report.md)
+- [Accessibility report, Sprint 7](docs/test-reports/accessibility-sprint7.md)
+
+## How we merge
+
+The operator, Nidhi, fast-forwards `main` to a pull request's branch once the required checks and the E2E run have passed on the branch head (IMD-209, IMD-211). On 18 November 2026 the history of `main` was rewritten once so that every commit's committer equals its author (IMD-208); [docs/progress/commit-map.md](docs/progress/commit-map.md) maps the old commit IDs to the new ones.
