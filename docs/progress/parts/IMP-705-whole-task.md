@@ -1,8 +1,8 @@
 # IMP-705 · whole-task part
 
-- Run ids: RUN-083 (MOCK and retrieval MOCK runs); RUN-083b (rule-based run, IMD-213)
+- Run ids: RUN-083 (MOCK and retrieval MOCK runs); RUN-083b (rule-based run, IMD-213); RUN-083c (GEMINI prompt v2 run, run by the operator, committed and reported)
 - Owner: Nidhi (Nidhi Chauhan), 1 point; issue #152
-- Status: PR_OPEN after RUN-083b. MOCK, retrieval MOCK and rule-based runs recorded and reported; the GEMINI runs were not made, and both reports say why (see Not run)
+- Status after RUN-083c: PR_OPEN. MOCK, retrieval MOCK, rule-based and GEMINI prompt v2 records committed and reported; no GEMINI retrieval record (see RUN-083c). Status after RUN-083b: PR_OPEN. MOCK, retrieval MOCK and rule-based runs recorded and reported; the GEMINI runs were not made, and both reports say why (see Not run)
 - Base commit: f75aa949fe306361d2f515ede632504518d19b63 (`main` after IMP-701 and IMP-702 merged, IMD-202); also the candidate commit of every run
 - Branch: S7B/eval (batch branch; card branch name `feat/IMP-705-<short>`); RUN-083b: `feat/S7-B2-eval-finish`, base commit `964327f83c73e90f1309e0ecb3e7db82cda471c8`, rule-based run at `6993197` (the harness change of IMD-213 on that branch)
 - Traces to: US-131; FR-120, FR-140; NFR-004, NFR-039, NFR-041; TC-386, TC-388 to TC-390, TC-392, TC-393, TC-396, TC-397, TC-458
@@ -66,6 +66,41 @@ The records were copied unchanged from the evaluation outputs. The `raw/` output
 | --- | --- |
 | `make eval PROVIDER=GEMINI DATASET=trips/v1 ARGS='--prompt-version v2'` (card step 4, TC-392, IMD-213) | not run: the key could not be confirmed or supplied (permission rules block reading `apps/api/.env`) |
 | `make eval DATASET=retrieval/v1 PROVIDER=GEMINI ARGS='--suite retrieval'` (card step 7, FR-140) | not run: same reason |
+
+## RUN-083c (20 November 2026)
+
+- Branch `feat/S7-B2-eval-finish` at `41b521d` before this run; base `origin/main` `964327f`. No code changed in this run.
+- The operator (Nidhi) ran the GEMINI evaluations herself in the evaluation worktree `/Users/nidhi/wt-S7B2-eval` at `6993197`. This run made no live call and read no `.env` file. `run.json` and `scores.json` of the committed run were copied unchanged (`cmp` reported no difference). `raw/` was not committed, as for earlier runs. The secret guard (`grep -rIlE 'AIza[0-9A-Za-z_-]{10,}|api_key"?\s*[:=]\s*"?[A-Za-z0-9]'`) over the run folder, `raw/` included, printed nothing. `test -e /Users/nidhi/wt-S7B2-eval/apps/api/.env` printed `ABSENT`.
+
+| Command | Run by | Result (as recorded in the run folder) |
+| --- | --- | --- |
+| `make eval PROVIDER=GEMINI DATASET=trips/v1 ARGS='--prompt-version v2'`, attempt 1 | run by the operator | `20261120T163036Z-gemini`: 45 × `config_error` (the operator reports the old key was rejected, HTTP 401). Not committed; kept in `/Users/nidhi/S7B2-failed-runs/` |
+| same, attempt 2 | run by the operator | `20261120T164419Z-gemini`: 45 × `config_error` (`GEMINI_MODEL_ID` still held the `.env.example` placeholder, which the record names as `model_id`). Not committed; kept in `/Users/nidhi/S7B2-failed-runs/` |
+| same, attempt 3 | run by the operator | `20261120T165222Z-gemini` (committed): provider GEMINI, model `gemini-3.5-flash-lite`, prompt `itinerary_generate` v2 (`prompt_version_overridden` true), gr-2 / io-2, dataset trips v1 (`dataset_sha256` `8e0bde49…`), `git_commit` `6993197…`, metrics v2. 45 attempts: 23 completed, 22 `provider_unavailable`. The printed result line was not kept |
+| `make eval DATASET=retrieval/v1 PROVIDER=GEMINI ARGS='--suite retrieval'` | not found | no GEMINI retrieval folder exists after `20261120T165222Z-gemini` in the worktree |
+
+Figures of `20261120T165222Z-gemini`, read from its `run.json` and `scores.json`:
+
+- Availability: 23 / 45 completed; 22 `provider_unavailable`, spread through the run (Gemini service errors, not quota); 12 of 15 cases have at least one completed attempt (none for `trips-v1-002`, `003`, `012`).
+- Quality over the 23 completed attempts only: schema-valid 23 / 23, valid IDs 23 / 23, usable 23 / 23, no duplicates 19 / 23, average daily travel 119.4 min.
+- All 23 completed attempts carry input and output tokens (input 1471 to 4984, output 314 to 1957). Every completed answer has item notes and none has the rule-based summary, so this is model output, not the fallback planner.
+- Latency over the completed attempts: min 1775, median 6608, mean 7471.6, p95 12699, max 19999 ms.
+
+| Command (RUN-083c) | Result line (quoted exactly) |
+| --- | --- |
+| `make test-unit ARGS='-k evaluation'` | `85 passed, 1130 deselected, 1 warning in 1.64s` |
+| `make check` | exit 0: `All checks passed!`; `Success: no issues found in 123 source files`; `Contracts: 6 kept, 0 broken.`; `openapi-check: contracts/ and apps/web/lib/api/schema.d.ts are up to date`; `1215 passed, 1 warning in 8.84s`; `91 passed, 2 deselected, 1 warning in 18.48s`; `590 passed, 1 warning in 113.48s (0:01:53)`; `87 passed, 14 skipped, 1 warning in 22.17s`; `Test Files  43 passed (43)`; `Tests  288 passed (288)` |
+
+Acceptance after RUN-083c:
+
+| Criterion | Status | How |
+| --- | --- | --- |
+| FR-120 / TC-390: run records for MOCK (two), rule-based (one) and GEMINI (one) with dataset version, provider, model id, prompt and schema versions and commit SHA | verified | `20261119T182737Z-mock`, `20261119T182745Z-mock`, `20261120T155153Z-rule_based`, `20261120T165222Z-gemini`: each holds every listed field |
+| TC-392: final GEMINI run on trips/v1 with prompt v2 (IMD-213) | verified, with a caveat | `20261120T165222Z-gemini` ran prompt v2 once to completion of the run, but only 23 of 45 attempts completed (22 `provider_unavailable`). Quality figures are over the completed attempts only, and both reports say so |
+| US-131 AC1 / AC2, NFR-041: every figure cites a run record | verified | `eval/reports/final-baseline.md` and `docs/test-reports/cost-latency-report.md`: every GEMINI figure names `20261120T165222Z-gemini` |
+| FR-140 / TC-458 retrieval metrics with GEMINI | not verified | no GEMINI retrieval run record exists |
+
+Blockers after RUN-083c: the GEMINI retrieval run (card step 7) has no record.
 
 ## Not run (RUN-083)
 
