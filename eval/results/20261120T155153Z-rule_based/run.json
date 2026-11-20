@@ -1,0 +1,102 @@
+{
+  "adapter_version": null,
+  "case_count": 15,
+  "dataset_id": "trips",
+  "dataset_sha256": "8e0bde49e0bd37e0d42a1f558baa2a287a69a0c53d53b8801288ff8c9439b450",
+  "dataset_version": "v1",
+  "ended_at": "2026-11-20T15:51:53.651502+00:00",
+  "failures": [],
+  "generation_settings": {},
+  "git_commit": "6993197fd059a8d4fee4ab0b7824625cd4f75e33",
+  "input_schema_version": "gr-1",
+  "metrics": {
+    "attempts": 45,
+    "avg_daily_travel_min": 86.2,
+    "counts": {
+      "no_duplicate_places": {
+        "k": 45,
+        "n": 45
+      },
+      "place_ids_valid": {
+        "k": 45,
+        "n": 45
+      },
+      "schema_valid": {
+        "k": 45,
+        "n": 45
+      },
+      "usable": {
+        "k": 45,
+        "n": 45
+      }
+    },
+    "metrics_version": "v2",
+    "numbered": {
+      "1": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "10": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "11": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "12": {
+        "status": "null: no dated price table exists (\u00a78.16)",
+        "value": null
+      },
+      "13": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "2": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "3": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "4": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "5": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "6": {
+        "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+        "value": null
+      },
+      "7": {
+        "status": "not computed in v1 (IMP-413 card)",
+        "value": null
+      },
+      "8": {
+        "status": "Release 2 (\u00a78.17)",
+        "value": null
+      },
+      "9": {
+        "status": "not computed in v1 (IMP-413 card)",
+        "value": null
+      }
+    }
+  },
+  "metrics_definition_sha256": "a1be38b0e89ddd06c345c8de23efd5075e234565d27fa25c3790ab178bceb34f",
+  "metrics_version": "v2",
+  "model_id": "rule-based",
+  "model_version": "rule_based_planner_v1",
+  "output_schema_version": "io-1",
+  "prompt_sha256": {},
+  "prompt_template_id": "itinerary_generate",
+  "prompt_version": "not applicable",
+  "prompt_version_overridden": false,
+  "provider": "RULE_BASED",
+  "repeats": 3,
+  "run_id": "20261120T155153Z-rule_based",
+  "started_at": "2026-11-20T15:51:53.594566+00:00"
+}

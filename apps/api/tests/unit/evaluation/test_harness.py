@@ -93,12 +93,23 @@ def test_an_invalid_answer_is_scored_not_schema_valid() -> None:
     assert raw == {"error": "malformed_json"}
 
 
-def test_rule_based_exits_2_until_the_planner_exists(
+def test_rule_based_is_refused_for_the_retrieval_suite_imd_213(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    code = run.main(["--dataset", "trips/v1", "--provider", "RULE_BASED", "--out", str(tmp_path)])
+    code = run.main(
+        [
+            "--dataset",
+            "retrieval/v1",
+            "--suite",
+            "retrieval",
+            "--provider",
+            "RULE_BASED",
+            "--out",
+            str(tmp_path),
+        ]
+    )
     assert code == 2
-    assert "rule-based planner not available (IMP-402)" in capsys.readouterr().err
+    assert "generation suite only" in capsys.readouterr().err
     assert not (tmp_path / "run.json").exists()
 
 

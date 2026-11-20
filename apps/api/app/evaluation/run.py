@@ -6,6 +6,10 @@ Each frozen gr-1 request of the dataset goes through the production functions of
 network), the budget engine and ``validator.validate``. Step 10 (repair, IMP-502) is not built yet.
 The provider comes from ``--provider`` on a copy of the settings, so the application default
 (``AI_PROVIDER``) never changes. GEMINI runs are manual and refused without ``GEMINI_API_KEY``.
+``--provider RULE_BASED`` (IMD-213) answers each request with the rule-based fallback planner
+(``generation.fallback_planner``) instead of a model and scores it with the same code; no provider
+is built, the record names model ``rule-based`` and its prompt version is ``not applicable``.
+It runs the generation suite only.
 
 ``--prompt-version`` (IMD-195) names the itinerary_generate version every request is sent with,
 overriding the version the frozen requests name; a gr-2 version gets the request grounded with no
@@ -27,12 +31,13 @@ import argparse
 import asyncio
 import json
 import sys
+import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from app.ai.errors import ProviderError, ProviderInvalidOutput
@@ -44,7 +49,14 @@ from app.budget import engine
 from app.core.config import Settings, get_settings
 from app.db.session import transaction
 from app.evaluation import manifest, metrics, retrieval_metrics
-from app.generation import grouping, presets, request_builder, retrieval, schedule
+from app.generation import (
+    fallback_planner,
+    grouping,
+    presets,
+    request_builder,
+    retrieval,
+    schedule,
+)
 from app.itinerary.schemas import PlannedDay
 from app.places import service as places_service
 from app.places.schemas import Destination, PlaceSummary
@@ -55,7 +67,9 @@ from app.schemas.ai import (
     GROUNDED_INPUT_SCHEMA_VERSION,
     GenerationRequest,
     ItineraryOutput,
+    ProviderResult,
     ShortlistPlace,
+    UsageMetadata,
 )
 from app.trips.schemas import PreferencesOut, TripDestination, TripOut, TripStatus
 from app.validation import output_check
@@ -68,7 +82,10 @@ RESULTS: Final = REPO_ROOT / "eval" / "results"
 REPORTS: Final = REPO_ROOT / "eval" / "reports"
 METRICS_FILE: Final = REPO_ROOT / "eval" / "metrics_v2.md"
 PROVIDERS: Final = ("MOCK", "GEMINI", "RULE_BASED")
-NO_RULE_BASED: Final = "rule-based planner not available (IMP-402)"
+NO_RULE_BASED: Final = "the rule-based planner runs the generation suite only (IMD-213)"
+RULE_BASED_MODEL_ID: Final = "rule-based"
+NOT_APPLICABLE: Final = "not applicable"
+NO_PLAN: Final = "no_plan"
 NO_GEMINI_KEY: Final = "GEMINI_API_KEY is not set; GEMINI runs are manual and need the key"
 # §8.12: a plan with one of these left is not usable.
 BLOCKING: Final = frozenset({"UNKNOWN_PLACE", "OUTSIDE_TRIP_DATES", "OVERLAP", "CLOSED_ON_DAY"})
@@ -83,6 +100,32 @@ CONTINGENCY_PCT: Final = 10.0
 GUIDE_K: Final = 6
 PLACE_TOP: Final = 12
 FRAME_TIME: Final = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+class Planner(Protocol):
+    """What ``score_case`` needs: a ModelProvider, or the rule-based planner below."""
+
+    async def generate_itinerary(
+        self, request: GenerationRequest
+    ) -> ProviderResult[ItineraryOutput]: ...
+
+
+class RuleBasedPlanner:
+    """The production fallback planner answering in place of a model (IMD-213): no provider call,
+    no tokens; the latency is the planner's own run time."""
+
+    async def generate_itinerary(
+        self, request: GenerationRequest
+    ) -> ProviderResult[ItineraryOutput]:
+        start = time.perf_counter()
+        output = fallback_planner.plan_rule_based(request)
+        return ProviderResult[ItineraryOutput](
+            output=output,
+            usage=UsageMetadata(),
+            finish_reason=None,
+            latency_ms=round((time.perf_counter() - start) * 1000),
+            provider_request_id=None,
+        )
 
 
 class EstimateRouting:
@@ -112,7 +155,7 @@ def duplicate_places(answer: ItineraryOutput, trip_days: int) -> int:
 
 
 async def score_case(
-    provider: ModelProvider, case: dict[str, Any], repeat: int
+    provider: Planner, case: dict[str, Any], repeat: int
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """(score, raw output) of one attempt."""
     request = _for_template(_grouped(GenerationRequest.model_validate(case["request"])))
@@ -147,6 +190,9 @@ async def score_case(
             trip_days=request.trip.num_days,
             max_items_per_day=request.limits.max_items_per_day,
         )
+    except fallback_planner.NoPlanError:
+        score["error"] = NO_PLAN
+        return score, {"error": NO_PLAN}
     except ProviderInvalidOutput as exc:
         score["error"] = exc.kind
         return score, {"error": exc.kind}
@@ -255,9 +301,9 @@ def _costs(
     return engine.compute_costs(items, inputs)
 
 
-def unavailable(name: str, settings: Settings) -> str | None:
+def unavailable(name: str, settings: Settings, suite: str = "generation") -> str | None:
     """Why ``--provider`` cannot run here, or None."""
-    if name == "RULE_BASED":
+    if name == "RULE_BASED" and suite != "generation":
         return NO_RULE_BASED
     if name == "GEMINI" and not settings.gemini_api_key.get_secret_value():
         return NO_GEMINI_KEY
@@ -265,7 +311,7 @@ def unavailable(name: str, settings: Settings) -> str | None:
 
 
 async def evaluate(
-    provider: ModelProvider, cases: list[dict[str, Any]], repeats: int
+    provider: Planner, cases: list[dict[str, Any]], repeats: int
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     scores, raw = [], {}
     for case in cases:
@@ -584,6 +630,19 @@ def main_retrieval(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def rule_based_fields() -> dict[str, Any]:
+    """Record fields of a RULE_BASED run: the planner reads gr-1 and answers io-1, with no model
+    and no prompt (IMD-213)."""
+    return {
+        "model_id": RULE_BASED_MODEL_ID,
+        "model_version": fallback_planner.MODEL_ID,
+        "adapter_version": None,
+        "prompt_version": NOT_APPLICABLE,
+        "prompt_sha256": {},
+        "prompt_version_overridden": False,
+    }
+
+
 def main(argv: list[str] | None = None, settings: Settings | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.evaluation.run")
     parser.add_argument("--dataset", required=True, help="<id>/<version>, e.g. trips/v1")
@@ -600,9 +659,11 @@ def main(argv: list[str] | None = None, settings: Settings | None = None) -> int
     args = parser.parse_args(argv)
     if args.suite == "retrieval" and args.prompt_version:
         parser.error("--prompt-version applies to the generation suite only")
+    if args.provider == "RULE_BASED" and args.prompt_version:
+        parser.error("--prompt-version does not apply to RULE_BASED, which reads no prompt")
     if args.suite == "retrieval":
         settings = settings or get_settings()
-        reason = unavailable(args.provider, settings)
+        reason = unavailable(args.provider, settings, args.suite)
         if reason:
             print(reason, file=sys.stderr)
             return 2
@@ -619,11 +680,16 @@ def main(argv: list[str] | None = None, settings: Settings | None = None) -> int
     if reason:
         print(reason, file=sys.stderr)
         return 2
-    provider = get_provider(settings.model_copy(update={"ai_provider": args.provider}))
+    rule_based = args.provider == "RULE_BASED"
+    provider = (
+        None
+        if rule_based
+        else get_provider(settings.model_copy(update={"ai_provider": args.provider}))
+    )
     if args.prompt_version:
         cases = _with_version(cases, args.prompt_version)
 
-    scores, raw = asyncio.run(evaluate(provider, cases, args.repeats))
+    scores, raw = asyncio.run(evaluate(provider or RuleBasedPlanner(), cases, args.repeats))
     run_id = f"{started:%Y%m%dT%H%M%SZ}-{args.provider.lower()}"
     out: Path = args.out or RESULTS / run_id
     first = cases[0]["request"]
@@ -631,11 +697,11 @@ def main(argv: list[str] | None = None, settings: Settings | None = None) -> int
         run_id=run_id,
         dataset=dataset,
         provider=args.provider,
-        metadata=provider.get_model_metadata(),
+        metadata=provider.get_model_metadata() if provider else None,
         template=registry.load(first["prompt_template_id"], first["prompt_version"]),
         prompt_version_overridden=args.prompt_version is not None,
         # PD-IMP-301-2: not on the protocol; the pipeline reads it the same way.
-        settings_sent=getattr(provider, "generation_settings", {}),
+        settings_sent=getattr(provider, "generation_settings", {}) if provider else {},
         repeats=args.repeats,
         metrics_file=METRICS_FILE,
         started_at=started.isoformat(),
@@ -648,6 +714,8 @@ def main(argv: list[str] | None = None, settings: Settings | None = None) -> int
             if s["error"] is not None
         ],
     )
+    if rule_based:
+        record.update(rule_based_fields())
     try:
         manifest.write(out / "run.json", record)  # checked first: an incomplete run writes nothing
     except manifest.IncompleteRecordError as exc:

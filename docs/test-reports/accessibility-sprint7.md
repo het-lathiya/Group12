@@ -2,7 +2,7 @@
 
 Card: IMP-703 Accessibility check on real devices and fixes (HUMAN, 3 points, lead Krrish; issue #149). Traces to US-126; FR-114, FR-115; NFR-025, NFR-026; TC-373, TC-374, TC-382, TC-383.
 
-**State of this report: prepared, not yet filled.** The sheet below (sections 2 to 5) is an empty template. Junaid runs the device and screen-reader sessions and Krrish records them (card step 1). Only the members enter devices, testers, dates, consent, step results and findings, and only what they observed (card step 2: "do not record findings that were not observed"). Section 6 holds the automated checks of RUN-083.
+**State of this report: prepared, not yet filled.** The sheet below (sections 2 to 5) is an empty template. Junaid runs the device and screen-reader sessions and Krrish records them (card step 1). Only the members enter devices, testers, dates, consent, step results and findings, and only what they observed (card step 2: "do not record findings that were not observed"). Section 6 holds the automated checks of RUN-083 and RUN-083b.
 
 ## 1. How to use this sheet
 
@@ -94,7 +94,19 @@ Reason: the installed `@playwright/test` is 1.64.1, which needs Chromium headles
 
 | Source (CI run URL or local run, date, commit) | Spec and project | Critical violations (quoted) | Serious violations (quoted) |
 | --- | --- | --- | --- |
-| | | | |
+| Local run RUN-083b, 20 November 2026, `fddc7d1` (web code as on `main` `964327f`; see 6.1b) | `journey.spec.ts`, chromium-360, -768, -1280, -1920 | none: no `critical axe violations` line; every `axe scan` line ends `[]` | none: no `axe serious` line |
+| Local run RUN-083b, 20 November 2026, `fddc7d1` | `keyboard.spec.ts`, chromium-360, -768, -1280, -1920 | none: no `critical axe violations` line; every `axe scan` line ends `[]` | none: no `axe serious` line |
+
+### 6.1b Playwright journeys with axe (RUN-083b, 20 November 2026, branch `feat/S7-B2-eval-finish` at `fddc7d1`)
+
+Set-up as in 6.1, on macOS: the Supabase CLI local stack, `make db-migrate` (0001 to 0007), `make seed` (`seed sampleton: places inserted 30, updated 0, unchanged 0, deactivated 0`), the API on port 8000 with `APP_ENV=test`, `AI_PROVIDER=MOCK`, `DB_AUTH_STUB=false` (`/health`: `{"status":"ok","version":"dev","environment":"test","provider":"MOCK"}`), and the production build of the web app served from its standalone output on port 3000, with `BASE_URL=http://localhost:3000`. `make setup ARGS=--with-browsers` installed Chromium build 1248, which `@playwright/test` 1.64.1 needs. The branch changes no web code. Each run had its own output folder outside the repository (`/Users/nidhi/S7B2-e2e/journey`, `/Users/nidhi/S7B2-e2e/keyboard`).
+
+| Command | Result lines (quoted exactly) | axe results |
+| --- | --- | --- |
+| `make e2e ARGS='journey --output /Users/nidhi/S7B2-e2e/journey'` | `Running 4 tests using 4 workers`; `4 passed (31.6s)` | 40 `axe scan` lines (10 per project), each ending `[]`: `axe scan 1 on /sign-up: []`, `axe scan 2 on /dashboard: []`, `axe scan 3` to `6 on /trips/new: []`, `axe scan 7 on /trips/<trip>/generate: []`, `axe scan 8` and `9 on /trips/<trip>/itinerary: []`, `axe scan 10 on /trips/<trip>/costs: []`; no `axe serious` line |
+| `make e2e ARGS='keyboard --output /Users/nidhi/S7B2-e2e/keyboard'` | `Running 4 tests using 4 workers`; `4 passed (10.8s)` | 20 `axe scan` lines (5 per project), each ending `[]`: `axe scan 1 on /sign-in: []`, `axe scan 2 on /dashboard: []`, `axe scan 3 on /trips/<trip>/itinerary: []`, `axe scan 4 on /trips/<trip>/costs: []`, `axe scan 5 on /trips/<trip>/versions: []`; no `axe serious` line |
+
+`<trip>` stands for the trip ID each test created. This is a local run; the CI evidence of TC-383 comes from the `e2e.yml` dispatch on the branch, recorded in the pull request.
 
 ### 6.2 Vitest accessibility assertions (RUN-083)
 
@@ -107,3 +119,5 @@ The suite includes the axe-core assertions of `apps/web/tests/axe.ts` (`axeViola
 ### 6.3 Fixes from automated checks
 
 None in RUN-083: no axe scan ran, so no violation was found or fixed.
+
+None in RUN-083b: the journey and keyboard scans found no serious or critical violation, so no IMD-206 fix was needed.
