@@ -144,9 +144,10 @@ jobs:
         run: |
           "$RUNNER_TEMP/gitleaks" git --redact --no-banner --verbose \
             --log-opts="--no-merges ${BASE_SHA}..${HEAD_SHA}" .
+      # IMD-214: scan the pushed branch's full history only; side branches are not part of main.
       - name: Secret scan of the full history
         if: github.event_name == 'push'
-        run: '"$RUNNER_TEMP/gitleaks" git --redact --no-banner --verbose .'
+        run: '"$RUNNER_TEMP/gitleaks" git --redact --no-banner --verbose --log-opts="HEAD" .'
 
   attribution:
     name: attribution
