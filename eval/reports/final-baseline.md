@@ -36,7 +36,7 @@ IMD-213 (PD-IMP-705-2) sets the final GEMINI run on trips/v1 to the active promp
 | `20261120T155153Z-rule_based` | 3 (RUN-083b, IMD-213) | `make eval PROVIDER=RULE_BASED DATASET=trips/v1` | RULE_BASED · `rule-based` (`rule_based_planner_v1`) | `evaluation 20261120T155153Z-rule_based: 45 attempts, written to /Users/nidhi/wt-S7B2-eval/eval/results/20261120T155153Z-rule_based` | [run.json](../results/20261120T155153Z-rule_based/run.json), [scores.json](../results/20261120T155153Z-rule_based/scores.json) |
 | `20261120T165222Z-gemini` | 4 (run by the operator; IMD-213) | `make eval PROVIDER=GEMINI DATASET=trips/v1 ARGS='--prompt-version v2'` | GEMINI · `gemini-3.5-flash-lite` | the printed line was not kept; the record shows 45 attempts, 23 completed and 22 `provider_unavailable` | [run.json](../results/20261120T165222Z-gemini/run.json), [scores.json](../results/20261120T165222Z-gemini/scores.json) |
 | `20261119T182831Z-retrieval-mock` | 7 (MOCK) | `make eval DATASET=retrieval/v1 ARGS='--suite retrieval'` | MOCK · `mock-v1`, embeddings `mock-embed-v1` | `evaluation 20261119T182831Z-retrieval-mock: 12 queries, written to /home/user/wt-S7B-eval-main/eval/results/20261119T182831Z-retrieval-mock` | [run.json](../results/20261119T182831Z-retrieval-mock/run.json), [report](20261119T182831Z-retrieval-mock.md) |
-| none | 7 (GEMINI) | `make eval DATASET=retrieval/v1 PROVIDER=GEMINI ARGS='--suite retrieval'` | GEMINI | no record: no GEMINI retrieval run folder exists after `20261120T165222Z-gemini` in the evaluation worktree | none |
+| none | 7 (GEMINI, run by the operator) | `make eval DATASET=retrieval/v1 PROVIDER=GEMINI ARGS='--suite retrieval'`, 20 November 2026 about 23:10 IST, worktree at `6993197` | GEMINI · embeddings `gemini-embedding-2` | `app.ai.errors.ProviderUnavailable: Gemini unavailable: HTTP 503` / `make: *** [Makefile:172: eval] Error 1`: stopped at its first call (Gemini service error, not quota and not a missing key); no record written; not re-run | none |
 
 Two earlier operator attempts at step 4 failed in every attempt and are not committed or used: `20261120T163036Z-gemini` (45 × `config_error`; the operator reports the old key was rejected with HTTP 401) and `20261120T164419Z-gemini` (45 × `config_error`; `GEMINI_MODEL_ID` still held the `.env.example` placeholder). Both records name that placeholder as `model_id`. Neither was re-run (rule 16).
 
@@ -96,15 +96,17 @@ From [`20261120T155153Z-rule_based`](../results/20261120T155153Z-rule_based/run.
 
 ## Retrieval suite (card step 7, FR-140, TC-458)
 
-| Metric (overall, 12 queries) | IMP-318 MOCK [`20261113T114756Z-retrieval-mock`](../results/20261113T114756Z-retrieval-mock/run.json) (commit `1b8d753`) | Final MOCK [`20261119T182831Z-retrieval-mock`](../results/20261119T182831Z-retrieval-mock/run.json) (commit `f75aa94`) | Final GEMINI (no record) |
+| Metric (overall, 12 queries) | IMP-318 MOCK [`20261113T114756Z-retrieval-mock`](../results/20261113T114756Z-retrieval-mock/run.json) (commit `1b8d753`) | Final MOCK [`20261119T182831Z-retrieval-mock`](../results/20261119T182831Z-retrieval-mock/run.json) (commit `f75aa94`) | Final GEMINI (not measured: GEMINI unavailable (HTTP 503), see run table) |
 | --- | --- | --- | --- |
-| recall@6 | 0.7083 | 0.7083 | not measured: no GEMINI retrieval run record |
-| Place hit rate, vector (top 12) | 0.6667 | 0.6667 | not measured: no GEMINI retrieval run record |
-| Place hit rate, lexical (top 12) | 0.7083 | 0.7083 | not measured: no GEMINI retrieval run record |
-| Citation validity | 1.0 | 1.0 | not measured: no GEMINI retrieval run record |
-| Grounding rate | 0.7571 | 0.6392 | not measured: no GEMINI retrieval run record |
-| Citations saved | 68 | 47 | not measured: no GEMINI retrieval run record |
-| Queries in vector mode | 12 | 12 | not measured: no GEMINI retrieval run record |
+| recall@6 | 0.7083 | 0.7083 | not measured: GEMINI unavailable (HTTP 503), see run table |
+| Place hit rate, vector (top 12) | 0.6667 | 0.6667 | not measured: GEMINI unavailable (HTTP 503), see run table |
+| Place hit rate, lexical (top 12) | 0.7083 | 0.7083 | not measured: GEMINI unavailable (HTTP 503), see run table |
+| Citation validity | 1.0 | 1.0 | not measured: GEMINI unavailable (HTTP 503), see run table |
+| Grounding rate | 0.7571 | 0.6392 | not measured: GEMINI unavailable (HTTP 503), see run table |
+| Citations saved | 68 | 47 | not measured: GEMINI unavailable (HTTP 503), see run table |
+| Queries in vector mode | 12 | 12 | not measured: GEMINI unavailable (HTTP 503), see run table |
+
+GEMINI retrieval was not possible on 20 November 2026 (the one attempt stopped with HTTP 503); the card asks for GEMINI retrieval "if possible", so only MOCK retrieval figures are claimed.
 
 By destination, final MOCK run [`20261119T182831Z-retrieval-mock`](../results/20261119T182831Z-retrieval-mock/run.json):
 
@@ -118,7 +120,7 @@ These are MOCK embeddings and MOCK answers, so they test the retrieval code path
 ## What this baseline does not claim
 
 - The final GEMINI generation figures cover 23 of 45 attempts (12 of 15 cases); 22 attempts failed with `provider_unavailable`. They say nothing about the three cases with no completed attempt (`trips-v1-002`, `003`, `012`) and are not a reliability figure for Gemini.
-- No GEMINI retrieval figure exists: there is no GEMINI retrieval run record (card step 7 for GEMINI is not done).
+- No GEMINI retrieval figure exists: the one GEMINI retrieval attempt (20 November 2026) stopped at its first call with HTTP 503 and wrote no record.
 - The rule-based figures are of the fallback planner answering in place of a model through the harness, not of the product's fallback rate (the harness runs no repair or fallback after a model answer).
 - The numbered metrics 1 to 13 are not computed. Each record states the reason (blueprint §21.4 not in the repository, no dated price table, or Release 2).
 - No claim is made about plan quality, accuracy or reliability beyond these runs over trips/v1 and retrieval/v1, for other destinations, other models or prompt versions, or for live use.

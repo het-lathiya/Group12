@@ -1,8 +1,8 @@
 # IMP-705 · whole-task part
 
-- Run ids: RUN-083 (MOCK and retrieval MOCK runs); RUN-083b (rule-based run, IMD-213); RUN-083c (GEMINI prompt v2 run, run by the operator, committed and reported)
+- Run ids: RUN-083 (MOCK and retrieval MOCK runs); RUN-083b (rule-based run, IMD-213); RUN-083c (GEMINI prompt v2 run, run by the operator, committed and reported); RUN-083d (GEMINI retrieval attempt recorded)
 - Owner: Nidhi (Nidhi Chauhan), 1 point; issue #152
-- Status after RUN-083c: PR_OPEN. MOCK, retrieval MOCK, rule-based and GEMINI prompt v2 records committed and reported; no GEMINI retrieval record (see RUN-083c). Status after RUN-083b: PR_OPEN. MOCK, retrieval MOCK and rule-based runs recorded and reported; the GEMINI runs were not made, and both reports say why (see Not run)
+- Status after RUN-083c: PR_OPEN. MOCK, retrieval MOCK, rule-based and GEMINI prompt v2 records committed and reported; GEMINI retrieval attempted and not possible, HTTP 503 (see RUN-083d). Status after RUN-083b: PR_OPEN. MOCK, retrieval MOCK and rule-based runs recorded and reported; the GEMINI runs were not made, and both reports say why (see Not run)
 - Base commit: f75aa949fe306361d2f515ede632504518d19b63 (`main` after IMP-701 and IMP-702 merged, IMD-202); also the candidate commit of every run
 - Branch: S7B/eval (batch branch; card branch name `feat/IMP-705-<short>`); RUN-083b: `feat/S7-B2-eval-finish`, base commit `964327f83c73e90f1309e0ecb3e7db82cda471c8`, rule-based run at `6993197` (the harness change of IMD-213 on that branch)
 - Traces to: US-131; FR-120, FR-140; NFR-004, NFR-039, NFR-041; TC-386, TC-388 to TC-390, TC-392, TC-393, TC-396, TC-397, TC-458
@@ -65,7 +65,7 @@ The records were copied unchanged from the evaluation outputs. The `raw/` output
 | Not run (RUN-083b) | Reason |
 | --- | --- |
 | `make eval PROVIDER=GEMINI DATASET=trips/v1 ARGS='--prompt-version v2'` (card step 4, TC-392, IMD-213) | not run: the key could not be confirmed or supplied (permission rules block reading `apps/api/.env`) |
-| `make eval DATASET=retrieval/v1 PROVIDER=GEMINI ARGS='--suite retrieval'` (card step 7, FR-140) | not run: same reason |
+| `make eval DATASET=retrieval/v1 PROVIDER=GEMINI ARGS='--suite retrieval'` (card step 7, FR-140) | not run in RUN-083b; later attempted on 20 November 2026 (run by the operator), stopped with HTTP 503 at its first call, no record written, not re-run (see RUN-083d) |
 
 ## RUN-083c (20 November 2026)
 
@@ -77,7 +77,7 @@ The records were copied unchanged from the evaluation outputs. The `raw/` output
 | `make eval PROVIDER=GEMINI DATASET=trips/v1 ARGS='--prompt-version v2'`, attempt 1 | run by the operator | `20261120T163036Z-gemini`: 45 × `config_error` (the operator reports the old key was rejected, HTTP 401). Not committed; kept in `/Users/nidhi/S7B2-failed-runs/` |
 | same, attempt 2 | run by the operator | `20261120T164419Z-gemini`: 45 × `config_error` (`GEMINI_MODEL_ID` still held the `.env.example` placeholder, which the record names as `model_id`). Not committed; kept in `/Users/nidhi/S7B2-failed-runs/` |
 | same, attempt 3 | run by the operator | `20261120T165222Z-gemini` (committed): provider GEMINI, model `gemini-3.5-flash-lite`, prompt `itinerary_generate` v2 (`prompt_version_overridden` true), gr-2 / io-2, dataset trips v1 (`dataset_sha256` `8e0bde49…`), `git_commit` `6993197…`, metrics v2. 45 attempts: 23 completed, 22 `provider_unavailable`. The printed result line was not kept |
-| `make eval DATASET=retrieval/v1 PROVIDER=GEMINI ARGS='--suite retrieval'` | not found | no GEMINI retrieval folder exists after `20261120T165222Z-gemini` in the worktree |
+| `make eval DATASET=retrieval/v1 PROVIDER=GEMINI ARGS='--suite retrieval'` | run by the operator | `app.ai.errors.ProviderUnavailable: Gemini unavailable: HTTP 503` / `make: *** [Makefile:172: eval] Error 1`; no record written; not re-run (see RUN-083d) |
 
 Figures of `20261120T165222Z-gemini`, read from its `run.json` and `scores.json`:
 
@@ -98,16 +98,30 @@ Acceptance after RUN-083c:
 | FR-120 / TC-390: run records for MOCK (two), rule-based (one) and GEMINI (one) with dataset version, provider, model id, prompt and schema versions and commit SHA | verified | `20261119T182737Z-mock`, `20261119T182745Z-mock`, `20261120T155153Z-rule_based`, `20261120T165222Z-gemini`: each holds every listed field |
 | TC-392: final GEMINI run on trips/v1 with prompt v2 (IMD-213) | verified, with a caveat | `20261120T165222Z-gemini` ran prompt v2 once to completion of the run, but only 23 of 45 attempts completed (22 `provider_unavailable`). Quality figures are over the completed attempts only, and both reports say so |
 | US-131 AC1 / AC2, NFR-041: every figure cites a run record | verified | `eval/reports/final-baseline.md` and `docs/test-reports/cost-latency-report.md`: every GEMINI figure names `20261120T165222Z-gemini` |
-| FR-140 / TC-458 retrieval metrics with GEMINI | not verified | no GEMINI retrieval run record exists |
+| FR-140 / TC-458 retrieval metrics with GEMINI | not possible (HTTP 503), no figure claimed | the one attempt stopped at its first call with HTTP 503 and wrote no record (RUN-083d) |
 
-Blockers after RUN-083c: the GEMINI retrieval run (card step 7) has no record.
+Blockers after RUN-083c: none (the GEMINI retrieval attempt is recorded in RUN-083d).
+
+## RUN-083d (20 November 2026)
+
+Docs correction; no code, figure or record changed. Fact from the operator (no record folder exists):
+
+- Command: `make eval DATASET=retrieval/v1 PROVIDER=GEMINI ARGS='--suite retrieval'`, run by the operator once on 20 November 2026 at about 23:10 IST in `/Users/nidhi/wt-S7B2-eval` at commit `6993197`, with `GEMINI_EMBEDDING_MODEL_ID=gemini-embedding-2`.
+- Result: it stopped at its first call with `app.ai.errors.ProviderUnavailable: Gemini unavailable: HTTP 503` / `make: *** [Makefile:172: eval] Error 1`, and wrote no results folder.
+- Cause: a Gemini service error (HTTP 503), not quota and not a missing key. It was not re-run (rule 16, minimum live calls).
+- Effect: the card asks for GEMINI retrieval metrics "if possible" (TC-458). GEMINI retrieval was not possible, so only the MOCK retrieval figures (`20261119T182831Z-retrieval-mock`) are claimed. The card criterion is verified (MOCK reported with record; GEMINI attempted, not possible: HTTP 503).
+
+| Command (RUN-083d) | Result line (quoted exactly) |
+| --- | --- |
+| `make lint` | exit 0: `All checks passed!`; `All matched files use Prettier code style!` |
+| `make test-unit ARGS='-k evaluation'` | `85 passed, 1130 deselected, 1 warning in 1.51s` |
 
 ## Not run (RUN-083)
 
 | Command | Reason |
 | --- | --- |
 | `make eval PROVIDER=GEMINI DATASET=trips/v1` (card step 4, TC-392) | not run: no key in the run environment. Nidhi runs it with the protected staging key within the daily cap |
-| Retrieval suite with GEMINI (card step 7) | not run: no key in the run environment |
+| Retrieval suite with GEMINI (card step 7) | not run in RUN-083: no key in the run environment; later attempted on 20 November 2026 (run by the operator), stopped with HTTP 503 at its first call, no record written, not re-run (see RUN-083d) |
 | Rule-based planner through the harness (card step 3, TC-393) | the harness refuses `RULE_BASED` (exit 2 above): `fallback_planner.py` exists, but `evaluation/run.py` was never connected to it (PD-IMP-413-2). Connecting them is a product code change, not allowed under the feature freeze (IMD-201) |
 | `make check` | not run in this part: the part adds only records and documents (no code, contract or migration) |
 
@@ -121,14 +135,14 @@ Blockers after RUN-083c: the GEMINI retrieval run (card step 7) has no record.
 | final-baseline.md compares with the first baseline and every figure cites a run record (US-131 AC1, TC-397) | verified | `eval/reports/final-baseline.md`: comparison table against `20261114T104200Z-gemini`; every figure sits in a row or column that links its `run.json` |
 | The cost and latency report contains no number without a run record (US-131 AC2, NFR-041) | verified | `docs/test-reports/cost-latency-report.md`: each figure names its `scores.json` (now with the rule-based run); everything else says "not measured" or "not applicable" |
 | If the Gemini run could not be made (key, quota), the report says so and no Gemini figure is claimed | verified | Both reports mark every candidate GEMINI figure not measured, with the RUN-083 and RUN-083b reasons. The cost report quotes the earlier `20261116T042246Z-gemini` record only as a labelled earlier run, not as a candidate figure |
-| The retrieval metrics of FR-140 are reported for MOCK and, if possible, GEMINI, each with a run record (TC-458) | verified (MOCK); GEMINI not verified | `20261119T182831Z-retrieval-mock`: recall@6, place hit rate (vector and lexical), citation validity and grounding rate in final-baseline.md. GEMINI: no key |
+| The retrieval metrics of FR-140 are reported for MOCK and, if possible, GEMINI, each with a run record (TC-458) | verified (MOCK reported with record; GEMINI attempted, not possible: HTTP 503) | `20261119T182831Z-retrieval-mock`: recall@6, place hit rate (vector and lexical), citation validity and grounding rate in final-baseline.md. GEMINI: one attempt on 20 November 2026 stopped with HTTP 503 and wrote no record (RUN-083d) |
 | Step 1 / TC-386: candidate SHA recorded; dataset unchanged | verified | `f75aa94…` in every record; `dataset_sha256` `8e0bde49…` equals baseline-1's, and the harness checked the manifest hash |
 | Step 2 / ACC-14: two MOCK runs give identical metrics | verified | The `metrics` objects are equal; raw outputs identical |
 | Card test command `make test-unit ARGS='-k evaluation'` (TC-388, TC-389) | command passed; TC-388 and TC-389 not verified by name | `80 passed, 1130 deselected, 1 warning in 3.56s`. The card names `tests/unit/evaluation/test_metrics.py`, which does not exist. The selection ran `test_dataset.py`, `test_harness.py`, `test_retrieval_metrics.py` and `test_run_record.py`; no test in `apps/api/tests` is tagged TC-388 or TC-389 |
 
 ## Blockers
 
-- GEMINI runs (card steps 4 and 7) were not made in RUN-083 (no key) or RUN-083b (key not confirmed). If they are made later, once each with the key (rule 16), their records and figures are added in a follow-up.
+- None open. (Resolved: the GEMINI trips run is `20261120T165222Z-gemini`, RUN-083c; the GEMINI retrieval attempt stopped with HTTP 503 and is recorded in RUN-083d.)
 - Resolved in RUN-083b: the rule-based run (IMD-213).
 
 ## Proposed decisions
