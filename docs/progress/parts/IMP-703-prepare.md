@@ -2,7 +2,7 @@
 
 - Run id: RUN-083 (batch run, agent F, part F4; Sprint 7 Batch B, IMD-202 "IMP-703 (prepare only)")
 - Owner: Krrish (Krrish Kamani), lead of IMP-703
-- Status: PARTIAL (preparation done; the device and screen-reader sessions, and the E2E axe evidence, are still open)
+- Status: PARTIAL (preparation done; E2E axe evidence recorded locally in RUN-083b; the device and screen-reader sessions are still open)
 - Base commit: f75aa94
 - Branch: S7B/fixes
 - Points: 0 now (the card's 3 points are earned by the members' sessions)
@@ -36,6 +36,18 @@ Set-up as in `.github/workflows/e2e.yml`: the local Supabase stack started by th
 
 The API and web servers started for this run were stopped at the end (ports 3000 and 8000 closed afterwards).
 
+## RUN-083b automated checks (20 November 2026)
+
+- Run id RUN-083b, branch `feat/S7-B2-eval-finish` at `fddc7d1` (no web code changed on the branch), local macOS run, set-up as above. `make setup ARGS=--with-browsers` installed Chromium build 1248 (matching `@playwright/test` 1.64.1).
+- The web dev server and the first `npm run build` stopped on the same Next.js CLI upgrade notice as in RUN-083 (no upgrade was run); the retried build exited 0 and was served from its standalone output on port 3000.
+
+| Command | Result line (quoted exactly) | axe |
+| --- | --- | --- |
+| `make e2e ARGS='journey --output /Users/nidhi/S7B2-e2e/journey'` (`BASE_URL=http://localhost:3000`) | `Running 4 tests using 4 workers`; `4 passed (31.6s)` | 40 `axe scan` lines, each ending `[]` (for example `axe scan 1 on /sign-up: []`, `axe scan 10 on /trips/<trip>/costs: []`); no `axe serious` line, no `critical axe violations` failure |
+| `make e2e ARGS='keyboard --output /Users/nidhi/S7B2-e2e/keyboard'` (`BASE_URL=http://localhost:3000`) | `Running 4 tests using 4 workers`; `4 passed (10.8s)` | 20 `axe scan` lines, each ending `[]` (for example `axe scan 1 on /sign-in: []`, `axe scan 5 on /trips/<trip>/versions: []`); no `axe serious` line |
+
+No serious or critical violation was found, so no IMD-206 fix was made. No device or screen-reader finding was entered.
+
 ## Not run
 
 | Command | Reason |
@@ -49,12 +61,12 @@ The API and web servers started for this run were stopped at the end (ports 3000
 | --- | --- | --- |
 | A report exists with the devices, screen reader, date, tester and every observed finding with severity (US-126 AC1) | not verified | the report file and its template exist; the members' entries are still empty |
 | Every severity 1 and 2 finding is fixed with a regression test or has an owner and a documented workaround | not verified | no session has run, so no finding exists yet |
-| The keyboard-only journey (TC-374) and axe scans (TC-383) report no critical violations in CI (US-126 AC2, NFR-025) | not verified | the local E2E runs could not launch a browser (see Not run); needs an `e2e.yml` run or a local run with a matching browser |
+| The keyboard-only journey (TC-374) and axe scans (TC-383) report no critical violations in CI (US-126 AC2, NFR-025) | verified locally (RUN-083b); CI not verified in this record | local runs: journey `4 passed (31.6s)` and keyboard `4 passed (10.8s)`, every `axe scan` line `[]`, no serious or critical line; the CI evidence is the `e2e.yml` dispatch on `feat/S7-B2-eval-finish`, whose URL is in the pull request |
 | The template was produced and no finding, result or device observation was entered by this run | verified | `docs/test-reports/accessibility-sprint7.md` sections 2 to 5 are empty tables; section 6 quotes only this run's command output |
 
 ## Blockers
 
-- E2E axe evidence: the container's Playwright browsers (build 1243) do not match `@playwright/test` 1.64.1 (needs build 1248). Needed: an `e2e.yml` run (push to `main` or a dispatch on the branch) or a member's local `make e2e ARGS='journey'` and `make e2e ARGS='keyboard'`, with the axe lines copied into section 6.1 of the report.
+- Resolved in RUN-083b: E2E axe evidence (local journey and keyboard runs with Chromium build 1248).
 - The device and screen-reader sessions (members).
 
 ## Proposed decisions
