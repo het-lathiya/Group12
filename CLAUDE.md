@@ -1,6 +1,6 @@
 # CLAUDE.md — AI Travel Planner
 
-Read this file at the start of every session. It is short on purpose; the binding details live in the implementation specification, `docs/spec/IMPLEMENTATION_SPEC.md` (sections cited as §N; search it by heading, for example `## 6.6`). The specification is v1.3 together with `docs/spec/AMENDMENT_A1_AWS_RAG.md` (AWS hosting and the RAG pipeline). Where they differ, the amendment wins. When this file and the specification disagree, the specification wins; report the disagreement.
+Read this file at the start of every session. It is short on purpose; the binding details live in the implementation specification, `docs/spec/IMPLEMENTATION_SPEC.md` (sections cited as §N; search it by heading, for example `## 6.6`). The specification is v1.3 together with `docs/spec/AMENDMENT_A1_AWS_RAG.md` (AWS hosting and the RAG pipeline). Where they differ, the amendment wins. `docs/spec/AMENDMENT_A2_ANY_CITY.md` (any-city mode, IMD-210) is ranked like A1: A2 wins over the spec and A1 for any-city mode. When this file and the specification disagree, the specification wins; report the disagreement.
 
 ## 1. Project in one paragraph
 
