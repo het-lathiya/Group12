@@ -5,9 +5,11 @@ to a host in ``PROVIDER_HOSTS`` raises ``ProviderNetworkBlockedError``. Mocked H
 recorded responses never open a socket, so they are not affected.
 
 The cached settings are cleared around every test, and ``clean_settings_env`` removes every
-backend variable from the environment, so a test sees only the values it sets.
+backend variable from the environment, so a test sees only the values it sets. A developer's local
+``ORS_API_KEY`` never reaches a test that is not marked ``live`` (RUN-087).
 """
 
+import os
 import socket
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
@@ -16,8 +18,11 @@ from typing import Any
 import pytest
 from fixtures.auth import api_app, api_client, auth_user  # noqa: F401  # registers the auth fixtures
 from fixtures.db import db_session, migrated_database_url  # noqa: F401  # registers the DB fixtures
+from pydantic import SecretStr
 
+from app.core import config
 from app.core.config import Settings, get_settings
+from app.routing import client as routing_client
 
 # Provider API hosts the guard refuses. A pattern "*.example.org" matches example.org and every
 # subdomain. Extension cards add their hosts here (§13.1: api.open-meteo.com, *.wikipedia.org,
@@ -113,6 +118,42 @@ def provider_socket_guard(request: pytest.FixtureRequest) -> Iterator[ProviderSo
         patch.setattr(socket.socket, "connect", guarded_connect)
         patch.setattr(socket.socket, "connect_ex", guarded_connect_ex)
         yield guard
+
+
+@pytest.fixture(autouse=True)
+def isolate_local_provider_keys(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Keep a developer's ``ORS_API_KEY`` out of every test that is not marked ``live``.
+
+    A real key in the shell or in the untracked ``apps/api/.env`` would make the routing client
+    call OpenRouteService, which the socket guard refuses, so results depended on the machine.
+    Setting the variable to "" is not enough: ``env_ignore_empty`` then falls back to ``.env``.
+    So the ambient variable is removed and the settings accessor returns an empty key, unless
+    the test sets ``ORS_API_KEY`` itself. Live tests keep their real environment.
+    """
+    if request.node.get_closest_marker("live") is not None:
+        yield
+        return
+
+    load_with_local_keys = config.load_settings
+
+    def load_without_local_ors_key() -> Settings:
+        settings = load_with_local_keys()
+        if "ORS_API_KEY" in os.environ:  # set by the test itself after this fixture ran
+            return settings
+        return settings.model_copy(update={"ors_api_key": SecretStr("")})
+
+    # A private context, not the shared monkeypatch fixture: sharing it would change the order in
+    # which a test's own socket patches and the socket guard are undone.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.delenv("ORS_API_KEY", raising=False)
+        # get_settings() looks load_settings up in its module at call time, so this reaches it.
+        patch.setattr(config, "load_settings", load_without_local_ors_key)
+        get_settings.cache_clear()
+        # The routing client caches the key it was built with, so build it afresh too.
+        routing_client.get_client.cache_clear()
+        yield
+    get_settings.cache_clear()
+    routing_client.get_client.cache_clear()
 
 
 @pytest.fixture(autouse=True)
