@@ -84,7 +84,64 @@ Rules used:
 
 ## AI chapter (section 5)
 
-To be added by the AI chapter part (Manya): one row per numeric claim of section 5, with its run record under `eval/results/<run>/`, its evaluation report or `docs/test-reports/cost-latency-report.md`.
+Rows for the numeric claims of section 5 (Manya's part). Numbering continues from the data and architecture rows (last row 33). Under the strict source rule of RUN-087 every number comes only from `eval/results/`, `eval/reports/`, `docs/test-reports/` or a CI run link. Each value was opened in its run record (`run.json` or `scores.json`, parsed as JSON), in the evaluation or test report, or in the CI log, and compared on 22 November 2026.
+
+| # | Claim (exact text as it appears) | Location (file + section) | Source (eval/, docs/test-reports/ path or CI run link) | Checked value |
+| --- | --- | --- | --- | --- |
+| 34 | "`Contracts: 6 kept, 0 broken.`" | final-report.md §5.2 | [CI 45037634091](https://github.com/het-lathiya/Group12/actions/runs/45037634091), job `lint-types`, `make imports` | `Contracts: 6 kept, 0 broken.` |
+| 35 | "model `gemini-3.5-flash-lite`, adapter `gemini-interactions-1`, structured output, thinking level minimal" | final-report.md §5.2 | `eval/results/20261120T165222Z-gemini/run.json` (`model_id`, `adapter_version`, `generation_settings`) | `gemini-3.5-flash-lite`; `gemini-interactions-1`; `structured_output: true`, `thinking_level: minimal`, `api_style: interactions`, `timeout_s: 35.0` |
+| 36 | "timeout `1 passed (6.9s)`, quota `1 passed (7.4s)`" | final-report.md §5.3 | [E2E 45037634127](https://github.com/het-lathiya/Group12/actions/runs/45037634127), steps "Run provider failure with a timeout" and "… with quota exhausted" | `1 passed (6.9s)`; `1 passed (7.4s)` |
+| 37 | "usable outputs 44 / 45, 1 failure (`schema_violation`)" (baseline-1, v1) | final-report.md §5.4 | `eval/results/20261114T104200Z-gemini/run.json` | `usable` k 44, n 45; `failures` 1: `trips-v1-010`, repeat 2, `schema_violation` |
+| 38 | "492 of the 557 item notes start with \"AI-written:\"" | final-report.md §5.4 | `eval/reports/baseline-1.md` (finding 1) | "492 of the 557 item notes start with \"AI-written:\"" |
+| 39 | "88 items reuse a place already in the plan" | final-report.md §5.4 | `eval/reports/baseline-1.md` (finding 2) | "88 items reuse a place already in the same plan: 87 meal slots and 1 activity" |
+| 40 | "Gemini usable 44 / 45 and 0 of 564 notes with \"AI-written\"" (v3) | final-report.md §5.4 | `eval/results/20261116T042246Z-gemini/run.json`; `eval/reports/RUN-079-prompt-v3.md` | `usable` k 44, n 45; report: "0 of 564" |
+| 41 | "14 duplicate-place items in 3 attempts" (v3) | final-report.md §5.4 | `eval/results/20261116T042246Z-gemini/scores.json` (`duplicate_places`); `eval/reports/RUN-079-prompt-v3.md` | sum 14: `trips-v1-003` r2 (3), `trips-v1-007` r2 (1), `trips-v1-012` r2 (10) |
+| 42 | "15 cases × 3 repeats = 45 attempts per run" | final-report.md §5.6 | `eval/results/20261119T182737Z-mock/run.json`, `…182745Z-mock`, `…155153Z-rule_based`, `…165222Z-gemini` (`case_count`, `repeats`, `metrics.attempts`) | `case_count` 15, `repeats` 3, `attempts` 45 in all four |
+| 43 | MOCK run 1 column: "45 / 45" (completed, schema-valid, valid IDs, usable, no duplicates) and "126.7" | final-report.md §5.6 table | `eval/results/20261119T182737Z-mock/run.json` (`metrics`), `scores.json` | every count k 45, n 45; `avg_daily_travel_min` 126.7; `failures` [] |
+| 44 | MOCK run 2 column: "45 / 45" and "126.7" | final-report.md §5.6 table | `eval/results/20261119T182745Z-mock/run.json` | every count k 45, n 45; `avg_daily_travel_min` 126.7; `failures` [] |
+| 45 | Rule-based column: "45 / 45" and "86.2" | final-report.md §5.6 table | `eval/results/20261120T155153Z-rule_based/run.json` | every count k 45, n 45; `avg_daily_travel_min` 86.2; `failures` [] |
+| 46 | Gemini column: "**23 / 45** (22 `provider_unavailable`)" | final-report.md §5.6 table and text | `eval/results/20261120T165222Z-gemini/run.json` (`failures`), `scores.json` (`error`) | 22 failures, all `provider_unavailable`; 23 rows with `error` null |
+| 47 | Gemini column: "23 / 23 completed (23 / 45 in the record)" (schema-valid, valid IDs, usable) | final-report.md §5.6 table | `eval/results/20261120T165222Z-gemini/run.json` (`metrics.counts`), `scores.json` | `schema_valid`, `place_ids_valid`, `usable`: k 23, n 45; true in all 23 completed rows |
+| 48 | Gemini column: "19 / 23 completed (19 / 45 in the record)" (no duplicates) | final-report.md §5.6 table | same | `no_duplicate_places` k 19, n 45 |
+| 49 | Gemini column: "119.4 (completed attempts only)" | final-report.md §5.6 table; also "119.4 against 92.2" | `eval/results/20261120T165222Z-gemini/run.json` | `avg_daily_travel_min` 119.4 |
+| 50 | "so 12 of the 15 cases are covered" and "Three cases (`trips-v1-002`, `003`, `012`) have no completed attempt" | final-report.md §5.6 | `eval/results/20261120T165222Z-gemini/scores.json` | 12 distinct `case_id` values among completed rows; `002`, `003`, `012` failed in all three repeats |
+| 51 | "no invalid place ID, 8 duplicate-place items, all 8 rejected by the output check" | final-report.md §5.6 | `eval/results/20261120T165222Z-gemini/scores.json` | sum `invalid_ids` 0; sum `duplicate_places` 8; sum `rejected_items` 8 |
+| 52 | "`COST_INCOMPLETE` 7 and `BUDGET_NEAR` 1" | final-report.md §5.6 | `eval/results/20261120T165222Z-gemini/scores.json` (`findings`) | `COST_INCOMPLETE` 7, `BUDGET_NEAR` 1 |
+| 53 | "`COST_INCOMPLETE` in 15 of 45 attempts (five cases, every repeat)" (rule-based) | final-report.md §5.6 | `eval/results/20261120T155153Z-rule_based/scores.json`; `eval/reports/final-baseline.md` | 15 attempts; cases `003`, `007`, `012`, `014`, `015`, repeats 1 to 3 |
+| 54 | "the `metrics` objects of the two records are identical and their raw outputs are identical" | final-report.md §5.6 | `eval/reports/final-baseline.md` "Reproducibility"; the two `run.json` files | `metrics` equal when parsed (checked again in this run); raw outputs: "`diff -r` printed nothing" (report) |
+| 55 | "usable 44 / 45, average daily travel 92.2 minutes" (baseline-1) | final-report.md §5.6 | `eval/results/20261114T104200Z-gemini/run.json` | `usable` k 44, n 45; `avg_daily_travel_min` 92.2 |
+| 56 | "45 attempts of 15 cases against 23 attempts of 12 cases" | final-report.md §5.6 | `eval/results/20261114T104200Z-gemini/run.json`; `eval/results/20261120T165222Z-gemini/scores.json` | 45 attempts, `case_count` 15; 23 completed rows over 12 cases |
+| 57 | "The numbered metrics 1 to 13 are not computed" | final-report.md §5.6 | `metrics.numbered` in each `run.json` above | keys "1" to "13", every `value` null with a `status` reason |
+| 58 | "`retrieval/v1`, 12 queries, 6 per destination" | final-report.md §5.6 | `eval/results/20261119T182831Z-retrieval-mock/run.json` (`metrics.overall.queries`, `metrics.by_destination`) | overall `queries` 12; ahmedabad 6, sampleton 6 |
+| 59 | recall@6 "0.7083" / "0.7083" | final-report.md §5.6 retrieval table | `eval/results/20261113T114756Z-retrieval-mock/run.json`; `eval/results/20261119T182831Z-retrieval-mock/run.json` (`metrics.overall.recall_at_6`) | 0.7083; 0.7083 |
+| 60 | Place hit rate, vector "0.6667" / "0.6667" | same table | same (`place_hit_rate_vector`) | 0.6667; 0.6667 |
+| 61 | Place hit rate, lexical "0.7083" / "0.7083" | same table | same (`place_hit_rate_lexical`) | 0.7083; 0.7083 |
+| 62 | Citation validity "1.0" / "1.0" | same table and text | same (`citation_validity`) | 1.0; 1.0 |
+| 63 | Grounding rate "0.7571" / "**0.6392**"; "fell from 0.7571 to 0.6392" | same table and text | same (`grounding_rate`) | 0.7571; 0.6392 |
+| 64 | Citations saved "68" / "47"; "from 68 to 47" | same table and text | same (`citations_saved`) | 68; 47 |
+| 65 | Queries in vector mode "12 of 12" / "12 of 12" | same table | same (`vector_mode_queries`) | 12; 12 |
+| 66 | "the top 12" (place hit rate) | same table | same (`k.place_top`) | 12 (`k`: `guide_recall` 6, `place_top` 12) |
+| 67 | "recall@6 is 0.4167 for Ahmedabad and 1.0 for Sampleton" | final-report.md §5.6 | `eval/results/20261119T182831Z-retrieval-mock/run.json` (`metrics.by_destination`) | ahmedabad 0.4167; sampleton 1.0 |
+| 68 | "the IMP-318 record quotes `embedded=189`, the final run's index printed `embedded=227`" | final-report.md §5.6 | `eval/reports/final-baseline.md` "Retrieval suite" and "Candidate and conditions" | `embedded=189` (IMP-318 part record, as quoted); `embedded=227` |
+| 69 | "stopped at its first call with `Gemini unavailable: HTTP 503`" | final-report.md §5.6 | `eval/reports/final-baseline.md` run table; `docs/progress/parts/IMP-705-whole-task.md` RUN-083d | `app.ai.errors.ProviderUnavailable: Gemini unavailable: HTTP 503`; no record written |
+| 70 | Gemini latency "1775 / 7471.6 / 19999 (median 6608, p95 12699)" | final-report.md §5.7 | `docs/test-reports/cost-latency-report.md`; `eval/results/20261120T165222Z-gemini/scores.json` (`latency_ms`, 23 values) | report: 1775 / 7471.6 / 19999, median 6608, p95 12699; recomputed in this run: min 1775, mean 7471.57, max 19999, median 6608, nearest-rank p95 12699 |
+| 71 | "mean 3739.5 (1471 to 4984); 86008 in total" (input tokens) | final-report.md §5.7 | same files (`input_tokens`) | report values; recomputed: mean 3739.48, min 1471, max 4984, sum 86008 over 23 attempts |
+| 72 | "mean 993.0 (314 to 1957); 22838 in total" (output tokens) | final-report.md §5.7 | same files (`output_tokens`) | report values; recomputed: mean 992.96, min 314, max 1957, sum 22838 |
+| 73 | Rule-based latency "0 / 0.76 / 2" | final-report.md §5.7 | `docs/test-reports/cost-latency-report.md`; `eval/results/20261120T155153Z-rule_based/scores.json` | 0 / 0.76 / 2 (recomputed) |
+| 74 | MOCK latency "0 / 0.36 / 1 and 0 / 0.33 / 1" | final-report.md §5.7 | `docs/test-reports/cost-latency-report.md`; the two MOCK `scores.json` files | 0 / 0.36 / 1; 0 / 0.33 / 1 (recomputed) |
+| 75 | "the latency of the 22 failed Gemini attempts" (not measured) | final-report.md §5.7 | `docs/test-reports/cost-latency-report.md` "Not measured"; `scores.json` | 22 rows with `latency_ms` null |
+
+Claims of section 5 removed or reworded so that the prose carries no number:
+
+| Claim considered | Why it was left out |
+| --- | --- |
+| Number of finding codes (`docs/srs.md`) | source not in eval/ , docs/test-reports/ or a CI run |
+| Maximum number of model repair calls (specification §8.13) | source not in eval/ , docs/test-reports/ or a CI run; reworded as "a single bounded model repair call" |
+| Number of consecutive failures that opens the circuit breaker (`app/ai/breaker.py`, IMD-146), and the number of quota or authorization errors that opens it | source not in eval/ , docs/test-reports/ or a CI run |
+| Number of synthetic SAMPLE guides (`data/fixtures/sampleton/guides/`) | source not in eval/ , docs/test-reports/ or a CI run |
+| Maximum number of cited passage IDs per item (`MAX_SOURCE_IDS` in `app/schemas/ai.py`, A1 §6.10) | source not in eval/ , docs/test-reports/ or a CI run; the cap is named without its value |
+| Per-attempt timeout and time allowances of the pipeline; embedding dimension and chunk sizes | specification rules and configuration constants, not results; not needed |
+| Gemini retrieval figures; money cost of Gemini calls; staging generation figures | no record (HTTP 503 attempt wrote none; no dated price table; no staging record on the candidate) |
 
 ## Presentation outline (docs/presentation/outline.md)
 

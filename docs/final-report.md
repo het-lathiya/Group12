@@ -123,7 +123,117 @@ The SRS (§11), the architecture document (§11), the deployment guide (§11) an
 
 ## 5. AI: provider, prompts, retrieval and evaluation
 
-see AI chapter (Manya)
+Owner: Manya. This chapter describes the AI path as built on `main` at `4fe514c` and reports only the evaluation figures recorded by IMP-705 ([final-baseline.md](../eval/reports/final-baseline.md), [cost-latency-report.md](test-reports/cost-latency-report.md)). Every figure names its run record under `eval/results/`; each one has a row in the claims check.
+
+### 5.1 What the model does and what code does
+
+The model proposes; code decides. Gemini may choose only place IDs from the shortlist it was given, their order and times, and short notes. Prices, opening hours, travel times, totals and availability always come from data and code. The answer is parsed into `ItineraryOutput` (io-2 under the active prompt v2), every place ID is checked against the shortlist, every time, travel gap and cost is recomputed, the finding codes are applied, and the plan is saved in a single transaction with its warnings and its generation record. Model output never builds SQL, never names a table or user and is never executed (specification §8.1, §8.11).
+
+### 5.2 Provider layer
+
+- **`ModelProvider`** (`apps/api/app/ai/providers/base.py`) is the only way to a model, for generation (`generate_itinerary`) and for embeddings (`embed_texts`). Code outside `app/ai/` imports only the interface, the error classes and the factory; `google-genai` is imported only in `app/ai/providers/gemini.py`, and only `app/ai/factory.py` imports a concrete adapter. The import-linter contracts that hold these rules pass on the candidate ([CI 45037634091](https://github.com/het-lathiya/Group12/actions/runs/45037634091), `Contracts: 6 kept, 0 broken.`).
+- **Adapters.** `GEMINI` (model `gemini-3.5-flash-lite`, adapter `gemini-interactions-1`, structured output, thinking level minimal, as recorded in [`20261120T165222Z-gemini/run.json`](../eval/results/20261120T165222Z-gemini/run.json)); `MOCK` (deterministic answers and `mock-embed-v1` embeddings, no network call, the default in local and test, with failure scenarios such as `timeout` and `quota` for tests and demos); `FINETUNED_MODEL`, a Stage 1 stub whose every call is refused and whose selection stops start-up (section 9).
+- **Factory.** `AI_PROVIDER` is read at start-up: GEMINI in staging and production, MOCK in local and test. The API refuses to start in staging or production with an empty or placeholder `GEMINI_*` value, and in production with MOCK. There is no per-request override and no automatic switch to another vendor.
+- **`RULE_BASED` in the evaluation harness only (IMD-213).** `make eval PROVIDER=RULE_BASED` answers each evaluation request with the production fallback planner (`generation/fallback_planner.plan_rule_based`) and scores it with the same output check, schedule, validator, budget engine and metric code. It builds no provider and is not a product setting; it exists so that the fallback planner can be measured (TC-393).
+
+### 5.3 Errors, retries, repair and the labelled fallback
+
+The shared error taxonomy (specification §8.3, §8.13; [architecture.md](architecture.md) §6 and §9):
+
+| Failure | What the pipeline does | Saved outcome |
+| --- | --- | --- |
+| Timeout, rate limit, provider unavailable | Retry up to the configured `GEMINI_MAX_RETRIES` inside the time allowance, then the rule-based planner | `completed`, `fallback_rule_based`, with the reason |
+| Invalid output (malformed JSON, schema violation, blocked, empty, truncated) or unknown place IDs | Deterministic repair first, then a single bounded model repair call, then the rule-based planner | `model_repaired` or `fallback_rule_based` |
+| Plan still not usable after repair | Rule-based planner | `fallback_rule_based`, reason `unresolved_validation` |
+| Quota exhausted, key missing or invalid, bad request | No retry and no automatic fallback; the page offers "Build a rule-based plan" | `failed`, `provider_quota_exhausted` or `config_error` |
+
+The circuit breaker opens after a run of consecutive provider failures (IMD-146; `FAILURES_TO_OPEN` in `app/ai/breaker.py`) or after a quota or authorization error; while it is open, the model call is skipped. Every generation writes its `ai_generations` record. The rule-based plan is labelled as built by rules, and the trip's current plan is unchanged until the save step commits.
+
+Evidence in the browser: the provider-failure specs passed on the candidate ([E2E 45037634127](https://github.com/het-lathiya/Group12/actions/runs/45037634127), timeout `1 passed (6.9s)`, quota `1 passed (7.4s)`). The timeout case ends `completed` with outcome `fallback_rule_based`, reason `provider_timeout`, the fallback notice and a saved rule-based plan; the quota case ends `failed` with `provider_quota_exhausted`, no repair call, the paused-AI message and no plan saved until the traveller asks for the rule-based plan ([e2e-sprint7.md](test-reports/e2e-sprint7.md) §2, F-E3). These runs use the MOCK provider. The same demo on staging (IMD-33) is pending (Kirtan).
+
+### 5.4 Prompt versions
+
+| Version | Schemas | What the records show | State |
+| --- | --- | --- | --- |
+| `itinerary_generate/v1` | gr-1 / io-1 | Baseline-1 with Gemini ([`20261114T104200Z-gemini`](../eval/results/20261114T104200Z-gemini/run.json)): usable outputs 44 / 45, 1 failure (`schema_violation`). [baseline-1.md](../eval/reports/baseline-1.md) found that 492 of the 557 item notes start with "AI-written:" (the screen would show the label twice) and that 88 items reuse a place already in the plan | Kept for comparison; not active |
+| `itinerary_generate/v2` | gr-2 / io-2 | Added by IMP-316 for RAG ([model-change-log.md](model-change-log.md)): passages reach the model as quoted reference data, instructions inside them are ignored, a note that relies on a passage cites its ID, prices, hours, travel times and totals are never written; first version with a repair template | **Active** (`PROMPT_TEMPLATE_VERSION=v2` in the application default and the staging template; IMD-200) |
+| `itinerary_generate/v3` | gr-2 / io-2 | RUN-079 ([RUN-079-prompt-v3.md](../eval/reports/RUN-079-prompt-v3.md), [`20261116T042246Z-gemini`](../eval/results/20261116T042246Z-gemini/run.json)): Gemini usable 44 / 45 and 0 of 564 notes with "AI-written", but 14 duplicate-place items in 3 attempts, so the IMD-195 activation gate was **not met** | Not active (IMD-200) |
+
+Because v3 is not active, the v1 findings stay recorded as open under v2 (SRS D-14). The validator rejects any repeated place, so a saved plan holds no duplicate, but the plan is shorter. An optional v4 was allowed in Sprint 7 (IMD-200); no v4 exists in the repository.
+
+IMD-213 set the final Gemini evaluation to the active v2. Baseline-1 ran v1, so any comparison between the v1 and v2 runs is **across prompt versions**, not like for like.
+
+### 5.5 Retrieval-augmented generation
+
+RAG is part of the MVP and not on the cut list (IMD-105). It is built only from `google-genai` (through `ModelProvider.embed_texts`) and pgvector in the same PostgreSQL database, with no LangChain, LlamaIndex or separate vector database ([architecture.md](architecture.md) §7).
+
+- **Corpus.** Place documents from active curated places (never prices, hours, websites or booking links) and guide documents from `data/guides/<slug>/`, written by members; the only exception is the synthetic SAMPLE guides used in tests (IMP-313). Guides pass a strict gate that refuses missing provenance, out-of-range length and price, clock-time or opening-hours statements ([rag-corpus.md](guides/rag-corpus.md)). Section 3 gives the data counts.
+- **Indexing.** `python -m app.rag.index` chunks the documents, embeds them through `embed_texts` (Gemini embeddings on staging and production, `mock-embed-v1` in local and test) and stores the vectors in `rag_chunks`; removed documents become inactive and are never deleted, so saved citations still resolve. The release task runs it with `--strict` on every deploy.
+- **Retrieval.** The trip's query is embedded a single time per generation. Vector queries (exact cosine similarity, same destination and embedding model) live only in `app/rag/repository.py`. Place similarity enters the deterministic hybrid ranking (`pm-2`), and the best guide passages are chosen with maximal marginal relevance.
+- **Fallback.** Any embedding error, or no active chunk for the active embedding model, gives `retrieval_mode = lexical_fallback`: the semantic weight becomes zero, no passages are sent and the generation continues. A retrieval failure never fails a generation.
+- **Grounding and citations.** Passages are quoted reference data, never instructions and never a source of prices, hours, travel times or totals. An item may cite only a capped number of passage IDs, all of which must have been in its own request (the cap is `MAX_SOURCE_IDS` in `app/schemas/ai.py`, set by A1 §6.10); the output check drops any other ID and counts it. The itinerary page shows each item's sources (title, kind, source, licence, date and a safe link) next to the AI-written note.
+
+### 5.6 Evaluation results (IMP-705, final baseline)
+
+**Conditions** ([final-baseline.md](../eval/reports/final-baseline.md)). Dataset `trips/v1`: 15 cases × 3 repeats = 45 attempts per run, the same dataset hash as baseline-1; metrics v2. The MOCK runs used the candidate commit `f75aa94`; the rule-based and Gemini runs used `6993197`, which differs from it only in the evaluation harness. Each run started from a clean evaluation worktree.
+
+**Generation suite.**
+
+| Measure | MOCK run 1 [`20261119T182737Z-mock`](../eval/results/20261119T182737Z-mock/run.json) | MOCK run 2 [`20261119T182745Z-mock`](../eval/results/20261119T182745Z-mock/run.json) | Rule-based [`20261120T155153Z-rule_based`](../eval/results/20261120T155153Z-rule_based/run.json) | Gemini, prompt v2 [`20261120T165222Z-gemini`](../eval/results/20261120T165222Z-gemini/run.json) |
+| --- | --- | --- | --- | --- |
+| Attempts completed | 45 / 45 | 45 / 45 | 45 / 45 | **23 / 45** (22 `provider_unavailable`) |
+| Schema-valid | 45 / 45 | 45 / 45 | 45 / 45 | 23 / 23 completed (23 / 45 in the record) |
+| Only valid place IDs | 45 / 45 | 45 / 45 | 45 / 45 | 23 / 23 completed (23 / 45 in the record) |
+| Usable | 45 / 45 | 45 / 45 | 45 / 45 | 23 / 23 completed (23 / 45 in the record) |
+| No duplicate places | 45 / 45 | 45 / 45 | 45 / 45 | 19 / 23 completed (19 / 45 in the record) |
+| Average daily travel (minutes) | 126.7 | 126.7 | 86.2 | 119.4 (completed attempts only) |
+
+- **Gemini, prompt v2.** Only 23 of the 45 attempts completed; 22 ended `provider_unavailable` (Gemini service errors, not quota), spread through the run. Three cases (`trips-v1-002`, `003`, `012`) have no completed attempt, so 12 of the 15 cases are covered. Over the 23 completed attempts: no invalid place ID, 8 duplicate-place items, all 8 rejected by the output check, and the findings `COST_INCOMPLETE` 7 and `BUDGET_NEAR` 1 ([scores.json](../eval/results/20261120T165222Z-gemini/scores.json)). The record's own counts use all 45 attempts, because a failed attempt counts as not schema-valid. These figures are not a reliability figure for Gemini and say nothing about the three uncovered cases.
+- **Rule-based planner.** All 45 attempts schema-valid, with only valid place IDs, usable and without duplicates; `COST_INCOMPLETE` in 15 of 45 attempts (five cases, every repeat), no other finding. It is the fallback planner answering in place of a model through the harness, not the product's fallback rate.
+- **MOCK.** Both runs score 45 / 45 on every count; the `metrics` objects of the two records are identical and their raw outputs are identical, so the harness is reproducible (ACC-14). MOCK returns fixed answers, so these runs show that the pipeline runs and scores every case, not model quality.
+- **Against baseline-1** ([`20261114T104200Z-gemini`](../eval/results/20261114T104200Z-gemini/run.json): prompt v1, metrics v1, usable 44 / 45, average daily travel 92.2 minutes). The comparison is across prompt versions and across different attempt sets (45 attempts of 15 cases against 23 attempts of 12 cases). Among completed attempts the v2 run had no schema failure, and its average daily travel is 119.4 against 92.2. No conclusion about v2 against v1 is drawn.
+- The numbered metrics 1 to 13 are not computed; each record states why.
+
+**Retrieval suite** (`retrieval/v1`, 12 queries, 6 per destination; MOCK embeddings and MOCK answers):
+
+| Metric (overall) | IMP-318 MOCK [`20261113T114756Z-retrieval-mock`](../eval/results/20261113T114756Z-retrieval-mock/run.json) | Final MOCK [`20261119T182831Z-retrieval-mock`](../eval/results/20261119T182831Z-retrieval-mock/run.json) |
+| --- | --- | --- |
+| recall@6 | 0.7083 | 0.7083 |
+| Place hit rate, vector (top 12) | 0.6667 | 0.6667 |
+| Place hit rate, lexical (top 12) | 0.7083 | 0.7083 |
+| Citation validity | 1.0 | 1.0 |
+| Grounding rate | 0.7571 | **0.6392** |
+| Citations saved | 68 | 47 |
+| Queries in vector mode | 12 of 12 | 12 of 12 |
+
+- In the final run, recall@6 is 0.4167 for Ahmedabad and 1.0 for Sampleton. Citation validity is 1.0, as A1 §6.14 requires.
+- **The grounding rate fell from 0.7571 to 0.6392 and the citations saved from 68 to 47 between the IMP-318 and the final MOCK records. This drop is recorded but not investigated.** The records show these differences between the runs: the commit, and the index (the IMP-318 record quotes `embedded=189`, the final run's index printed `embedded=227`).
+- MOCK embeddings test the retrieval code path, not semantic retrieval quality.
+- **Gemini retrieval was not possible.** The one attempt (20 November 2026, `gemini-embedding-2`) stopped at its first call with `Gemini unavailable: HTTP 503`, wrote no record and was not re-run. No Gemini retrieval figure exists.
+
+### 5.7 Cost and latency
+
+From [cost-latency-report.md](test-reports/cost-latency-report.md), computed from the `scores.json` files of the runs above. The latency is the provider call as the adapter measures it, not the end-to-end generation time of NFR-004.
+
+| Measure | Gemini, prompt v2 [`20261120T165222Z-gemini`](../eval/results/20261120T165222Z-gemini/scores.json) (23 completed attempts) | Rule-based [`20261120T155153Z-rule_based`](../eval/results/20261120T155153Z-rule_based/scores.json) | MOCK [`20261119T182737Z-mock`](../eval/results/20261119T182737Z-mock/scores.json) / [`20261119T182745Z-mock`](../eval/results/20261119T182745Z-mock/scores.json) |
+| --- | --- | --- | --- |
+| Latency, min / mean / max (ms) | 1775 / 7471.6 / 19999 (median 6608, p95 12699) | 0 / 0.76 / 2 (planner run time only) | 0 / 0.36 / 1 and 0 / 0.33 / 1 |
+| Input tokens per attempt | mean 3739.5 (1471 to 4984); 86008 in total | none (no model) | not reported by MOCK |
+| Output tokens per attempt | mean 993.0 (314 to 1957); 22838 in total | none | not reported by MOCK |
+
+The MOCK latency only shows that the harness ran without delay. The rule-based figure excludes ranking, validation and saving.
+
+**Not measured:** cost in money (no dated price table exists, §8.16), thinking tokens, the product's fallback rate, end-to-end generation time against NFR-004, retrieval time, Gemini retrieval timings and the latency of the 22 failed Gemini attempts. No `ai_generations` rows from staging were available.
+
+### 5.8 Stage 2 readiness
+
+The Stage 2 readiness package ([stage2/README.md](stage2/README.md), IMP-706, owner Manya) has status **Proposed**. It holds a draft migration gate, a data-governance policy, a dataset schema and a data-card template, and no training code, data, adapter or result. No Stage 2 model has been trained or evaluated. The draft gate compares a candidate with a Gemini run of the same day on `trips/v1` and `retrieval/v1`, and requires a recorded decision and a rehearsed rollback before any provider switch (PD-13). The blueprint criteria E1 to E7 are still "to be confirmed by Manya", and the gate's table of current reference values still shows the final Gemini run as not measured; both are pending (section 10).
+
+### 5.9 What this chapter does not claim
+
+- No claim about plan quality, accuracy or reliability beyond these runs over `trips/v1` and `retrieval/v1`, or for other destinations, models, prompt versions or live use.
+- No Gemini retrieval figure, no money cost and no end-to-end timing.
+- No staging generation result: Gemini on staging last ended `config_error` (section 4.3), and the staging journey with Gemini is pending (Kirtan).
 
 ## 6. Testing and quality
 
