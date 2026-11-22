@@ -7,7 +7,7 @@
 | Checks | [final-report.md](final-report.md) (draft of 22 November 2026, `main` at `4fe514c`) |
 | Card | IMP-804 (US-148 AC1); test TC-397; NFR-041 |
 | Reviewer | Junaid (manual review, no automated command) — **pending** |
-| Prepared by | Malhar (data and architecture chapters); the AI chapter rows are added by Manya's part |
+| Prepared by | Malhar (data and architecture chapters); Manya (AI chapter rows); Jeel (presentation outline rows) |
 
 ## Purpose
 
@@ -145,7 +145,40 @@ Claims of section 5 removed or reworded so that the prose carries no number:
 
 ## Presentation outline (docs/presentation/outline.md)
 
-to be added by the presentation part
+Rows for the numeric claims of [presentation/outline.md](presentation/outline.md) (Jeel's part, draft of 22 November 2026). The outline takes every figure from [final-report.md](final-report.md), including section 5, under the same strict source rule; each row names the report section and the row of this file that holds the source record (rows 1 to 33 for sections 1 to 4 and 6 to 10, rows 34 to 75 for section 5). The checked value is the figure as the report states it, compared on 22 November 2026. Identifiers, migration numbers, version numbers, HTTP status codes, section and slide numbers and calendar dates are not claims, as above.
+
+| # | Claim (exact text as it appears) | Location (file + section) | Source (eval/, docs/test-reports/ path or CI run link) | Checked value |
+| --- | --- | --- | --- | --- |
+| O1 | "floor journey `1 passed (14.7s)` on the candidate" | outline.md Slide 4 (on slide) | final-report.md §2.2, §6.1; row 2 ([E2E 45037634127](https://github.com/het-lathiya/Group12/actions/runs/45037634127)) | "`1 passed (14.7s)`" |
+| O2 | "Ahmedabad with 103 curated places" | outline.md Slide 4 (on slide) | final-report.md §3; row 4 (`eval/reports/final-baseline.md`) | "**103** places loaded" |
+| O3 | "final evaluation index of 151 documents and 227 chunks" | outline.md Slide 4 (on slide) | final-report.md §3; row 5 (`eval/reports/final-baseline.md`) | "**151** documents and **227** chunks, all embedded" |
+| O4 | "`Contracts: 6 kept, 0 broken.`" | outline.md Slide 6 (on slide) | final-report.md §4.1, §5.2, §6.1; rows 6 and 34 ([CI 45037634091](https://github.com/het-lathiya/Group12/actions/runs/45037634091), job `lint-types`) | "`Contracts: 6 kept, 0 broken.`" |
+| O5 | "15 cases × 3 repeats = 45 attempts per run" | outline.md Slide 7 (on slide) | final-report.md §5.6; row 42 (the four generation `run.json` files) | "15 cases × 3 repeats = 45 attempts per run" |
+| O6 | "23 of 45 attempts completed (22 `provider_unavailable`)" | outline.md Slide 7 (on slide) | final-report.md §5.6; row 46 (`eval/results/20261120T165222Z-gemini/`) | "**23 / 45** (22 `provider_unavailable`)"; "Only 23 of the 45 attempts completed; 22 ended `provider_unavailable`" |
+| O7 | "all 23 completed attempts usable" | outline.md Slide 7 (on slide) | final-report.md §5.6 table; row 47 (`eval/results/20261120T165222Z-gemini/`) | Usable "23 / 23 completed (23 / 45 in the record)" |
+| O8 | "8 duplicate-place items, all rejected by the output check" | outline.md Slide 7 (on slide) | final-report.md §5.6; row 51 (`eval/results/20261120T165222Z-gemini/scores.json`) | "8 duplicate-place items, all 8 rejected by the output check" |
+| O9 | "Rule-based planner 45 / 45 usable" | outline.md Slide 7 (on slide) | final-report.md §5.6 table; row 45 (`eval/results/20261120T155153Z-rule_based/run.json`) | Rule-based column "45 / 45" |
+| O10 | "MOCK runs 45 / 45 and identical, so the harness is reproducible" | outline.md Slide 7 (on slide) | final-report.md §5.6; rows 43, 44 and 54 (the two MOCK `run.json` files; `eval/reports/final-baseline.md`) | "Both runs score 45 / 45 on every count; the `metrics` objects of the two records are identical and their raw outputs are identical, so the harness is reproducible" |
+| O11 | "citation validity 1.0" | outline.md Slide 7 (on slide) | final-report.md §5.6 retrieval table; row 62 (`eval/results/20261119T182831Z-retrieval-mock/run.json`) | Citation validity "1.0" (final MOCK) |
+| O12 | "grounding rate fell from 0.7571 to 0.6392, recorded but not investigated" | outline.md Slide 7 (on slide) | final-report.md §5.6; row 63 (the two retrieval `run.json` files) | "The grounding rate fell from 0.7571 to 0.6392 … This drop is recorded but not investigated." |
+| O13 | "Gemini retrieval not possible (HTTP 503)" | outline.md Slide 7 (on slide) | final-report.md §5.6; row 69 (`eval/reports/final-baseline.md`) | "stopped at its first call with `Gemini unavailable: HTTP 503`" |
+| O14 | "only 12 of the 15 cases have a completed attempt" and "the three uncovered cases" | outline.md Slide 7 (notes) | final-report.md §5.6; row 50 (`eval/results/20261120T165222Z-gemini/scores.json`) | "Three cases … have no completed attempt, so 12 of the 15 cases are covered"; "say nothing about the three uncovered cases" |
+| O15 | "Gemini provider-call latency over the 23 completed attempts: mean 7471.6 ms (median 6608, p95 12699)" | outline.md Slide 7 (notes) | final-report.md §5.7; row 70 (`docs/test-reports/cost-latency-report.md`, `eval/results/20261120T165222Z-gemini/scores.json`) | "1775 / 7471.6 / 19999 (median 6608, p95 12699)" over "23 completed attempts" |
+| O16 | "unit 1215 passed" | outline.md Slide 8 (on slide) | final-report.md §6.1; row 8 (CI 45037634091, job `unit`) | "`1215 passed, 1 warning in 13.52s`" |
+| O17 | "provider and API contract 91 passed" | outline.md Slide 8 (on slide) | final-report.md §6.1; row 9 (CI 45037634091, job `unit`) | "`91 passed, 2 deselected, 1 warning in 18.14s`" |
+| O18 | "API and database 590 passed" | outline.md Slide 8 (on slide) | final-report.md §6.1; row 10 (CI 45037634091, job `api`) | "`590 passed, 1 warning in 214.57s (0:03:34)`" |
+| O19 | "authorization 87 passed (14 skipped)" | outline.md Slide 8 (on slide) | final-report.md §6.1; row 11 (CI 45037634091, job `api`) | "`87 passed, 14 skipped, 1 warning in 44.23s`" |
+| O20 | "web components 288 passed" | outline.md Slide 8 (on slide) | final-report.md §6.1; row 12 (CI 45037634091, job `unit`) | "`Tests  288 passed (288)`" |
+| O21 | "journey at four widths `4 passed (40.8s)`" | outline.md Slide 8 (on slide) | final-report.md §6.1; row 17 ([E2E 45037634127](https://github.com/het-lathiya/Group12/actions/runs/45037634127); widths from `docs/test-reports/e2e-sprint7.md`) | "Journey (four widths) · `4 passed (40.8s)`" |
+| O22 | "three consecutive local full runs of 119 tests" | outline.md Slide 8 (on slide) | final-report.md §6.2; rows 23 and 24 (`docs/test-reports/e2e-sprint7.md` §4) | "three consecutive local full runs … each `Running 119 tests using 2 workers`" |
+| O23 | "0 of 3 failed" | outline.md Slide 8 (on slide) | final-report.md §6.2; row 27 (`docs/test-reports/e2e-sprint7.md` §4) | "**0 of 3** full runs failed" |
+| O24 | "finding F-1 (severity 3) fixed; no severity 1 or 2 defect" | outline.md Slide 8 (on slide) | final-report.md §6.3; row 30 (`docs/test-reports/security-sprint7.md`) | "Finding F-1 (…; severity 3) was fixed"; "No severity 1 or 2 defect was found" |
+| O25 | "40 + 20 automated axe scans, no serious or critical violation" | outline.md Slide 8 (on slide) | final-report.md §6.4; rows 31 and 32 (`docs/test-reports/accessibility-sprint7.md` §6.1b) | "**40** axe scans"; "**20** scans, every scan `[]`"; "no serious or critical violation" |
+| O26 | "Coverage 92% for `app`, reported but not enforced" | outline.md Slide 8 (on slide) | final-report.md §6.1; row 14 (CI 45037634091, job `api`) | "`TOTAL … 92%` for `app`; no threshold fails the build" |
+| O27 | "`no leaks found` over `445 commits scanned.`" | outline.md Slide 8 (notes) | final-report.md §6.1; row 16 (CI 45037634091, job `guards`) | "gitleaks `445 commits scanned.`, `no leaks found`" |
+| O28 | "Prompt v3 not active (14 duplicate-place items in 3 attempts)" | outline.md Slide 9 (on slide) | final-report.md §5.4; row 41 (`eval/results/20261116T042246Z-gemini/scores.json`, `eval/reports/RUN-079-prompt-v3.md`) | "14 duplicate-place items in 3 attempts, so the IMD-195 activation gate was **not met**" |
+
+Numbers considered for the outline and left out, because the report no longer states them (removed under the strict source rule; see "Claims removed while drafting" above): the count and MVP / MVP-S split of requirements Done at SG-6; the number of API operations; the number of extensions and cut-list switches; the minimum of usable Ahmedabad places; the number of Ahmedabad guides; the number of tables; the maximum number of model repair calls; the maximum number of cited passage IDs; the working-agreement audit counts; the length of the course commitment and the sprint range of the Stage 2 position. Team point totals were not used (the report states none). No rehearsal timing, slot length, demo result or participant feedback exists to quote.
 
 ## Review
 
