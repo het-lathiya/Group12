@@ -621,7 +621,115 @@ Confirmed by: Kirtan (gate owner) — pending
 
 ## SG-7 end of week 7: release candidate and extension freeze (IMP-799)
 
-Status: not run
+SG-7 · 22 November 2026 · candidate 4fe514c · NOT PASSED YET (provisional)
+
+Status: **not passed yet (provisional)**. The criteria do not all hold: there is no tag `v1.0-rc1`, the candidate is not deployed to staging, `make smoke` and the ACC-01 to ACC-18 re-run on staging have not been run, and the accessibility and usability sessions are pending. No tag is created (card step 6: "otherwise record "not passed" with reasons and owners").
+
+- Run: RUN-087, IMP-799 whole-task, owner Kirtan, 22 November 2026. Index: [sprint-7.md](sprint-7.md). Acceptance record: [docs/acceptance/rc1.md](../acceptance/rc1.md). Defects: [docs/test-reports/defects.md](../test-reports/defects.md). Part record: [IMP-799-whole-task.md](parts/IMP-799-whole-task.md).
+- Candidate commit: `4fe514c` (`4fe514cfa015f0b9ebd87c4a96c7daa04a4a2958`, "docs(eval): IMP-705 record the GEMINI retrieval attempt (HTTP 503)"), `origin/main` at preflight after #291. This PR (`chore/S7-D-gate-report`) adds documentation only.
+- Scope of this result: no `.env` file was read, and no staging URL, AWS, database or Gemini call was made in this run; no workflow was dispatched. Every staging criterion is **not verifiable** and is an open item for Kirtan's staging window, due 26 November 2026. No staging, device, screen-reader or usability result is claimed.
+- Sprint 7 cards: 11 parts on 5 cards (18 points) are merged (#287, #289, #291); IMP-703 has its prepare part merged and its sessions pending; IMP-704 is not started. IMP-708 to IMP-713 (extensions) are cut (IMD-65).
+- Decisions used: IMD-41 (severities), IMD-47 (extension release and its SG-7 rule), IMD-65 (extensions cut), IMD-137 (staging off between windows), IMD-187 (`ranking_explain` needs no switch entry), IMD-200 (prompt v2 active), IMD-201 (feature freeze), IMD-202 to IMD-209, IMD-211, IMD-213 and IMD-214 (Sprint 7).
+
+### Criteria
+
+| # | Criterion (card IMP-799 acceptance and steps; §14.1 SG-7 row) | Result | Evidence |
+| --- | --- | --- | --- |
+| 1 | Acceptance 1: "docs/progress/gates.md records SG-7 with date, commit SHA and each criterion as met or not met" | met | This entry: 22 November 2026, candidate `4fe514c`, one row per criterion |
+| 2 | Acceptance 2: "ACC-01 to ACC-18 results recorded on staging (CHK-21)" | not verifiable | Staging not deployed with the candidate. [rc1.md](../acceptance/rc1.md) lists all 18 as "pending (Kirtan staging window)", with the local and CI E2E specs as supporting evidence only. Open item, Kirtan, 26 Nov 2026 |
+| 3 | Acceptance 2: "no severity-1 defect open (CHK-22)" | met (on the records to date) | [defects.md](../test-reports/defects.md): no record shows an open severity-1 defect. Staging, device, screen-reader and usability results are pending and may add defects |
+| 4 | Acceptance 3: "Final evaluation report and cost report exist (US-131)" | met | [eval/reports/final-baseline.md](../../eval/reports/final-baseline.md), [docs/test-reports/cost-latency-report.md](../test-reports/cost-latency-report.md) ([IMP-705 record](parts/IMP-705-whole-task.md)). Their records name `f75aa94` (MOCK) and `6993197` (rule-based, GEMINI); `git diff --stat 6993197..4fe514c -- apps/` prints nothing, and `f75aa94..4fe514c -- apps/` changes only `apps/api/app/evaluation/run.py` and evaluation and RAG tests |
+| 5 | Acceptance 3: "document set drafted (US-145, US-146)" | met (drafted) | [`docs/srs.md`](../srs.md), [`docs/architecture.md`](../architecture.md), [`docs/api.md`](../api.md), [`docs/test-plan.md`](../test-plan.md), [`docs/guides/user-guide.md`](../guides/user-guide.md), [`docs/guides/deployment-guide.md`](../guides/deployment-guide.md) ([IMP-707 drafts](sprint-7.md#imp-707-drafts)). The US-146 trials are pending (row 27) |
+| 6 | Acceptance 4: "Tag v1.0-rc1 exists on a commit whose CI and staging smoke are green" | not met | `git tag` lists only `contract-v1`. CI on `4fe514c` is green ([45037634091](https://github.com/het-lathiya/Group12/actions/runs/45037634091)); staging smoke not run (row 10) |
+| 7 | Acceptance 5: "No criterion is recorded as met without a linked artefact" | met | Every "met" row of this table links its artefact |
+| 8 | Acceptance 6: "Each extension is recorded as done (tests TC-399 to TC-432 passing) or switched off; the @ext E2E smoke passes for the enabled ones." | met (recorded as cut and off by decision); @ext: not applicable — all extensions cut | "Extension freeze" below; [deferred.md](deferred.md). TC-432 (extension routes not mounted, 404) passes in the CI `api` job (`make test-authz`: `87 passed, 14 skipped, 1 warning in 44.23s`, the 14 skipped cut by IMD-65). The configuration listing of step 7 is row 19 |
+| 9 | Step 1: every Sprint 1 to 7 IMP task done with evidence or listed open with owner and due date | met | [sprint-7.md, Sprint 1–7 task status](sprint-7.md#sprint-17-task-status-for-sg-7): 114 cards; 71 done, 27 done with an open item, 6 open, 9 cut, 1 this gate; each open item has an owner and a due date |
+| 10 | Step 2: `make check` on `main` | met | [CI 45037634091](https://github.com/het-lathiya/Group12/actions/runs/45037634091) (push, `4fe514c`, success): `lint-types` `All checks passed!`, `Success: no issues found in 123 source files`, `Contracts: 6 kept, 0 broken.`, `openapi-check: contracts/ and apps/web/lib/api/schema.d.ts are up to date`; `unit` `1215 passed, 1 warning in 13.52s`, `91 passed, 2 deselected, 1 warning in 18.14s`, `Test Files  43 passed (43)`, `Tests  288 passed (288)`; `api` `590 passed, 1 warning in 214.57s (0:03:34)`, `87 passed, 14 skipped, 1 warning in 44.23s`. This branch's local `make check`: exit 0 on branch commit `f6715c1` (22 Nov 2026): `All checks passed!`, `All matched files use Prettier code style!`, `Success: no issues found in 123 source files`, `Contracts: 6 kept, 0 broken.`, `openapi-check: contracts/ and apps/web/lib/api/schema.d.ts are up to date`, unit `1219 passed, 1 warning in 7.97s`, contract `91 passed, 2 deselected, 1 warning in 18.45s`, api `590 passed, 1 warning in 114.68s (0:01:54)`, authz `87 passed, 14 skipped, 1 warning in 22.60s`, web `Tests  288 passed (288)` |
+| 11 | Step 2: `make e2e` on `main` | met | [E2E 45037634127](https://github.com/het-lathiya/Group12/actions/runs/45037634127) (push, `4fe514c`, success): journey `4 passed (40.8s)`; map `8 passed (20.2s)`; itinerary editing and restore `8 passed (51.6s)`; regression specs `9 skipped`, `12 passed (23.8s)`; floor journey `1 passed (14.7s)`; provider timeout `1 skipped`, `1 passed (6.9s)`; provider quota `1 skipped`, `1 passed (7.4s)`; staging job skipped. Local smoke: `12 passed (16.9s)` (exit 0, local Supabase stack, MOCK provider, branch commit `f6715c1`; the first attempt gave `12 failed` because the Next.js dev server stopped at start-up to print an upgrade notice, and the unchanged retry passed) |
+| 12 | Step 2: staging deployment of the same commit is green | not verifiable | Not deployed: the last "Deploy staging" run, [44733049430](https://github.com/het-lathiya/Group12/actions/runs/44733049430) (success, 20 November 2026), deployed `964327f`, not the candidate. Kirtan staging window (owner Kirtan, due 26 Nov 2026) |
+| 13 | Step 2: `make smoke URL=<staging>` passes | not verifiable | Not run. Kirtan staging window (owner Kirtan, due 26 Nov 2026) |
+| 14 | Step 3: live-smoke.yml once against staging (Gemini, within cap) | not verifiable (not run) | Not run — needs Kirtan's staging window; operator dispatch only. `.github/workflows/live-smoke.yml` does not exist in the repository (`gh run list --workflow live-smoke.yml`: "HTTP 404: workflow live-smoke.yml not found on the default branch"); `make live-smoke` exists. PD-IMP-799-2 in [sprint-7.md](sprint-7.md#proposed-decisions-for-team-review). The fallback path (ACC-03) passes in E2E 45037634127 (row 11, provider steps), as supporting evidence only |
+| 15 | Step 4: "record the High-priority test execution summary (CHK-20)" | met | [rc1.md, CHK-20](../acceptance/rc1.md#high-priority-test-execution-summary-chk-20), from CI 45037634091 and E2E 45037634127; local row exit 0 on branch commit `f6715c1` (22 Nov 2026): `All checks passed!`, `All matched files use Prettier code style!`, `Success: no issues found in 123 source files`, `Contracts: 6 kept, 0 broken.`, `openapi-check: contracts/ and apps/web/lib/api/schema.d.ts are up to date`, unit `1219 passed, 1 warning in 7.97s`, contract `91 passed, 2 deselected, 1 warning in 18.45s`, api `590 passed, 1 warning in 114.68s (0:01:54)`, authz `87 passed, 14 skipped, 1 warning in 22.60s`, web `Tests  288 passed (288)` |
+| 16 | Step 5: CHK-03 (no secret in repository history, logs or bundle), from IMP-702 | met | [security-sprint7.md](../test-reports/security-sprint7.md): TC-354 (`832 commits scanned.` / `no leaks found`), TC-355 (bundle holds only `NEXT_PUBLIC_*`), TC-358 and TC-025 (log tests), at `a4c2a0b`. CI `guards` on `4fe514c`: `445 commits scanned.`, `no leaks found` (pushed branch history, IMD-214) |
+| 17 | Step 5: CHK-04 (make test-authz passes and fails on a new route without an ownership case), from IMP-702 | met | [security-sprint7.md](../test-reports/security-sprint7.md) TC-344; [IMP-702 authz-injection](parts/IMP-702-authz-injection.md); CI `api` on `4fe514c`: `87 passed, 14 skipped, 1 warning in 44.23s` |
+| 18 | Step 5: CHK-05 (CORS and headers verified), from IMP-702 | CORS met; headers on staging not verifiable | TC-351 passes ([security-sprint7.md](../test-reports/security-sprint7.md), [IMP-702 headers-secret-scan](parts/IMP-702-headers-secret-scan.md)); TC-352 (HTTPS, CORS and observed response headers on staging, IMD-205) not run. Kirtan staging window |
+| 19 | Step 7: each extension switch "is listed in FEATURES_DISABLED for staging and production" | not verifiable | Repository: no file lists any extension switch. `apps/api/app/core/config.py` `features_disabled: str = ""`; `.env.example` `FEATURES_DISABLED=` and `NEXT_PUBLIC_FEATURES_DISABLED=`; `infra/aws/services/api.staging.json.tmpl` sets `FEATURES_DISABLED` to `${STAGING_FEATURES_DISABLED}`, which `infra/aws/env.sh.example` leaves empty; `deploy-staging.yml` and `deploy-production.yml` read the repository variables `STAGING_FEATURES_DISABLED` and `PRODUCTION_FEATURES_DISABLED`; no production service template exists. Live values not verifiable (not read). PD-IMP-799-3 |
+| 20 | Step 5: IMP-705 reports and IMP-707 drafts exist | met | Rows 4 and 5 |
+| 21 | Step 6: tag `v1.0-rc1`; freeze demo data and prompt version | not met | Criteria do not all hold, so no tag. Active prompt `itinerary_generate` v2 (IMD-200); demo data is Sampleton and Ahmedabad (`data/places/`), destination 2 not loaded (IMP-603). Nothing is frozen by a tag |
+| 22 | Step 7: `make e2e ARGS='--grep @ext'` with the enabled switches | not applicable — all extensions cut | No extension is enabled. `apps/web/e2e/extensions.spec.ts` (tag `@ext`) runs in the CI step "Run the regression specs" of E2E 45037634127 (`9 skipped`, `12 passed (23.8s)` over eight specs at 1280 px); its nine extension scenarios skip with the IMD-65 reason |
+| 23 | §14.1 SG-7: zero 501 routes | met | `git grep` of `apps/api/app`: `EndpointNotImplemented` is defined in `core/errors.py` and raised nowhere; [`contracts/openapi.v1.json`](../../contracts/openapi.v1.json) holds 36 operations, none declaring 501 |
+| 24 | §14.1 SG-7: security pass (authorization and security suites) | met locally and in CI; staging rows not verifiable | [security-sprint7.md](../test-reports/security-sprint7.md); CI `api` (row 17). TC-352, TC-433, TC-434, TC-436 and the ECR scan not run (staging window) |
+| 25 | §14.1 SG-7: accessibility and usability results recorded | not met | [accessibility-sprint7.md](../test-reports/accessibility-sprint7.md) holds the template and the local axe runs only; device and screen-reader sessions pending (Junaid, Krrish). Usability session 1 (IMP-611) and session 2 (IMP-704) pending |
+| 26 | §14.1 SG-7 acceptable defects: severity 3 and 4 listed in known limitations | met (listed) | [defects.md](../test-reports/defects.md) lists every open severity 3 and 4 item from the records |
+| 27 | US-146 trials (IMP-707 step 6): README setup and deployment guide on a clean account; user guide by a new member | not met (pending) | [sprint-7.md, IMP-707 drafts](sprint-7.md#imp-707-drafts): pending (Malhar, Kirtan, Jeel) |
+
+Summary over the 27 rows: **met 16** (rows 1, 3, 4, 5, 7, 8, 9, 10, 11, 15, 16, 17, 20, 23, 24, 26; row 24 with its staging rows open) / **not met 4** (rows 6, 21, 25, 27) / **not verifiable 6** (rows 2, 12, 13, 14, 18, 19) / **not applicable 1** (row 22).
+
+Card tests: `make check` in CI on `4fe514c` (row 10) and locally on this branch (exit 0 on branch commit `f6715c1` (22 Nov 2026): `All checks passed!`, `All matched files use Prettier code style!`, `Success: no issues found in 123 source files`, `Contracts: 6 kept, 0 broken.`, `openapi-check: contracts/ and apps/web/lib/api/schema.d.ts are up to date`, unit `1219 passed, 1 warning in 7.97s`, contract `91 passed, 2 deselected, 1 warning in 18.45s`, api `590 passed, 1 warning in 114.68s (0:01:54)`, authz `87 passed, 14 skipped, 1 warning in 22.60s`, web `Tests  288 passed (288)`); `make e2e` in CI on `4fe514c` (row 11); `make smoke URL=<staging API URL>` **not run** (staging not deployed with the candidate).
+
+### Extension freeze
+
+| Extension | Card | Switch | State |
+| --- | --- | --- | --- |
+| "Why this place?" panel | IMP-515 | `ranking_explain` | cut (IMD-65, IMD-186); not built |
+| Optimise day order | IMP-612 | `optimise_order` | cut (IMD-65, IMD-186); not built |
+| Packing checklist | IMP-613 | `packing` | cut (IMD-65); not built |
+| Natural-language trip intake | IMP-708 | `nl_intake` | cut (IMD-65); not built |
+| "Why this plan" for each day | IMP-709 | `day_explain` | cut (IMD-65); not built |
+| Rain-aware day swapping | IMP-710 | `rain_swap` | cut (IMD-65); not built |
+| "Today" companion view | IMP-711 | `today_view` | cut (IMD-65); not built |
+| Budget-fit suggestions | IMP-712 | `budget_fit` | cut (IMD-65); not built |
+| Context cards | IMP-713 | `context_cards` | cut (IMD-65); not built |
+
+- What the repository shows: none of the nine switches is listed in `FEATURES_DISABLED` in any repository file (row 19). The names exist in `apps/web/lib/flags.ts` (`FEATURE_NAMES`). Staging and production take the repository variables `STAGING_FEATURES_DISABLED` and `PRODUCTION_FEATURES_DISABLED`; their live values were not read and are **not verifiable** here.
+- No extension route is mounted: TC-432 passes in the CI `api` job, and TC-431 skips with "cut by IMD-65" ([security-sprint7.md](../test-reports/security-sprint7.md)). No extension table or screen exists.
+- `@ext` E2E: `extensions.spec.ts` exists and runs in CI; with every extension cut, "not applicable — all extensions cut" (row 22).
+- After the tag, no extension work merges except severity 1-2 fixes (card step 7); with every extension cut, none is planned.
+
+### Known defects
+
+See [docs/test-reports/defects.md](../test-reports/defects.md). Severity per IMD-41: 1 blocks a journey or exposes data; 2 breaks a requirement with no workaround; 3 has a workaround; 4 cosmetic. No record shows an open severity-1 or severity-2 defect. Fixed in Sprint 7: F-1 (severity 3, TC-347, IMD-204), the app shell overflow at 360 and 768 px (IMD-207), the two axe findings of IMD-206, the versions page for another user's trip, and the red `main` secret scan (IMD-214).
+
+### Working-agreement audit (IMD-68)
+
+From `gh pr view <n> --json reviewDecision,reviews,mergedBy,statusCheckRollup`. Merging is by fast-forward push from 18 November 2026 (IMD-209, IMD-211); branch protection keeps 0 required approvals.
+
+| PR | reviewDecision | mergedBy | Check runs in the rollup | Meets the agreement |
+| --- | --- | --- | --- | --- |
+| #287 | none | het-lathiya | 7 success, 5 skipped | **no**: no approval |
+| #289 | none | Nidhi9864 | 11 success, 2 skipped, 1 failure (`guards` on the push run of `b5c2d5b`: the side-branch secret finding fixed by IMD-214 in #290) | **no**: no approval |
+| #290 | none | Nidhi9864 | 12 success, 2 skipped | **no**: no approval |
+| #291 | none | Nidhi9864 | 13 success, 7 skipped | **no**: no approval |
+
+Summary: 4 merged, 0 with an approval. Nothing was changed on these pull requests.
+
+### Gate decision
+
+**Not passed yet (provisional).** Reasons: no tag `v1.0-rc1` (row 6); staging deployment of the candidate, `make smoke`, the live smoke and the ACC-01 to ACC-18 re-run on staging not done (rows 2, 12, 13, 14); accessibility and usability sessions pending (row 25); US-146 trials pending (row 27). The gate is re-run after Kirtan's staging window; the tag is created only when every criterion holds.
+
+### Open items
+
+| Item | Owner | Due | Source |
+| --- | --- | --- | --- |
+| Deploy `4fe514c` (or the agreed candidate) to staging and run `make smoke URL=<staging API URL>` | Kirtan | 26 Nov 2026 | rows 12, 13 |
+| Re-run ACC-01 to ACC-18 on staging with the candidate and record pass or fail per scenario in [rc1.md](../acceptance/rc1.md) | Kirtan (Het for the Gemini key) | 26 Nov 2026 | row 2 |
+| Live smoke once against staging (Gemini, within cap): decide PD-IMP-799-2 (workflow missing), then run and record the outcome or cause | Kirtan | 26 Nov 2026 | row 14 |
+| TC-352 (HTTPS, CORS, observed headers), TC-433, TC-434, TC-436, ECR scan; staging and production `SUPABASE_URL` (IMD-204) | Kirtan | 26 Nov 2026 | rows 18, 24; IMP-702 |
+| Extension switches in `STAGING_FEATURES_DISABLED` and `PRODUCTION_FEATURES_DISABLED`, or a recorded decision (PD-IMP-799-3) | Kirtan | 26 Nov 2026 | row 19 |
+| Tag `v1.0-rc1` when every criterion holds; freeze demo data and prompt version | Kirtan | 26 Nov 2026 | rows 6, 21 |
+| IMP-703 device and screen-reader sessions (TC-382), findings and fixes | Junaid (runs), Krrish (records) | 26 Nov 2026 | row 25 |
+| IMP-611 usability session 1 | Junaid, Krrish | 26 Nov 2026 | row 25 |
+| IMP-704 usability session 2 and fixes of the top issues | Manasvi, Junaid | 26 Nov 2026 | row 25 |
+| IMP-707 step 6: README setup and deployment guide on a clean account (time recorded); user guide by a new member; 16 user-guide screenshots | Malhar (lead), Kirtan, Jeel | 26 Nov 2026 | row 27 |
+| IMP-706: confirm E1 to E7 and the blueprint-based content | Manya | 26 Nov 2026 | [IMP-706 record](parts/IMP-706-whole-task.md) |
+| IMP-701: a deliberately broken assertion shown failing in CI | Krrish | 26 Nov 2026 | [IMP-701 record](parts/IMP-701-whole-task.md) |
+| IMP-603 destination 2, or a recorded deferral (IMD-201) | Junaid, Manya, Kirtan | 26 Nov 2026 | [sprint-7.md](sprint-7.md#sprint-17-task-status-for-sg-7) |
+| IMP-113 account facts; IMP-114 interviews (PR #288) | Kirtan, Junaid, Nidhi; Junaid, Krrish | 26 Nov 2026 | [sprint-7.md](sprint-7.md#sprint-17-task-status-for-sg-7) |
+| Earlier staging items (Gemini `config_error` on staging, timeout fallback, generation cap, edit totals, RAG index line, ACC-19, NFR-050, TC-370, TC-437, TC-438, CORS, IMP-206 load, IMP-216 walk-through) | Kirtan, Het | 26 Nov 2026 | SG-4 to SG-6 open items |
+| Proposed decisions listed in [sprint-7.md](sprint-7.md#proposed-decisions-for-team-review) (PD-RUN-083-1, PD-IMP-706-1/2, PD-IMP-707-1 to 4, GEMINI availability and retrieval, MOCK grounding rate, `test_metrics.py`, PD-IMP-799-1 to 3) | team; decision run | 26 Nov 2026 | sprint-7.md |
+| Remaining evidence gaps (screenshots, TC-384, TC-385, TC-334 thresholds, Gemini recordings, OpenFreeMap terms, provider spending limit) | as listed in [sprint-7.md](sprint-7.md#sprint-17-task-status-for-sg-7) | 26 Nov 2026 | Sprint 1 to 6 records |
+
+Confirmed by: Kirtan (gate owner) — pending
 
 ## SG-8 week 8: release and demo (IMP-899)
 
