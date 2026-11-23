@@ -9,7 +9,9 @@ through ``app.places.live_service.get_import_submitter``, which tests override; 
 Steps of one import: claim the queued row; fetch the places of its bounding box; normalise, dedupe
 and cap; apply the minimum-places gate; then, in one transaction through the places service, store
 the OpenStreetMap source, the places (upserted, missing ones deactivated, never deleted) and the
-counts, write the place documents of the RAG corpus and complete the row. Embeddings are computed
+counts, write the place and guide documents of the RAG corpus in one load
+(``rag.service.index_live_destination``; the guide sections are fetched before that transaction,
+best effort) and complete the row. Embeddings are computed
 after that commit (no transaction stays open across a provider call); an embedding failure leaves
 the chunks without vectors, so generation uses ``lexical_fallback`` (IMD-112), and never fails the
 import. A failed import leaves the destination's earlier places as they were.
@@ -28,8 +30,6 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.errors import ProviderError
-from app.ai.factory import get_provider
 from app.ai.providers.base import ModelProvider
 from app.core.config import Settings, get_settings
 from app.db.models import Destination as DestinationRow
@@ -39,6 +39,7 @@ from app.livedata.factory import LiveProviders, get_providers
 from app.livedata.normalise import choose_nearby_city, evaluate_gate, normalise
 from app.livedata.providers.base import (
     BBox,
+    GuideSourceProvider,
     LiveDataRateLimited,
     LiveDataTimeout,
     LiveDataUnavailable,
@@ -46,7 +47,6 @@ from app.livedata.providers.base import (
 )
 from app.places import service as places_service
 from app.places.schemas import Destination
-from app.rag import documents as corpus
 from app.rag import service as rag_service
 
 logger = logging.getLogger(__name__)
@@ -117,9 +117,11 @@ async def run_import(
         reason: str
         try:
             async with asyncio.timeout(IMPORT_TIMEOUT_S):
+                live = providers or get_providers()
                 return await _import(
                     claimed,
-                    places=(providers or get_providers()).places,
+                    places=live.places,
+                    guides=live.guides,
                     sessions=sessions,
                     settings=settings or get_settings(),
                     embedder=embedder,
@@ -147,6 +149,7 @@ async def _import(
     claimed: _Claimed,
     *,
     places: PlacesProvider,
+    guides: GuideSourceProvider,
     sessions: Sessions,
     settings: Settings,
     embedder: ModelProvider | None,
@@ -180,24 +183,30 @@ async def _import(
         )
         return "insufficient_data"
 
+    sections = await rag_service.fetch_live_guides(guides, destination)
     async with sessions() as session:
         stored = await places_service.store_live_places(
             session, destination.id, result.places, found=result.found, retrieved_on=now.date()
         )
-        documents = await index_live_place_documents(session, destination)
-        await _index_live_guides(session, destination)
+        indexed = await rag_service.index_live_destination(
+            session, destination, sections, retrieved_on=now.date(), now=now
+        )
         if not await places_service.complete_live_import(
             session, destination.id, now=now, expires_at=expires_at
         ):
             raise _NoLongerRunningError
     logger.info(
-        "live import %s completed found=%d usable=%d stored=%d deactivated=%d documents=%d",
+        "live import %s completed found=%d usable=%d stored=%d deactivated=%d documents=%d "
+        "guides=%d dropped_paragraphs=%d guides_capped=%d",
         destination.id,
         result.found,
         len(result.places),
         stored.stored,
         stored.deactivated,
-        documents,
+        indexed.place_documents,
+        indexed.guide_documents,
+        indexed.dropped_paragraphs,
+        indexed.guides_capped,
     )
     await _embed(destination.id, sessions, embedder)
     return "completed"
@@ -222,52 +231,14 @@ async def _nearby_city(places: PlacesProvider, claimed: _Claimed) -> str | None:
     return choose_nearby_city(destination.name, found, capital(claimed.country_code))
 
 
-async def index_live_place_documents(session: AsyncSession, destination: Destination) -> int:
-    """A2 §6.5: the place documents of one live destination, written through the RAG service's
-    ``_write`` path in the caller's transaction (``index()`` covers curated destinations only).
-
-    Returns the number of documents written. The destination's active guide documents would be
-    deactivated by that path, so IMP-726 writes guides and places in one call when it adds guides.
-    """
-    places = [
-        (
-            corpus.place_document(
-                place.id,
-                place.name,
-                place.category,
-                place.tags,
-                place.description,
-                place.address,
-                retrieved_on,
-            ),
-            place.source_id,
-        )
-        for place, retrieved_on in await places_service.active_places_with_source_date(
-            session, destination.id
-        )
-    ]
-    await rag_service._write(session, rag_service._Loaded(destination, places, []))
-    return len(places)
-
-
-async def _index_live_guides(session: AsyncSession, destination: Destination) -> None:
-    """Call site for the live guide corpus of A2 §6.5 (Wikivoyage and Wikipedia sections).
-
-    IMP-726 (Nidhi, batch C2) fills it through ``app.rag.live_guides``; no guide is fetched here.
-    """
-
-
 async def _embed(destination_id: UUID, sessions: Sessions, embedder: ModelProvider | None) -> None:
     """Embed the destination's chunks that have no vector; a provider failure is logged only."""
-    report = rag_service.IndexReport()
-    try:
-        await rag_service._embed(embedder or get_provider(), sessions, [destination_id], report)
-    except ProviderError as exc:
+    report = await rag_service.embed_destinations(
+        [destination_id], provider=embedder, sessions=sessions
+    )
+    if report.provider_failed:
         logger.warning(
-            "live import %s embeddings incomplete (%s): embedded=%d",
-            destination_id,
-            exc.failure_reason,
-            report.embedded,
+            "live import %s embeddings incomplete: embedded=%d", destination_id, report.embedded
         )
 
 

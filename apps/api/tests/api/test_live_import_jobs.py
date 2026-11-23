@@ -247,11 +247,12 @@ async def test_tc_474_ok_import_completes_with_labelled_places(
 
     documents = list(
         await db_session.scalars(
-            select(RagDocument).where(RagDocument.destination_id == destination_id)
+            select(RagDocument).where(
+                RagDocument.destination_id == destination_id, RagDocument.kind == "place"
+            )
         )
     )
     assert len(documents) == LIVETON_USABLE
-    assert {d.kind for d in documents} == {"place"}
     assert all(d.is_active for d in documents)
     chunks = list(
         await db_session.scalars(
@@ -313,7 +314,11 @@ async def test_tc_474_embedding_failure_leaves_the_import_completed(
         select(func.count())
         .select_from(RagChunk)
         .join(RagDocument, RagDocument.id == RagChunk.document_id)
-        .where(RagDocument.destination_id == destination_id, RagChunk.embedding.is_(None))
+        .where(
+            RagDocument.destination_id == destination_id,
+            RagDocument.kind == "place",
+            RagChunk.embedding.is_(None),
+        )
     )
     assert unembedded == LIVETON_USABLE
 

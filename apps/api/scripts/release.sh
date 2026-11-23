@@ -15,7 +15,9 @@ for dir in ${SEED_DIRS:-}; do
   python -m app.places.seed "$dir"
 done
 
-echo "release: RAG index"
+# The index covers curated destinations only (data_tier = 'curated', A2 §6.5): live destinations
+# are indexed by their own import job, and this step never touches their documents.
+echo "release: RAG index (curated destinations)"
 status=0
 python -m app.rag.index --strict || status=$?
 case "$status" in

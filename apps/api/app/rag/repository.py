@@ -6,6 +6,7 @@ there is no approximate index (IMD-107).
 """
 
 from collections.abc import Collection, Sequence
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.places import DataSource
+from app.db.models.places import Destination as DestinationRow
 from app.db.models.rag import RagChunk, RagDocument
 from app.rag.chunker import Chunk
 from app.rag.documents import CorpusDocument
@@ -69,7 +71,12 @@ async def save_document(
 async def deactivate_missing(
     session: AsyncSession, destination_id: UUID, keep: Collection[str]
 ) -> None:
-    """Documents of the destination no longer in the corpus, with their chunks, go inactive."""
+    """Documents of the destination no longer in the corpus, with their chunks, go inactive.
+
+    It is scoped to one destination: ``index()`` calls it for curated destinations only, and a
+    live import for its own destination with its places and guides in one key set (A2 §6.5), so
+    neither touches the documents of the other.
+    """
     gone = select(RagDocument.id).where(
         RagDocument.destination_id == destination_id,
         RagDocument.is_active.is_(True),
@@ -83,6 +90,48 @@ async def deactivate_missing(
         await session.execute(
             update(RagDocument).where(RagDocument.id.in_(ids)).values(is_active=False)
         )
+
+
+async def count_active_chunks(session: AsyncSession, *, excluding: UUID | None = None) -> int:
+    """Active chunks of active documents of every destination, optionally but one (A2 §6.5)."""
+    query = (
+        select(func.count())
+        .select_from(RagChunk)
+        .join(RagDocument, RagDocument.id == RagChunk.document_id)
+        .where(RagDocument.is_active.is_(True), RagChunk.is_active.is_(True))
+    )
+    if excluding is not None:
+        query = query.where(RagDocument.destination_id != excluding)
+    return await session.scalar(query) or 0
+
+
+async def expired_live_destinations(
+    session: AsyncSession, now: datetime, *, excluding: UUID
+) -> list[tuple[UUID, int]]:
+    """(destination id, active chunks) of expired live destinations with active chunks, the oldest
+    expiry first; the corpus cap deactivates them in this order (A2 §6.5). Reads destinations only.
+    """
+    query = (
+        select(DestinationRow.id, func.count(RagChunk.id))
+        .join(RagDocument, RagDocument.destination_id == DestinationRow.id)
+        .join(RagChunk, RagChunk.document_id == RagDocument.id)
+        .where(
+            DestinationRow.data_tier == "live",
+            DestinationRow.expires_at.is_not(None),
+            DestinationRow.expires_at <= now,
+            DestinationRow.id != excluding,
+            RagDocument.is_active.is_(True),
+            RagChunk.is_active.is_(True),
+        )
+        .group_by(DestinationRow.id, DestinationRow.expires_at)
+        .order_by(DestinationRow.expires_at, DestinationRow.id)
+    )
+    return [(row[0], int(row[1])) for row in await session.execute(query)]
+
+
+async def deactivate_destination_documents(session: AsyncSession, destination_id: UUID) -> None:
+    """Every active document of the destination, with its chunks, goes inactive (never deleted)."""
+    await deactivate_missing(session, destination_id, ())
 
 
 async def count_inactive_documents(session: AsyncSession, destination_ids: Sequence[UUID]) -> int:
