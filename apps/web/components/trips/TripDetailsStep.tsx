@@ -1,16 +1,19 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
 import { ErrorState } from "@/components/states/ErrorState";
 import { LoadingSkeleton } from "@/components/states/LoadingSkeleton";
 import { ChipMultiSelect } from "@/components/trips/ChipMultiSelect";
+import { CitySearch } from "@/components/trips/CitySearch";
 import { CONTROL_CLASS, Field, FieldSet } from "@/components/trips/Field";
 import { Input } from "@/components/ui/input";
+import type { LiveDestination } from "@/lib/api/anyCityClient";
 import type { ErrorDetail } from "@/lib/api/client";
 import { useDestinations } from "@/lib/api/queries";
+import { isEnabled } from "@/lib/flags";
 import {
   ADULTS_MAX,
   ADULTS_MIN,
@@ -76,14 +79,28 @@ export function TripDetailsStep({
     defaultValues: initial ?? DEFAULTS,
   });
 
-  // §9.3.2: the budget is in the destination's currency, which API-06 reports.
+  // A live destination whose import completed (Amendment A2 §9.1; switch ON only).
+  const [live, setLive] = useState<LiveDestination | null>(null);
+  useEffect(() => {
+    if (live) {
+      setValue("destination_id", live.destination_id, {
+        shouldValidate: true,
+      });
+    }
+  }, [live, setValue]);
+
+  // §9.3.2: the budget is in the destination's currency, which API-06 reports (a live one's from
+  // API-77/78, IMD-128).
   const destinationId = useWatch({ control, name: "destination_id" });
   const destination = destinations.data?.find(
     (item) => item.id === destinationId,
   );
+  const liveChosen =
+    live !== null && live.destination_id === destinationId ? live : undefined;
+  const currency = destination?.currency ?? liveChosen?.currency;
   useEffect(() => {
-    setValue("budget.currency", destination?.currency ?? "");
-  }, [destination?.currency, setValue]);
+    setValue("budget.currency", currency ?? "");
+  }, [currency, setValue]);
 
   async function submit(values: TripDetailsValues) {
     for (const { field, message } of fieldErrors(
@@ -150,10 +167,26 @@ export function TripDetailsStep({
                     {item.name}
                   </option>
                 ))}
+                {live && (
+                  <option value={live.destination_id}>
+                    {live.name} (live data)
+                  </option>
+                )}
               </select>
             )
           }
         </Field>
+
+        {isEnabled("any_city_mode") && (
+          <div className="md:col-span-2">
+            <CitySearch
+              onReady={setLive}
+              onPickCurated={(id) =>
+                setValue("destination_id", id, { shouldValidate: true })
+              }
+            />
+          </div>
+        )}
 
         <Field
           id="trip-title"
@@ -298,10 +331,8 @@ export function TripDetailsStep({
               aria-invalid={errors.budget?.currency ? true : undefined}
               {...register("budget.currency")}
             >
-              {destination ? (
-                <option value={destination.currency}>
-                  {destination.currency}
-                </option>
+              {currency ? (
+                <option value={currency}>{currency}</option>
               ) : (
                 <option value="">Choose a destination first</option>
               )}

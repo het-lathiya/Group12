@@ -7,8 +7,10 @@ import {
 
 import { toast } from "sonner";
 
+import { anyCityApi, type LiveDestination } from "@/lib/api/anyCityClient";
 import { ApiError, api, unwrap, STALE_PLAN_MESSAGE } from "@/lib/api/client";
 import type { components } from "@/lib/api/schema";
+import { isEnabled } from "@/lib/flags";
 
 /**
  * Query keys of §7.4. TanStack Query is the only cache; every hook built on the API client
@@ -841,5 +843,98 @@ export function useRegenerate(tripId: string) {
         });
       }
     },
+  });
+}
+
+// IMP-728 any-city mode (Amendment A2 §9.1): every hook below runs only with the switch ON.
+export const anyCityKeys = {
+  citySearch: (q: string) => ["citySearch", q] as const,
+  importStatus: (destinationId: string) =>
+    ["destinationImport", destinationId] as const,
+  destination: (destinationId: string) =>
+    ["destination", destinationId] as const,
+} as const;
+
+const anyCityOn = () => isEnabled("any_city_mode");
+
+/**
+ * API-76: settlements matching a submitted term. Nominatim forbids type-ahead use, so the caller
+ * passes only a term the traveller submitted (button or Enter); an empty term sends nothing.
+ */
+export function useCitySearch(submitted: string) {
+  const q = submitted.trim();
+  return useQuery({
+    queryKey: anyCityKeys.citySearch(q),
+    queryFn: async () =>
+      unwrap(
+        await anyCityApi().GET("/api/v1/destinations/search", {
+          params: { query: { q } },
+        }),
+      ),
+    enabled: anyCityOn() && q !== "",
+    staleTime: 5 * 60 * 1000,
+    retry: false, // 422, 429 and 503 are answers the field shows
+  });
+}
+
+/** API-77: resolve a search result into a live destination; the answer seeds the import status. */
+export function useResolveCity() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (osmRef: string) => {
+      if (!anyCityOn()) throw new Error("any_city_mode is switched off");
+      return unwrap(
+        await anyCityApi().POST("/api/v1/destinations/resolve", {
+          body: { osm_ref: osmRef },
+        }),
+      );
+    },
+    // The 202 body is the first status, so the first poll waits 2 s, as for generations.
+    onSuccess: (live) =>
+      queryClient.setQueryData(
+        anyCityKeys.importStatus(live.destination_id),
+        live,
+      ),
+  });
+}
+
+const IMPORT_TERMINAL: ReadonlySet<LiveDestination["import"]["status"]> =
+  new Set(["completed", "insufficient_data", "failed"]);
+
+/** API-78: the import status, polled 2, 3, 4 and 5 s apart, then every 5 s, until it ends. */
+export function useImportStatus(destinationId: string | null) {
+  return useQuery({
+    queryKey: anyCityKeys.importStatus(destinationId ?? ""),
+    queryFn: async () =>
+      unwrap(
+        await anyCityApi().GET("/api/v1/destinations/{destination_id}/import", {
+          params: { path: { destination_id: destinationId ?? "" } },
+        }),
+      ),
+    enabled: anyCityOn() && destinationId !== null,
+    staleTime: Infinity,
+    retry: retryUnless404,
+    refetchInterval: (query) => {
+      const { data, status, dataUpdateCount } = query.state;
+      if (data && IMPORT_TERMINAL.has(data.import.status)) return false;
+      if (status === "error" && !data) return false;
+      const step = Math.min(dataUpdateCount, POLL_DELAYS_MS.length) - 1;
+      return POLL_DELAYS_MS[Math.max(step, 0)];
+    },
+  });
+}
+
+/** API-79: one destination with its tier and import state (curated or live). */
+export function useDestinationDetail(destinationId: string) {
+  return useQuery({
+    queryKey: anyCityKeys.destination(destinationId),
+    queryFn: async () =>
+      unwrap(
+        await anyCityApi().GET("/api/v1/destinations/{destination_id}", {
+          params: { path: { destination_id: destinationId } },
+        }),
+      ),
+    enabled: anyCityOn() && destinationId !== "",
+    retry: retryUnless404,
   });
 }

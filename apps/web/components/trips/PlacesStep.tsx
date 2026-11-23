@@ -8,8 +8,9 @@ import { LoadingSkeleton } from "@/components/states/LoadingSkeleton";
 import { EffectBadge, Field } from "@/components/trips/Field";
 import { Input } from "@/components/ui/input";
 import type { ErrorDetail } from "@/lib/api/client";
-import { usePlaceSearch } from "@/lib/api/queries";
+import { useDestinationDetail, usePlaceSearch } from "@/lib/api/queries";
 import type { components } from "@/lib/api/schema";
+import { isEnabled } from "@/lib/flags";
 import { MAX_MUST_VISIT, type Effect } from "@/lib/validation/trip";
 
 type Place = components["schemas"]["MustVisitPlace"];
@@ -36,6 +37,8 @@ export function PlacesStep({
   const [q, setQ] = useState("");
   const [error, setError] = useState<string | undefined>();
   const search = usePlaceSearch(destinationId, q);
+  // Amendment A2 §9.1: a live destination's places can be chosen once its import has completed.
+  const detail = useDestinationDetail(destinationId);
 
   useEffect(() => {
     const timer = setTimeout(() => setQ(query.trim()), SEARCH_DEBOUNCE_MS);
@@ -48,6 +51,26 @@ export function PlacesStep({
   function add(place: Place) {
     if (atLimit || selectedIds.has(place.id)) return;
     setSelected([...selected, { id: place.id, name: place.name }]);
+  }
+
+  if (
+    isEnabled("any_city_mode") &&
+    detail.data?.data_tier === "live" &&
+    detail.data.import?.status !== "completed"
+  ) {
+    return (
+      <form
+        id={formId}
+        noValidate
+        onSubmit={(event) => event.preventDefault()}
+        aria-label="Must-visit places"
+      >
+        <p role="status" className="text-sm text-muted-foreground">
+          Places can be chosen once your city is ready: its live data is still
+          being built.
+        </p>
+      </form>
+    );
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {

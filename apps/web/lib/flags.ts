@@ -29,6 +29,16 @@ export const FEATURE_NAMES = [
 
 export type FeatureName = (typeof FEATURE_NAMES)[number];
 
+/**
+ * Default-off switches (Amendment A2 §3.1), kept outside FEATURE_NAMES: such a switch is ON only
+ * when the list holds its "!" token (for example "!any_city_mode") and not its plain name.
+ */
+export const DEFAULT_OFF_FEATURES = ["any_city_mode"] as const;
+
+export type DefaultOffFeatureName = (typeof DEFAULT_OFF_FEATURES)[number];
+
+const DEFAULT_OFF: ReadonlySet<string> = new Set(DEFAULT_OFF_FEATURES);
+
 export function parseDisabledFeatures(
   raw: string | undefined,
 ): ReadonlySet<string> {
@@ -45,6 +55,9 @@ const disabled = parseDisabledFeatures(
   process.env.NEXT_PUBLIC_FEATURES_DISABLED,
 );
 
-export function isEnabled(name: FeatureName): boolean {
+export function isEnabled(name: FeatureName | DefaultOffFeatureName): boolean {
+  if (DEFAULT_OFF.has(name)) {
+    return disabled.has(`!${name}`) && !disabled.has(name);
+  }
   return !disabled.has(name);
 }
