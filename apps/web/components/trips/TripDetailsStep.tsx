@@ -12,7 +12,7 @@ import { CONTROL_CLASS, Field, FieldSet } from "@/components/trips/Field";
 import { Input } from "@/components/ui/input";
 import type { LiveDestination } from "@/lib/api/anyCityClient";
 import type { ErrorDetail } from "@/lib/api/client";
-import { useDestinations } from "@/lib/api/queries";
+import { useDestinationDetail, useDestinations } from "@/lib/api/queries";
 import { isEnabled } from "@/lib/flags";
 import {
   ADULTS_MAX,
@@ -89,15 +89,41 @@ export function TripDetailsStep({
     }
   }, [live, setValue]);
 
+  // A resumed draft whose destination is live: API-06 lists curated destinations only, so the
+  // select reads it from API-79 (switch ON only; no request when the id is curated or empty).
+  const draftId = initial?.destination_id ?? "";
+  const draftNeedsDetail =
+    isEnabled("any_city_mode") &&
+    draftId !== "" &&
+    destinations.isSuccess &&
+    !destinations.data.some((item) => item.id === draftId);
+  const draftDetail = useDestinationDetail(draftNeedsDetail ? draftId : "");
+  const draftLive =
+    draftNeedsDetail && draftDetail.data?.id === draftId
+      ? draftDetail.data
+      : undefined;
+  const draftLiveId = draftLive?.id;
+  useEffect(() => {
+    // The option appears after the form registered the select, so select it again.
+    if (draftLiveId) {
+      setValue("destination_id", draftLiveId);
+    }
+  }, [draftLiveId, setValue]);
+
   // §9.3.2: the budget is in the destination's currency, which API-06 reports (a live one's from
-  // API-77/78, IMD-128).
+  // API-77/78/79, IMD-128).
   const destinationId = useWatch({ control, name: "destination_id" });
   const destination = destinations.data?.find(
     (item) => item.id === destinationId,
   );
   const liveChosen =
     live !== null && live.destination_id === destinationId ? live : undefined;
-  const currency = destination?.currency ?? liveChosen?.currency;
+  const draftChosen =
+    draftLive !== undefined && draftLive.id === destinationId
+      ? draftLive
+      : undefined;
+  const currency =
+    destination?.currency ?? liveChosen?.currency ?? draftChosen?.currency;
   useEffect(() => {
     setValue("budget.currency", currency ?? "");
   }, [currency, setValue]);
@@ -167,6 +193,11 @@ export function TripDetailsStep({
                     {item.name}
                   </option>
                 ))}
+                {draftLive && live?.destination_id !== draftLive.id && (
+                  <option value={draftLive.id}>
+                    {draftLive.name} (Live data)
+                  </option>
+                )}
                 {live && (
                   <option value={live.destination_id}>
                     {live.name} (live data)
