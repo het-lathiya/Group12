@@ -1,0 +1,10 @@
+{
+  "template_id": "itinerary_generate",
+  "version": "v4",
+  "created_on": "2026-11-23",
+  "input_schema_version": "gr-2",
+  "output_schema_version": "io-2",
+  "description": "Orders shortlisted places into a day-by-day itinerary (io-2) for a gr-2 request, with retrieved passages from curated or imported public sources as quoted reference data and citations per item.",
+  "change_note": "v2 with one sentence changed in system.txt: context_passages are quoted reference data from the curated or imported public sources named in each passage title (Amendment A2 section 6.7, IMP-727); v1, v2 and v3 stay unchanged. Not active: PROMPT_TEMPLATE_VERSION stays v2 until the IMD-195 procedure.",
+  "approved_by": "AI/ML Engineer (Prompt Engineering, Validation and Evaluation)"
+}
