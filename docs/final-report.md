@@ -347,3 +347,23 @@ Due 26 November 2026 unless a record gives another date. Dates of earlier record
 | Complete and review this report; bring the SRS and architecture difference lists up to date at SG-7 | Malhar | 26 Nov 2026 |
 | Manual review of the claims check (TC-397) | Junaid | 26 Nov 2026 |
 | SG-7 gate (IMP-799) | Kirtan | 26 Nov 2026 |
+
+## 11. Any-city mode (Amendment A2)
+
+**Status: built behind a switch; the switch state at the release is to be recorded at the cutoff** (27 November 2026 23:59 IST, IMD-215). If the batches are not green with the switch both OFF and ON by then, the release ships with the switch OFF, and this chapter describes the work as built but disabled.
+
+- **What it is.** A signed-in traveller can type any city. The API resolves it with Nominatim, imports places from the Overpass API, labels every value as live, and stores the places through the places module. Wikivoyage and Wikipedia sections are indexed as guide passages with their CC BY-SA attribution. The normal trip, generation, itinerary and costs screens then work for that city (IMD-210; Amendment A2).
+- **What did not change.** The model still chooses only stored place IDs. Prices, hours, travel times and totals still come from data and code, and live places carry no price and no hours. The curated destination and the SAMPLE fixture behave as before, whatever the switch. With the switch OFF, the any-city routes answer 404 and the city search is absent.
+- **Decisions.**
+  - IMD-210: scope.
+  - IMD-215: the feature-freeze exception and the cutoff.
+  - IMD-216: the switch token `!any_city_mode`, a separate any-city contract, the User-Agent, no live opening hours, every country supported.
+  - IMD-217: a failed refresh keeps a working city active; the global daily cap stays.
+  - IMD-218: a guide-source failure keeps the import, without guides.
+- **Built in Sprint 7, batches C1 to C3 (RUN-089 to RUN-092).** Migration 0008. The live-data providers with throttling and breakers. The normaliser and the minimum-places gate. The import job, reaper and CLI. API-76 to API-79. The live guide corpus with corpus caps. Prompt template v4 (not active; v2 stays). The web city search, import progress, tier badge, source badges, unknown chips and attribution footer. The E2E `@live` journey. The switch-ON CI jobs. The authorization and injection tests. The live evaluation dataset.
+- **Cut (A2 §1.3).** Lexical guide passages when embeddings are missing: live plans without embeddings cite no guide passage, as IMD-112 does today.
+- **Evidence.**
+  - The live evaluation dataset `trips/live-v1` gave usable plans in 24/24 MOCK attempts and 24/24 rule-based attempts. Every planned live place had an unknown price ([live-v1-2026-11-23.md](../eval/reports/live-v1-2026-11-23.md)).
+  - The full existing API suite passed with the switch OFF and with it ON ([any-city-switch.md](test-reports/any-city-switch.md), TC-490). With the switch ON, two inventory or start-up-configuration authz tests failed beyond the four that A2 §3.4 names; the record explains both, and PD-730-1 proposes adding them to §3.4.
+  - The security addendum found no defect ([security-any-city.md](test-reports/security-any-city.md)).
+- **Pending.** The staging pre-import of the demo cities (PD-AC-2, proposed) and ACC-20 to ACC-23 on staging, both in Kirtan's window of 28 November 2026 ([any-city.md](acceptance/any-city.md), [any-city-staging.md](guides/any-city-staging.md)). Reading the live-data services' usage policies (Junaid). One GEMINI evaluation run for template v4 (IMD-195), in the operator's later window.

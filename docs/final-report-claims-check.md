@@ -180,6 +180,16 @@ Rows for the numeric claims of [presentation/outline.md](presentation/outline.md
 
 Numbers considered for the outline and left out, because the report no longer states them (removed under the strict source rule; see "Claims removed while drafting" above): the count and MVP / MVP-S split of requirements Done at SG-6; the number of API operations; the number of extensions and cut-list switches; the minimum of usable Ahmedabad places; the number of Ahmedabad guides; the number of tables; the maximum number of model repair calls; the maximum number of cited passage IDs; the working-agreement audit counts; the length of the course commitment and the sprint range of the Stage 2 position. Team point totals were not used (the report states none). No rehearsal timing, slot length, demo result or participant feedback exists to quote.
 
+## Claims of the any-city chapter (section 11; RUN-092, 23 November 2026)
+
+| # | Claim (exact text as it appears) | Location (file + section) | Source (eval/, docs/test-reports/ path or CI run link) | Checked value |
+| --- | --- | --- | --- | --- |
+| A1 | "usable plans in 24/24 MOCK attempts and 24/24 rule-based attempts" | final-report.md §11 | `eval/results/20261123T171053Z-mock/scores.json`, `eval/results/20261123T171053Z-rule_based/scores.json`; `eval/reports/live-v1-2026-11-23.md` | `usable` true in 24 of 24 entries in each file |
+| A2 | "Every planned live place had an unknown price" | final-report.md §11 | `eval/reports/live-v1-2026-11-23.md` "Results" (unknown-price share) | "219 of 219" (MOCK), "216 of 216" (RULE_BASED) |
+| A3 | "two inventory or start-up-configuration authz tests failed beyond the four that A2 §3.4 names" | final-report.md §11 | `docs/test-reports/any-city-switch.md` "Result lines" | switch ON authz "2 failed, 84 passed, 14 skipped, 1 deselected, 1 warning in 25.23s" |
+
+"The four that A2 §3.4 names" counts the tests named in the amendment's own text (a specification reference, not a measured result).
+
 ## Review
 
 | Field | Value |

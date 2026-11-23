@@ -247,3 +247,36 @@ Found while writing this guide from the code at `f75aa94`. None was checked in a
 4. **Itinerary header.** The §7.9 wireframe shows the estimated total and budget percentage in the itinerary header and a day-tab row on desktop. The built page shows **Your itinerary** with **Regenerate all**; the totals are on **Costs**, and day tabs appear only below 768 px.
 5. **Two-pane breakpoint.** Specification §7.9 puts the itinerary in two panes from 1024 px. The built page uses the `xl` breakpoint (1280 px) for two panes; from 768 to 1279 px the map and plan checks sit above the plan.
 6. **Curated hours on the itinerary.** The item card shows "Hours" with the label only. The "checked on <date>" form of §7.8 appears in the place details on Explore.
+
+## 13. Any city (live data)
+
+This section applies only when the app is released with any-city mode switched on. When the mode is off, none of this appears.
+
+### 13.1 Find a city
+
+1. In **Create a trip → Details**, under the destination list, type a city name in **Any city (live data)** and press **Search** (or Enter). The app searches only when you submit; it does not search as you type.
+2. Pick one result (for example "Udaipur, Rajasthan, India · city"). The search line reads "Search by Nominatim · © OpenStreetMap contributors".
+3. The app builds the city and shows its state:
+   - "Building your city: finding places…" while places are fetched;
+   - "Ready: N places from OpenStreetMap" when the city can be planned. The destination field then shows the city with "(Live data)", and the budget currency is set to the city's currency;
+   - "We could not find enough places for {name} yet. Try {nearby city}, a larger city nearby." with a button that searches that city;
+   - "We could not reach the map data service. Try again in a few minutes." if the map service failed ("The service is busy." when it limited the app).
+4. You can choose must-visit places only once the city is ready.
+
+The hint under the field says: "Live data comes from OpenStreetMap and Wikivoyage. It is not checked by our team: opening hours and prices are unknown."
+
+### 13.2 Plans for a live city
+
+- **Explore**, **Itinerary** and **Costs** show a **Live data** label. Curated cities show **Curated**.
+- Places show an **OpenStreetMap** source badge, with **Price unknown** and **Hours unknown** in place of a price or opening hours.
+- The plan checks group the hours warnings into one line: "Opening hours unknown for N stops".
+- **Costs** says "Known costs only: N stops have no price", and the budget status "covers known costs only".
+- A **Data sources** footer names OpenStreetMap and each Wikivoyage or Wikipedia page used, with their licences.
+
+### 13.3 Limits of live data
+
+- Prices and opening hours are never known for live places. Check them before you travel.
+- Few live places say whether they are step-free. If you need step-free access, the form warns: "Few live places have step-free information; your list may be short."
+- Live places are not checked by the team. Names and descriptions come from OpenStreetMap, Wikivoyage and Wikipedia contributors.
+- A small town may not have enough places to plan; the app then suggests a larger city nearby.
+- The number of new cities per day is limited ("The daily limit for new cities is reached. Try again tomorrow."). Cities that are already built are not limited.
