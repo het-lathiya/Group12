@@ -18,6 +18,7 @@ MockScenario = Literal[
     "ok", "flawed", "timeout", "rate_limited", "quota", "invalid_json", "unknown_place"
 ]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+LiveDataProvider = Literal["FAKE", "LIVE"]
 
 # GEMINI_TIMEOUT_S x (GEMINI_MAX_RETRIES + 1) must fit the 70 s generation allowance (§8.4).
 GEMINI_TIME_ALLOWANCE_S = 70
@@ -85,12 +86,34 @@ class Settings(BaseSettings):
 
     # extension services
     weather_timeout_s: float = Field(default=8, gt=0)
+    # Amendment A2 §7.2 (PD-A2-3, IMD-216): also the User-Agent of every Nominatim, Overpass and
+    # MediaWiki request of any-city mode.
     wiki_user_agent: str = ""
+
+    # any-city live data (Amendment A2 §7.2; IMP-722). None is a secret: no key is needed.
+    live_data_provider: LiveDataProvider = "FAKE"
+    nominatim_base_url: str = "https://nominatim.openstreetmap.org"
+    overpass_base_url: str = "https://overpass-api.de/api/interpreter"
+    nominatim_timeout_s: float = Field(default=10, gt=0)
+    overpass_timeout_s: float = Field(default=90, gt=0)
+    mediawiki_timeout_s: float = Field(default=10, gt=0)
+    live_min_usable_places: int = Field(default=40, gt=0)
+    live_data_ttl_days: int = Field(default=30, gt=0)
+    live_daily_imports_per_user: int = Field(default=5, gt=0)
+    live_daily_imports_global: int = Field(default=50, gt=0)
 
     # Stage 2 placeholders (empty in Stage 1)
     finetuned_endpoint_url: str = ""
     finetuned_api_key: SecretStr = SecretStr("")
     finetuned_model_name: str = ""
+
+    @field_validator("nominatim_base_url", "overpass_base_url")
+    @classmethod
+    def _https_only(cls, value: str) -> str:
+        # A2 §7.2: the live-data base URLs are https only.
+        if not value.startswith("https://"):
+            raise ValueError("must start with https://")
+        return value.rstrip("/")
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
@@ -124,6 +147,13 @@ def get_settings() -> Settings:
 def _is_unset(value: str) -> bool:
     # A value that is empty or still the `<placeholder>` of `.env.example` is not configured.
     return not value.strip() or value.strip().startswith("<")
+
+
+def _any_city_mode_on(features_disabled: str) -> bool:
+    # The default-off token rule of app.core.flags (A2 §3.1), repeated here because flags imports
+    # this module: ON only with "!any_city_mode" listed and "any_city_mode" not listed.
+    names = {name.strip().lower() for name in features_disabled.split(",") if name.strip()}
+    return "!any_city_mode" in names and "any_city_mode" not in names
 
 
 def check_settings(settings: Settings, environ: Mapping[str, str]) -> list[str]:
@@ -162,6 +192,19 @@ def check_settings(settings: Settings, environ: Mapping[str, str]) -> list[str]:
                 "GEMINI_TIMEOUT_S x (GEMINI_MAX_RETRIES + 1) exceeds "
                 f"the {GEMINI_TIME_ALLOWANCE_S} s generation allowance"
             )
+
+    # Amendment A2 §7.2 (TC-462): any-city mode in a deployed environment needs the real
+    # providers, and real providers need an identifying User-Agent.
+    # The User-Agent rule holds wherever LIVE providers would be built (§7.2), so in staging and
+    # production too.
+    if _any_city_mode_on(settings.features_disabled):
+        if deployed and settings.live_data_provider == "FAKE":
+            problems.append(
+                "LIVE_DATA_PROVIDER: FAKE is refused in staging and production "
+                "when any_city_mode is on"
+            )
+        if settings.live_data_provider == "LIVE" and _is_unset(settings.wiki_user_agent):
+            problems.append("WIKI_USER_AGENT is empty or a placeholder (needed with LIVE)")
 
     if environ.get("GOOGLE_API_KEY"):
         warnings.append(

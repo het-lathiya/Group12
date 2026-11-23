@@ -22,12 +22,14 @@ from app.auth.router import router as auth_router
 from app.budget.router import router as budget_router
 from app.core.config import ConfigError, Settings, check_settings, get_settings
 from app.core.errors import register_error_handlers
+from app.core.flags import is_enabled
 from app.core.health import router as health_router
 from app.core.logging import configure_logging
 from app.core.request_id import REQUEST_ID_HEADER, RequestIdMiddleware
 from app.generation.jobs import reap_forever
 from app.generation.router import router as generation_router
 from app.itinerary.router import router as itinerary_router
+from app.places.live_router import router as live_places_router
 from app.places.router import router as places_router
 from app.schemas.common import ErrorEnvelope
 from app.trips.router import router as trips_router
@@ -42,10 +44,19 @@ CORS_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
 CORS_HEADERS = ["Authorization", "Content-Type", REQUEST_ID_HEADER]
 
 
+async def reap_live_imports_forever() -> None:
+    """Hook for the live import reaper (Amendment A2 §6.2), started only with any_city_mode ON.
+
+    The runner and its reaper are built by IMP-725; until then the hook returns at once.
+    """
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     for warning in check_settings(settings, os.environ):
         logger.warning(warning)
+    # A2 §3.3: with the switch OFF the any-city router is not mounted and no import reaper runs.
+    any_city_mode = is_enabled(settings, "any_city_mode")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -55,8 +66,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             logger.error("configuration error: %s", exc)
             raise
         reaper = asyncio.create_task(reap_forever())  # stale generation jobs (§6.4, IMP-210)
+        import_reaper = asyncio.create_task(reap_live_imports_forever()) if any_city_mode else None
         yield
         reaper.cancel()
+        if import_reaper is not None:
+            import_reaper.cancel()
 
     # /docs is enabled in local, test and staging; production serves no OpenAPI page (§6.1).
     docs_enabled = settings.app_env != "production"
@@ -95,6 +109,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     api_v1.include_router(itinerary_router)
     api_v1.include_router(validation_router)
     api_v1.include_router(budget_router)
+    if any_city_mode:
+        api_v1.include_router(live_places_router)  # API-76 to API-79 (A2 §5)
     app.include_router(api_v1)
     return app
 

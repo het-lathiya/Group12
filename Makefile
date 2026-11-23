@@ -153,19 +153,25 @@ e2e:
 # IMP-214: the OpenAPI contract and the AI JSON Schemas (gr-1, io-1) are generated into contracts/
 # and the web types from the contract; openapi-check regenerates all of it into a temporary
 # directory and fails when a committed file differs (IMD-06).
+# Amendment A2 §3.4 (IMP-722): the switch-ON contract openapi.any-city.v1.json and its web types
+# are generated and checked alongside the switch-OFF pair (four files in all).
 WEB_TYPES := $(WEB_DIR)/lib/api/schema.d.ts
+ANY_CITY_WEB_TYPES := $(WEB_DIR)/lib/api/any-city-schema.d.ts
 
 openapi:
 	@if $(API_READY); then cd $(API_DIR) && .venv/bin/python -m app.openapi_export --out $(CURDIR)/contracts; \
 	else echo "openapi: $(API_PENDING)"; exit 1; fi
 	cd $(WEB_DIR) && npx openapi-typescript $(CURDIR)/contracts/openapi.v1.json -o $(CURDIR)/$(WEB_TYPES)
+	cd $(WEB_DIR) && npx openapi-typescript $(CURDIR)/contracts/openapi.any-city.v1.json -o $(CURDIR)/$(ANY_CITY_WEB_TYPES)
 
 openapi-check:
 	@tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
 	cd $(API_DIR) && .venv/bin/python -m app.openapi_export --out "$$tmp/contracts" >/dev/null && \
 	cd $(CURDIR)/$(WEB_DIR) && npx openapi-typescript "$$tmp/contracts/openapi.v1.json" -o "$$tmp/schema.d.ts" >/dev/null 2>&1 && \
+	npx openapi-typescript "$$tmp/contracts/openapi.any-city.v1.json" -o "$$tmp/any-city-schema.d.ts" >/dev/null 2>&1 && \
 	cd $(CURDIR) && diff -r -u contracts "$$tmp/contracts" -x README.md && diff -u $(WEB_TYPES) "$$tmp/schema.d.ts" \
-	&& echo "openapi-check: contracts/ and $(WEB_TYPES) are up to date" \
+	&& diff -u $(ANY_CITY_WEB_TYPES) "$$tmp/any-city-schema.d.ts" \
+	&& echo "openapi-check: contracts/, $(WEB_TYPES) and $(ANY_CITY_WEB_TYPES) are up to date" \
 	|| { echo "openapi-check: stale contract; run make openapi and commit the result"; exit 1; }
 
 eval:
