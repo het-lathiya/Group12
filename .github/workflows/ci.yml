@@ -304,3 +304,6 @@ jobs:
       - run: make db-migrate
       - run: make test-api ARGS='-m any_city'
       - run: make test-unit ARGS='-m any_city'
+      # IMP-732, TC-489: the live-city evaluation dataset with MOCK (no key, no database).
+      - name: Live-city evaluation run (MOCK, trips/live-v1)
+        run: make eval PROVIDER=MOCK DATASET=trips/live-v1

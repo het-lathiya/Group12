@@ -1,0 +1,590 @@
+[
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-001",
+    "category": "standard",
+    "daily_travel_min": [
+      161,
+      152
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-001",
+    "category": "standard",
+    "daily_travel_min": [
+      161,
+      152
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-001",
+    "category": "standard",
+    "daily_travel_min": [
+      161,
+      152
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-002",
+    "category": "standard",
+    "daily_travel_min": [
+      164,
+      108,
+      256
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 1,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-002",
+    "category": "standard",
+    "daily_travel_min": [
+      164,
+      108,
+      256
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 1,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-002",
+    "category": "standard",
+    "daily_travel_min": [
+      164,
+      108,
+      256
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 1,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-003",
+    "category": "unknown_budget",
+    "daily_travel_min": [
+      161,
+      152
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-003",
+    "category": "unknown_budget",
+    "daily_travel_min": [
+      161,
+      152
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-003",
+    "category": "unknown_budget",
+    "daily_travel_min": [
+      161,
+      152
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-004",
+    "category": "no_budget",
+    "daily_travel_min": [
+      161,
+      152
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-004",
+    "category": "no_budget",
+    "daily_travel_min": [
+      161,
+      152
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-004",
+    "category": "no_budget",
+    "daily_travel_min": [
+      161,
+      152
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-005",
+    "category": "step_free_group",
+    "daily_travel_min": [
+      161,
+      72
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-005",
+    "category": "step_free_group",
+    "daily_travel_min": [
+      161,
+      72
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-005",
+    "category": "step_free_group",
+    "daily_travel_min": [
+      161,
+      72
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-006",
+    "category": "pace_extreme",
+    "daily_travel_min": [
+      117,
+      36
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 1,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-006",
+    "category": "pace_extreme",
+    "daily_travel_min": [
+      117,
+      36
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 1,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-006",
+    "category": "pace_extreme",
+    "daily_travel_min": [
+      117,
+      36
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 1,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-007",
+    "category": "long_trip",
+    "daily_travel_min": [
+      65,
+      76,
+      72,
+      86,
+      63
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 1,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-007",
+    "category": "long_trip",
+    "daily_travel_min": [
+      65,
+      76,
+      72,
+      86,
+      63
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 1,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-007",
+    "category": "long_trip",
+    "daily_travel_min": [
+      65,
+      76,
+      72,
+      86,
+      63
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 1,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-008",
+    "category": "hostile_names",
+    "daily_travel_min": [
+      161,
+      152
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 1,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-008",
+    "category": "hostile_names",
+    "daily_travel_min": [
+      161,
+      152
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 2,
+    "schema_valid": true,
+    "usable": true
+  },
+  {
+    "budget_status": "none",
+    "case_id": "trips-live-v1-008",
+    "category": "hostile_names",
+    "daily_travel_min": [
+      161,
+      152
+    ],
+    "duplicate_places": 0,
+    "error": null,
+    "findings": {
+      "COST_INCOMPLETE": 1
+    },
+    "input_tokens": null,
+    "invalid_ids": 0,
+    "latency_ms": 0,
+    "no_duplicate_places": true,
+    "output_tokens": null,
+    "place_ids_valid": true,
+    "rejected_items": 0,
+    "repeat": 3,
+    "schema_valid": true,
+    "usable": true
+  }
+]

@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-travel-planner:schema:eval-case-live-v1",
+  "title": "EvaluationCase",
+  "description": "One line of live-v1/cases.jsonl (IMP-732, Amendment A2 §12). request is a frozen gr-1 GenerationRequest for the SAMPLE live city 'Liveton (SAMPLE)': its places are the offline fake OpenStreetMap elements after normalise, with unknown prices (price_label 'unavailable') and hours ('hours unavailable'). Place and destination IDs are UUID v5 values under uuid5(NAMESPACE_URL, 'urn:ai-travel-planner:liveton'), named by external_ref or 'liveton'.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "version",
+    "category",
+    "tags",
+    "request",
+    "hard_constraints",
+    "expected_properties"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^trips-live-v1-[0-9]{3}$"
+    },
+    "version": {
+      "const": "live-v1"
+    },
+    "category": {
+      "enum": [
+        "standard",
+        "unknown_budget",
+        "no_budget",
+        "step_free_group",
+        "pace_extreme",
+        "long_trip",
+        "hostile_names"
+      ]
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "request": {
+      "type": "object"
+    },
+    "hard_constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "step_free_required",
+        "budget_amount",
+        "must_visit_place_ids",
+        "locked_place_ids",
+        "max_items_per_day",
+        "max_active_minutes_per_day"
+      ],
+      "properties": {
+        "step_free_required": {
+          "type": "boolean"
+        },
+        "budget_amount": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "must_visit_place_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "locked_place_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "max_items_per_day": {
+          "type": "integer"
+        },
+        "max_active_minutes_per_day": {
+          "type": "integer"
+        }
+      }
+    },
+    "expected_properties": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "usable_plan",
+        "conflicts",
+        "notes_change_nothing"
+      ],
+      "properties": {
+        "usable_plan": {
+          "type": "boolean"
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "place_id",
+              "external_ref",
+              "note"
+            ],
+            "properties": {
+              "place_id": {
+                "type": "string"
+              },
+              "external_ref": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "notes_change_nothing": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

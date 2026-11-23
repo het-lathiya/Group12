@@ -1,0 +1,20 @@
+{
+  "dataset_id": "trips",
+  "version": "live-v1",
+  "case_count": 8,
+  "category_counts": {
+    "standard": 2,
+    "unknown_budget": 1,
+    "no_budget": 1,
+    "step_free_group": 1,
+    "pace_extreme": 1,
+    "long_trip": 1,
+    "hostile_names": 1
+  },
+  "source": "SAMPLE fake OpenStreetMap elements of Liveton (SAMPLE) (app/livedata/providers/fake.py) through app/livedata/normalise.py; no real place, price or opening time",
+  "files": {
+    "cases.jsonl": "d2cd6dff68e06fa847a31a4f877e4cf96fa6e7c74a962a44cafc7250d2d237ef",
+    "schema.json": "7c192594f9fbf1ed15b2da5766fbd96ab9e3b5346146e0e5df8a8109b5efbf54"
+  },
+  "set_sha256": "29244d01cd536f2f9f674448769165c7c2cd54fb928b6f35f24225483d620077"
+}
