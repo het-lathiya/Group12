@@ -80,6 +80,8 @@ source_modules =
     app.generation.fallback_planner
     app.generation.grouping
     app.evaluation.retrieval_metrics
+    app.livedata.normalise
+    app.livedata.countries
 forbidden_modules =
     fastapi
     sqlalchemy
