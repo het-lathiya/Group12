@@ -1,5 +1,6 @@
 "use client";
 
+import { useLiveTier } from "@/components/labels/liveTier";
 import { SourceBadge } from "@/components/labels/SourceBadge";
 import { ErrorState } from "@/components/states/ErrorState";
 import { LoadingSkeleton } from "@/components/states/LoadingSkeleton";
@@ -35,9 +36,15 @@ const VERIFICATION: Record<PlaceOut["verification_status"], string> = {
 };
 
 function Hours({ place }: { place: PlaceOut }) {
+  const live = useLiveTier();
   // FR-018 AC2: without hours nothing is guessed: no time is shown.
   if (place.hours_label === "unavailable" || place.hours.length === 0) {
-    return <p>Hours unavailable</p>;
+    // Amendment A2 §9.2: a live place's missing hours read "Hours unknown".
+    return live ? (
+      <SourceBadge label="unavailable" kind="hours" live />
+    ) : (
+      <p>Hours unavailable</p>
+    );
   }
   return (
     <div className="flex flex-col gap-2">
@@ -66,9 +73,10 @@ function Hours({ place }: { place: PlaceOut }) {
 }
 
 function Price({ price }: { price: PlaceOut["price"] }) {
-  // A missing price is "Unavailable", never 0.
+  const live = useLiveTier();
+  // A missing price is "Unavailable" ("Price unknown" on a live place), never 0.
   if (!price || price.label === "unavailable") {
-    return <SourceBadge label="unavailable" />;
+    return <SourceBadge label="unavailable" live={live} />;
   }
   const amount =
     price.max === null || price.max === price.min

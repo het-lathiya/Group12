@@ -9,6 +9,7 @@ import { ItemSources } from "@/components/itinerary/ItemSources";
 import { MoveControls } from "@/components/itinerary/MoveControls";
 import { AiBadge } from "@/components/labels/AiBadge";
 import { SourceBadge } from "@/components/labels/SourceBadge";
+import { useLiveTier } from "@/components/labels/liveTier";
 import { Button } from "@/components/ui/button";
 import { describeError } from "@/lib/api/errors";
 import { editKey, useLockItem } from "@/lib/api/queries";
@@ -44,12 +45,12 @@ export function formatDuration(minutes: number): string {
   return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
 }
 
-function Cost({ cost }: { cost: Item["cost"] }) {
-  // §7.8: an unavailable price is never shown as a value.
+function Cost({ cost, live }: { cost: Item["cost"]; live: boolean }) {
+  // §7.8: an unavailable price is never shown as a value; on a live place it reads "Price unknown".
   if (!cost || cost.label === "unavailable") {
     return (
       <div className="ml-auto">
-        <SourceBadge label="unavailable" />
+        <SourceBadge label="unavailable" live={live} />
       </div>
     );
   }
@@ -90,6 +91,7 @@ export function ItineraryItemCard({
   edit?: ItemEditContext;
 }) {
   const leg = item.travel_from_previous;
+  const live = useLiveTier();
   return (
     <div className="grid grid-cols-[56px_minmax(0,1fr)]">
       {leg && (
@@ -118,7 +120,7 @@ export function ItineraryItemCard({
             <h3 className="min-w-0 text-base font-semibold text-card-foreground">
               {item.place.name}
             </h3>
-            <Cost cost={item.cost} />
+            <Cost cost={item.cost} live={live} />
           </div>
           <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <span className="tabular-nums">
@@ -137,8 +139,21 @@ export function ItineraryItemCard({
               {SLOT_LABELS[item.slot_type]}
             </span>
           </p>
-          <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-            Hours <SourceBadge label={item.place.hours_label} kind="hours" />
+          <p
+            className={`mt-2 flex ${live ? "flex-wrap " : ""}items-center gap-2 text-sm text-muted-foreground`}
+          >
+            Hours{" "}
+            <SourceBadge
+              label={item.place.hours_label}
+              kind="hours"
+              live={live}
+            />
+            {live && (
+              <>
+                <span aria-hidden="true">·</span>
+                Source <SourceBadge label="openstreetmap" />
+              </>
+            )}
           </p>
           {item.note && (
             <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-card-foreground">

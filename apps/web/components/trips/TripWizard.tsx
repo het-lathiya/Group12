@@ -322,6 +322,7 @@ function Wizard({
                     profile.data,
                   )}
                   onSave={savePreferenceFields}
+                  destinationId={trip?.destination_id}
                 />
               ) : (
                 loadingPreferences

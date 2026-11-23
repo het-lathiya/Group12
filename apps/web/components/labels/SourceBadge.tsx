@@ -1,9 +1,11 @@
 import type { components } from "@/lib/api/schema";
 import { formatDayDate } from "@/lib/format";
 
-type SourceLabel = components["schemas"]["SourceLabel"] | "traveller_input";
+type SourceLabel =
+  components["schemas"]["SourceLabel"] | "traveller_input" | "openstreetmap";
 
-// FR-076: source labels plus the traveller's own allowance inputs.
+// FR-076: source labels plus the traveller's own allowance inputs; "openstreetmap" marks a live
+// place's data source (Amendment A2 §9.2).
 const LOOK: Record<SourceLabel, { text: string; className: string }> = {
   curated: { text: "Curated", className: "bg-primary/10 text-primary" },
   estimate: { text: "Estimate", className: "bg-warning-soft text-warning" },
@@ -15,6 +17,13 @@ const LOOK: Record<SourceLabel, { text: string; className: string }> = {
     text: "Unavailable",
     className: "bg-muted text-muted-foreground",
   },
+  openstreetmap: { text: "OpenStreetMap", className: "bg-info-soft text-info" },
+};
+
+// Amendment A2 §9.2: on live places an unavailable value reads as unknown, never as a value.
+const UNKNOWN: Record<"price" | "hours", string> = {
+  price: "Price unknown",
+  hours: "Hours unknown",
 };
 
 export type SourceBadgeProps = {
@@ -23,6 +32,8 @@ export type SourceBadgeProps = {
   kind?: "price" | "hours";
   /** The date curated opening hours were checked (`hours_checked_on`). */
   checkedOn?: string | null;
+  /** True on a live (OpenStreetMap) place: "unavailable" reads "Price unknown" or "Hours unknown". */
+  live?: boolean;
 };
 
 /** The source of a price or an opening time, in words as well as colour (§7.8; guide §12). */
@@ -30,16 +41,22 @@ export function SourceBadge({
   label,
   kind = "price",
   checkedOn,
+  live = false,
 }: SourceBadgeProps) {
   // A value outside the contract (never expected) is shown as Unavailable, never as itself.
   const safe: SourceLabel = Object.hasOwn(LOOK, label) ? label : "unavailable";
   const { text, className } = LOOK[safe];
   const dated = safe === "curated" && kind === "hours" && checkedOn;
+  const unknown = live && safe === "unavailable";
   return (
     <span
       className={`inline-flex h-6 shrink-0 items-center rounded-xl px-2 text-xs font-medium ${className}`}
     >
-      {dated ? `${text}, checked on ${formatDayDate(checkedOn)}` : text}
+      {unknown
+        ? UNKNOWN[kind]
+        : dated
+          ? `${text}, checked on ${formatDayDate(checkedOn)}`
+          : text}
     </span>
   );
 }

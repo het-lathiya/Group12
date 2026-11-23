@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { AppShell } from "@/components/shell/AppShell";
 import { Button } from "@/components/ui/button";
+import { isEnabled } from "@/lib/flags";
 
 const POINTS = [
   {
@@ -40,9 +41,11 @@ export default function LandingPage() {
           </Button>
         </div>
         <p className="max-w-2xl rounded-lg border bg-muted px-4 py-3 text-sm text-foreground">
-          Plans are drafts built from curated sample data. Prices, opening hours
-          and travel times are estimates and are labelled as such; check them
-          before you travel.
+          {isEnabled("any_city_mode")
+            ? "Plans are drafts built from curated or live open data."
+            : "Plans are drafts built from curated sample data."}{" "}
+          Prices, opening hours and travel times are estimates and are labelled
+          as such; check them before you travel.
         </p>
       </section>
 

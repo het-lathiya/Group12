@@ -2,6 +2,7 @@ import { Bookmark, BookmarkCheck } from "lucide-react";
 
 import { formatDuration } from "@/components/itinerary/ItineraryItemCard";
 import { SourceBadge } from "@/components/labels/SourceBadge";
+import { useLiveTier } from "@/components/labels/liveTier";
 import type { components } from "@/lib/api/schema";
 
 type Schemas = components["schemas"];
@@ -28,10 +29,10 @@ const VERIFICATION_LABELS: Record<Schemas["VerificationStatus"], string> = {
   estimated: "Estimated",
 };
 
-function Price({ price }: { price: Place["price"] }) {
-  // §7.8: an unavailable price is never shown as a value.
+function Price({ price, live }: { price: Place["price"]; live: boolean }) {
+  // §7.8: an unavailable price is never shown as a value; on a live place it reads "Price unknown".
   if (!price || price.label === "unavailable") {
-    return <SourceBadge label="unavailable" />;
+    return <SourceBadge label="unavailable" live={live} />;
   }
   const amount =
     price.max === null || price.max === price.min
@@ -63,6 +64,7 @@ export function PlaceCard({
   saveDisabled = false,
 }: PlaceCardProps) {
   const SaveIcon = saved ? BookmarkCheck : Bookmark;
+  const live = useLiveTier();
   return (
     <article className="flex flex-col gap-3 rounded-xl border bg-card p-4 text-card-foreground shadow-xs">
       <header className="flex items-start justify-between gap-3">
@@ -106,11 +108,11 @@ export function PlaceCard({
       <dl className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 text-sm">
         <dt className="text-muted-foreground">Price</dt>
         <dd>
-          <Price price={place.price} />
+          <Price price={place.price} live={live} />
         </dd>
         <dt className="text-muted-foreground">Hours</dt>
         <dd>
-          <SourceBadge label={place.hours_label} kind="hours" />
+          <SourceBadge label={place.hours_label} kind="hours" live={live} />
         </dd>
         <dt className="text-muted-foreground">Verification</dt>
         <dd>
@@ -118,7 +120,13 @@ export function PlaceCard({
             VERIFICATION_LABELS.unverified}
         </dd>
         <dt className="text-muted-foreground">Source</dt>
-        <dd className="break-words">{place.source_name ?? "Not stated"}</dd>
+        <dd className="break-words">
+          {live ? (
+            <SourceBadge label="openstreetmap" />
+          ) : (
+            (place.source_name ?? "Not stated")
+          )}
+        </dd>
       </dl>
     </article>
   );

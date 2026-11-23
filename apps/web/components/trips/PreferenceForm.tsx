@@ -1,8 +1,10 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { AlertTriangle } from "lucide-react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
+import { useDestinationTier } from "@/components/labels/TierBadge";
 import { ChipMultiSelect } from "@/components/trips/ChipMultiSelect";
 import {
   CONTROL_CLASS,
@@ -56,10 +58,13 @@ export function PreferenceForm({
   formId,
   preferences,
   onSave,
+  destinationId,
 }: {
   formId: string;
   preferences: PreferencesOut;
   onSave: (values: PreferencesValues) => Promise<ErrorDetail[]>;
+  /** The trip's destination; with `any_city_mode` ON a live one adds the step-free warning. */
+  destinationId?: string;
 }) {
   const {
     register,
@@ -81,6 +86,8 @@ export function PreferenceForm({
   });
   const effects = effectsOf(preferences);
   const notesLength = useWatch({ control, name: "notes" }).length;
+  const stepFree = useWatch({ control, name: "step_free_required" });
+  const { live } = useDestinationTier(destinationId);
 
   async function submit(values: PreferencesValues) {
     for (const { field, message } of fieldErrors(
@@ -222,6 +229,18 @@ export function PreferenceForm({
           <EffectBadge effect={effects.step_free_required} />
         )}
       </div>
+      {live && stepFree && (
+        <p
+          role="status"
+          className="-mt-6 flex items-start gap-2 text-sm text-warning"
+        >
+          <AlertTriangle
+            aria-hidden="true"
+            className="mt-0.5 size-4 shrink-0"
+          />
+          Few live places have step-free information; your list may be short
+        </p>
+      )}
 
       <Field
         id="notes"

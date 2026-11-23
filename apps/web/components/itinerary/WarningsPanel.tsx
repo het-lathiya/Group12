@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+import { useLiveTier } from "@/components/labels/liveTier";
 import { Button } from "@/components/ui/button";
 import type { components } from "@/lib/api/schema";
 
@@ -59,6 +60,26 @@ export function countLabel(findings: Finding[]): string {
     .join(" · ");
 }
 
+/**
+ * Amendment A2 §6.6, §9.2: on a live destination every stop carries HOURS_UNVERIFIED, so those rows
+ * become one whole-trip line, "Opening hours unknown for N stops". The severity stays info.
+ */
+export function groupLiveHours(findings: Finding[]): Finding[] {
+  const hours = findings.filter((f) => f.code === "HOURS_UNVERIFIED");
+  if (hours.length === 0) return findings;
+  const grouped: Finding = {
+    id: "hours-unverified-group",
+    code: "HOURS_UNVERIFIED",
+    severity: "info",
+    day_number: null,
+    item_id: null,
+    place_id: null,
+    message: `Opening hours unknown for ${hours.length} ${hours.length === 1 ? "stop" : "stops"}`,
+    suggested_fix: null,
+  };
+  return [...findings.filter((f) => f.code !== "HOURS_UNVERIFIED"), grouped];
+}
+
 function byDay(findings: Finding[]): [number | null, Finding[]][] {
   const groups = new Map<number | null, Finding[]>();
   for (const finding of findings) {
@@ -99,10 +120,12 @@ export type WarningsPanelProps = {
  * a polite live region.
  */
 export function WarningsPanel({
-  findings,
+  findings: allFindings,
   placeNames = {},
   onGoToItem,
 }: WarningsPanelProps) {
+  const live = useLiveTier();
+  const findings = live ? groupLiveHours(allFindings) : allFindings;
   const onlyInfo = findings.every((f) => f.severity === "info");
   const [open, setOpen] = useState(!onlyInfo);
   const counts = countLabel(findings);

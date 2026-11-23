@@ -16,6 +16,9 @@ import { MoveDndContext } from "@/components/itinerary/MoveControls";
 import { PlacePicker } from "@/components/itinerary/PlacePicker";
 import { StalePlanBanner } from "@/components/itinerary/StalePlanBanner";
 import { WarningsPanel } from "@/components/itinerary/WarningsPanel";
+import { LiveAttribution } from "@/components/labels/LiveAttribution";
+import { LiveTierProvider } from "@/components/labels/liveTier";
+import { TierBadge, useDestinationTier } from "@/components/labels/TierBadge";
 import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
 import { Button } from "@/components/ui/button";
@@ -236,6 +239,8 @@ export default function ItineraryPage() {
   const noPlan =
     itinerary.error instanceof ApiError && itinerary.error.status === 404;
   const trip = useTrip(tripId, true);
+  // Amendment A2 §9.2: API-79 runs only with `any_city_mode` ON.
+  const tier = useDestinationTier(trip.data?.destination_id);
   const failed = noPlan ? trip : itinerary;
   const preferences = usePreferences(itinerary.data ? tripId : undefined);
   const placeNames = Object.fromEntries(
@@ -304,128 +309,150 @@ export default function ItineraryPage() {
   const tripNotFound = error instanceof ApiError && error.status === 404;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6 lg:gap-8">
-      <h1 className="font-heading text-2xl font-semibold tracking-[-0.01em] sm:text-3xl">
-        Your itinerary
-      </h1>
-      {regenerationEnabled && itinerary.data && (
-        <>
-          <Button
-            variant="outline"
-            className="min-h-touch self-start"
-            disabled={regenerationBusy}
-            aria-busy={regenerationBusy}
-            onClick={() => setConfirmAll(true)}
-          >
-            {regenerationBusy ? (
-              <Loader2
-                aria-hidden="true"
-                className="motion-safe:animate-spin"
-              />
-            ) : (
-              <RotateCw aria-hidden="true" />
-            )}
-            Regenerate all
-          </Button>
-          <ConfirmDialog
-            open={confirmAll}
-            onOpenChange={setConfirmAll}
-            title="Regenerate the whole itinerary?"
-            description={
-              isEnabled("versions")
-                ? "Unlocked items will be rebuilt around your locked items. Your current plan is kept in Versions."
-                : "Unlocked items will be rebuilt around your locked items. A backup of your current plan is kept."
-            }
-            confirmLabel="Regenerate all"
-            onConfirm={() => void startRegeneration()}
-          />
-        </>
-      )}
-      {needsNotice && (
-        <PrivacyNotice
-          onAcknowledge={() => {
-            setNeedsNotice(false);
-            void startRegeneration(targetDay);
-          }}
-        />
-      )}
-      {startError && (
-        <ErrorState
-          title="Regeneration could not start"
-          error={
-            startError instanceof ApiError
-              ? startError
-              : { message: OFFLINE_MESSAGE }
-          }
-          onRetry={() => void startRegeneration(targetDay)}
-        />
-      )}
-      {startError instanceof ApiError &&
-        startError.code === "AI_QUOTA_REACHED" && (
-          <Button
-            variant="outline"
-            disabled={regenerationBusy}
-            onClick={() => void startRegeneration(targetDay, "rule_based")}
-          >
-            Build a rule-based plan
-          </Button>
-        )}
-      {generationId && (
-        <GenerationProgress
-          key={generationId}
-          generationId={generationId}
-          onRetry={() => void startRegeneration(targetDay)}
-          onRuleBased={() => void startRegeneration(targetDay, "rule_based")}
-          retrying={regenerate.isPending}
-          onComplete={completed}
-        />
-      )}
-      {regenerated && (
-        <p role="status" aria-live="polite">
-          Regeneration complete.
-        </p>
-      )}
-      {itinerary.data && (
-        <StalePlanBanner
-          tripId={tripId}
-          planStale={itinerary.data.plan_stale}
-        />
-      )}
-      {itinerary.isPending || (noPlan && trip.isPending) ? (
-        <DaySkeleton />
-      ) : tripNotFound ? (
-        <EmptyState
-          title="Trip not found"
-          description="This trip does not exist or is not available to you."
-          action={
-            <Button asChild>
-              <Link href="/dashboard">Back to dashboard</Link>
+    <LiveTierProvider value={tier.live}>
+      <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6 lg:gap-8">
+        <h1 className="font-heading text-2xl font-semibold tracking-[-0.01em] sm:text-3xl">
+          Your itinerary
+        </h1>
+        <TierBadge tier={tier.tier} isSample={tier.isSample} />
+        {regenerationEnabled && itinerary.data && (
+          <>
+            <Button
+              variant="outline"
+              className="min-h-touch self-start"
+              disabled={regenerationBusy}
+              aria-busy={regenerationBusy}
+              onClick={() => setConfirmAll(true)}
+            >
+              {regenerationBusy ? (
+                <Loader2
+                  aria-hidden="true"
+                  className="motion-safe:animate-spin"
+                />
+              ) : (
+                <RotateCw aria-hidden="true" />
+              )}
+              Regenerate all
             </Button>
-          }
-        />
-      ) : error ? (
-        <ErrorState
-          title="Your itinerary could not be loaded"
-          error={
-            error instanceof ApiError
-              ? error
-              : {
-                  message:
-                    "The server could not be reached. Check your connection and try again.",
-                }
-          }
-          onRetry={() => void failed.refetch()}
-        />
-      ) : noPlan || itinerary.data?.days.every((d) => !d.items.length) ? (
-        <EmptyState
-          title="Nothing planned yet"
-          description="Generate a day-by-day plan for this trip."
-          action={
-            <div className="flex flex-wrap gap-3">
+            <ConfirmDialog
+              open={confirmAll}
+              onOpenChange={setConfirmAll}
+              title="Regenerate the whole itinerary?"
+              description={
+                isEnabled("versions")
+                  ? "Unlocked items will be rebuilt around your locked items. Your current plan is kept in Versions."
+                  : "Unlocked items will be rebuilt around your locked items. A backup of your current plan is kept."
+              }
+              confirmLabel="Regenerate all"
+              onConfirm={() => void startRegeneration()}
+            />
+          </>
+        )}
+        {needsNotice && (
+          <PrivacyNotice
+            onAcknowledge={() => {
+              setNeedsNotice(false);
+              void startRegeneration(targetDay);
+            }}
+          />
+        )}
+        {startError && (
+          <ErrorState
+            title="Regeneration could not start"
+            error={
+              startError instanceof ApiError
+                ? startError
+                : { message: OFFLINE_MESSAGE }
+            }
+            onRetry={() => void startRegeneration(targetDay)}
+          />
+        )}
+        {startError instanceof ApiError &&
+          startError.code === "AI_QUOTA_REACHED" && (
+            <Button
+              variant="outline"
+              disabled={regenerationBusy}
+              onClick={() => void startRegeneration(targetDay, "rule_based")}
+            >
+              Build a rule-based plan
+            </Button>
+          )}
+        {generationId && (
+          <GenerationProgress
+            key={generationId}
+            generationId={generationId}
+            onRetry={() => void startRegeneration(targetDay)}
+            onRuleBased={() => void startRegeneration(targetDay, "rule_based")}
+            retrying={regenerate.isPending}
+            onComplete={completed}
+          />
+        )}
+        {regenerated && (
+          <p role="status" aria-live="polite">
+            Regeneration complete.
+          </p>
+        )}
+        {itinerary.data && (
+          <StalePlanBanner
+            tripId={tripId}
+            planStale={itinerary.data.plan_stale}
+          />
+        )}
+        {itinerary.isPending || (noPlan && trip.isPending) ? (
+          <DaySkeleton />
+        ) : tripNotFound ? (
+          <EmptyState
+            title="Trip not found"
+            description="This trip does not exist or is not available to you."
+            action={
               <Button asChild>
-                <Link href={`/trips/${tripId}/generate`}>Generate</Link>
+                <Link href="/dashboard">Back to dashboard</Link>
               </Button>
-              {itinerary.data && trip.data && (
+            }
+          />
+        ) : error ? (
+          <ErrorState
+            title="Your itinerary could not be loaded"
+            error={
+              error instanceof ApiError
+                ? error
+                : {
+                    message:
+                      "The server could not be reached. Check your connection and try again.",
+                  }
+            }
+            onRetry={() => void failed.refetch()}
+          />
+        ) : noPlan || itinerary.data?.days.every((d) => !d.items.length) ? (
+          <EmptyState
+            title="Nothing planned yet"
+            description="Generate a day-by-day plan for this trip."
+            action={
+              <div className="flex flex-wrap gap-3">
+                <Button asChild>
+                  <Link href={`/trips/${tripId}/generate`}>Generate</Link>
+                </Button>
+                {itinerary.data && trip.data && (
+                  <PlacePicker
+                    tripId={tripId}
+                    destinationId={trip.data.destination_id}
+                    planRevision={itinerary.data.plan_revision}
+                    dayNumbers={Array.from(
+                      { length: trip.data.num_days },
+                      (_, i) => i + 1,
+                    )}
+                  />
+                )}
+              </div>
+            }
+          />
+        ) : (
+          itinerary.data && (
+            <>
+              {itinerary.data.source && (
+                <FallbackNotice outcome={itinerary.data.source.outcome} />
+              )}
+              {trip.data && !regenerationBusy && (
                 <PlacePicker
                   tripId={tripId}
                   destinationId={trip.data.destination_id}
@@ -436,76 +463,58 @@ export default function ItineraryPage() {
                   )}
                 />
               )}
-            </div>
-          }
-        />
-      ) : (
-        itinerary.data && (
-          <>
-            {itinerary.data.source && (
-              <FallbackNotice outcome={itinerary.data.source.outcome} />
-            )}
-            {trip.data && !regenerationBusy && (
-              <PlacePicker
-                tripId={tripId}
-                destinationId={trip.data.destination_id}
-                planRevision={itinerary.data.plan_revision}
-                dayNumbers={Array.from(
-                  { length: trip.data.num_days },
-                  (_, i) => i + 1,
-                )}
-              />
-            )}
-            <div className="flex flex-col gap-6 xl:grid xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start xl:gap-8">
-              <div className="flex flex-col gap-6 xl:sticky xl:top-24 xl:order-2">
-                {tabletUp && mapDay && (
-                  <section aria-labelledby="map-heading">
-                    <h2
-                      id="map-heading"
-                      className="mb-3 text-base font-semibold"
-                    >
-                      Map · Day {mapDay.day_number}
-                    </h2>
-                    {map}
-                  </section>
-                )}
-                <WarningsPanel
-                  findings={itinerary.data.findings}
-                  placeNames={placeNames}
-                  onGoToItem={goToItem}
-                />
+              <div className="flex flex-col gap-6 xl:grid xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start xl:gap-8">
+                <div className="flex flex-col gap-6 xl:sticky xl:top-24 xl:order-2">
+                  {tabletUp && mapDay && (
+                    <section aria-labelledby="map-heading">
+                      <h2
+                        id="map-heading"
+                        className="mb-3 text-base font-semibold"
+                      >
+                        Map · Day {mapDay.day_number}
+                      </h2>
+                      {map}
+                    </section>
+                  )}
+                  <WarningsPanel
+                    findings={itinerary.data.findings}
+                    placeNames={placeNames}
+                    onGoToItem={goToItem}
+                  />
+                </div>
+                <div
+                  className="min-w-0 xl:order-1"
+                  onFocus={(event) => selectCard(event.target)}
+                  onClick={(event) => selectCard(event.target)}
+                >
+                  {tabletUp ? (
+                    daysView
+                  ) : (
+                    <Tabs value={view} onValueChange={setView}>
+                      <TabsList aria-label="Itinerary view">
+                        <TabsTrigger value="list">List</TabsTrigger>
+                        <TabsTrigger value="map">Map</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="list">{daysView}</TabsContent>
+                      <TabsContent value="map">
+                        {mapDay && (
+                          <>
+                            <h2 className="mb-3 text-base font-semibold">
+                              Map · Day {mapDay.day_number}
+                            </h2>
+                            {map}
+                          </>
+                        )}
+                      </TabsContent>
+                    </Tabs>
+                  )}
+                </div>
               </div>
-              <div
-                className="min-w-0 xl:order-1"
-                onFocus={(event) => selectCard(event.target)}
-                onClick={(event) => selectCard(event.target)}
-              >
-                {tabletUp ? (
-                  daysView
-                ) : (
-                  <Tabs value={view} onValueChange={setView}>
-                    <TabsList aria-label="Itinerary view">
-                      <TabsTrigger value="list">List</TabsTrigger>
-                      <TabsTrigger value="map">Map</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="list">{daysView}</TabsContent>
-                    <TabsContent value="map">
-                      {mapDay && (
-                        <>
-                          <h2 className="mb-3 text-base font-semibold">
-                            Map · Day {mapDay.day_number}
-                          </h2>
-                          {map}
-                        </>
-                      )}
-                    </TabsContent>
-                  </Tabs>
-                )}
-              </div>
-            </div>
-          </>
-        )
-      )}
-    </div>
+            </>
+          )
+        )}
+        <LiveAttribution tier={tier.tier} attribution={tier.attribution} />
+      </div>
+    </LiveTierProvider>
   );
 }
