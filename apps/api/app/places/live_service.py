@@ -16,7 +16,7 @@ import re
 import time
 import unicodedata
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -65,6 +65,7 @@ NOT_A_SETTLEMENT: Final = "Choose a city, town or village"
 COUNTRY_NOT_SUPPORTED: Final = "This country is not supported yet"
 GEOCODER_UNAVAILABLE: Final = "City search is not available right now. Try again in a few minutes."
 DAILY_CAP_REACHED: Final = "The daily limit for new cities is reached. Try again tomorrow."
+GUIDE_SOURCES: Final = frozenset({"Wikivoyage", "Wikipedia"})  # A2 §6.5 live guide sources
 
 ImportSubmitter = Callable[[UUID], None]
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
@@ -272,24 +273,56 @@ async def destination_detail(session: AsyncSession, destination_id: UUID) -> Des
     if row is None or (not row.is_active and row.data_tier != "live"):
         raise NotFound()
     sources = await repository.destination_sources(session, row.id)
+    attribution = [
+        Attribution(
+            source_name=source.name,
+            licence=source.licence,
+            attribution_text=source.attribution_text,
+            url=source.url,
+        )
+        for source in sources
+        if row.data_tier != "live" or source.name not in GUIDE_SOURCES
+    ]
+    if row.data_tier == "live":
+        attribution += guide_page_attribution(await repository.live_guide_pages(session, row.id))
     item = Destination.from_row(row)
     return DestinationDetailOut.model_validate(
         {
             **item.model_dump(),
             "data_tier": _tier(row),
             "imported_at": row.imported_at,
-            "attribution": [
-                Attribution(
-                    source_name=source.name,
-                    licence=source.licence,
-                    attribution_text=source.attribution_text,
-                    url=source.url,
-                )
-                for source in sources
-            ],
+            "attribution": attribution,
             "import": _import_state(row) if row.data_tier == "live" else None,
         }
     )
+
+
+def guide_page_attribution(
+    pages: Sequence[tuple[str, str, str, str | None]],
+) -> list[Attribution]:
+    """One A2 §9.3 entry per live guide page, from the stored guide documents (no migration).
+
+    A live guide document's title is "<Source>: <page title> — <section>" (IMP-726), so the page
+    title is the text between the source prefix and the last " — "; documents of one page share
+    its URL and give one entry.
+    """
+    entries: dict[tuple[str, str], Attribution] = {}
+    for source_name, licence, title, url in pages:
+        if source_name not in GUIDE_SOURCES:
+            continue
+        page = title.removeprefix(f"{source_name}: ").rsplit(" — ", 1)[0].strip()
+        key = (source_name, url or page)
+        if page and key not in entries:
+            entries[key] = Attribution(
+                source_name=source_name,
+                licence=licence,
+                attribution_text=(
+                    f"Guide text from {source_name} ({page}), by its contributors, under "
+                    f"{licence}; excerpts, some sections left out"
+                ),
+                url=url,
+            )
+    return list(entries.values())
 
 
 def live_destination_out(row: DestinationRow) -> LiveDestinationOut:

@@ -123,6 +123,24 @@ async def destination_sources(session: AsyncSession, destination_id: UUID) -> li
     return list((await session.scalars(query)).all())
 
 
+async def live_guide_pages(
+    session: AsyncSession, destination_id: UUID
+) -> list[tuple[str, str, str, str | None]]:
+    """(source name, licence, document title, page URL) of the destination's active guide
+    documents, in title order (API-79 per-page attribution, A2 §9.3). Read only."""
+    query = (
+        select(DataSource.name, DataSource.licence, RagDocument.title, RagDocument.url)
+        .join(DataSource, DataSource.id == RagDocument.source_id)
+        .where(
+            RagDocument.destination_id == destination_id,
+            RagDocument.kind == "guide",
+            RagDocument.is_active.is_(True),
+        )
+        .order_by(DataSource.name, RagDocument.title, RagDocument.url)
+    )
+    return [(row[0], row[1], row[2], row[3]) for row in await session.execute(query)]
+
+
 def _escape_like(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 

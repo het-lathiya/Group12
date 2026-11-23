@@ -23,7 +23,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import deps
-from app.db.models import DataSource, Destination, Place
+from app.db.models import DataSource, Destination, Place, RagDocument
 from app.livedata.factory import get_geocoder
 from app.livedata.providers.base import BBox, GeoCandidate, GeoPlace, LiveDataUnavailable
 from app.livedata.providers.fake import FakeGeocoder
@@ -462,6 +462,159 @@ async def test_tc_476_destination_detail_for_curated_and_live(
             "Open Database Licence (ODbL)",
             "url": "https://www.openstreetmap.org/copyright",
         }
+    ]
+
+
+def _guide_document(
+    destination_id: uuid.UUID, source_id: uuid.UUID, key: str, title: str, url: str, active: bool
+) -> RagDocument:
+    return RagDocument(
+        destination_id=destination_id,
+        kind="guide",
+        source_id=source_id,
+        doc_key=f"guide:live-liveton-sample-r9000001/{key}",
+        title=title,
+        url=url,
+        retrieved_on=date(2026, 11, 23),
+        content_sha256="0" * 64,
+        is_active=active,
+    )
+
+
+@pytest.mark.asyncio
+async def test_tc_476_live_detail_attributes_each_guide_page(
+    live: Live, auth_user: AuthUser, db_session: AsyncSession
+) -> None:
+    """A2 §9.3: one Wikivoyage or Wikipedia entry per active guide page, with its page title."""
+    destination_id = uuid.UUID((await _resolve(live, auth_user)).json()["destination_id"])
+    osm = DataSource(
+        name="OpenStreetMap",
+        source_type="osm_import",
+        licence="ODbL 1.0",
+        attribution_text="Place data © OpenStreetMap contributors, available under the Open "
+        "Database Licence (ODbL)",
+        url="https://www.openstreetmap.org/copyright",
+    )
+    voyage = DataSource(
+        name="Wikivoyage",
+        source_type="other",
+        licence="CC BY-SA 4.0",
+        attribution_text="Guide text from Wikivoyage, by its contributors, under CC BY-SA 4.0; "
+        "excerpts, some sections left out",
+        url="https://en.wikivoyage.org/",
+    )
+    pedia = DataSource(
+        name="Wikipedia",
+        source_type="other",
+        licence="CC BY-SA 4.0",
+        attribution_text="Guide text from Wikipedia, by its contributors, under CC BY-SA 4.0; "
+        "excerpts, some sections left out",
+        url="https://en.wikipedia.org/",
+    )
+    db_session.add_all([osm, voyage, pedia])
+    await db_session.flush()
+    db_session.add(
+        Place(
+            destination_id=destination_id,
+            source_id=osm.id,
+            external_ref=f"{LIVETON}:n1",
+            name="Sample Museum (SAMPLE)",
+            category="museum",
+            tags=["history", "indoor"],
+            lat=Decimal("23.500000"),
+            lon=Decimal("77.500000"),
+            typical_duration_min=90,
+            price_label="unavailable",
+            hours_label="unavailable",
+            verification_status="imported_osm",
+        )
+    )
+    voyage_url = "https://en.wikivoyage.org/wiki/Liveton_(SAMPLE)"
+    pedia_url = "https://en.wikipedia.org/wiki/Liveton_(SAMPLE)"
+    db_session.add_all(
+        [
+            _guide_document(
+                destination_id,
+                voyage.id,
+                "wikivoyage-1-1",
+                "Wikivoyage: Liveton (SAMPLE) — Understand",
+                voyage_url,
+                True,
+            ),
+            _guide_document(
+                destination_id,
+                voyage.id,
+                "wikivoyage-1-2",
+                "Wikivoyage: Liveton (SAMPLE) — See",
+                voyage_url,
+                True,
+            ),
+            _guide_document(
+                destination_id,
+                pedia.id,
+                "wikipedia-2-1",
+                "Wikipedia: Liveton (SAMPLE) — History",
+                pedia_url,
+                True,
+            ),
+            _guide_document(
+                destination_id,
+                voyage.id,
+                "wikivoyage-3-1",
+                "Wikivoyage: Old Liveton (SAMPLE) — Understand",
+                "https://en.wikivoyage.org/wiki/Old_Liveton_(SAMPLE)",
+                False,
+            ),
+        ]
+    )
+    await _complete(db_session, destination_id)
+    await db_session.flush()
+
+    response = await live.client.get(
+        f"{V1}/destinations/{destination_id}", headers=auth_user.headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["attribution"] == [
+        {
+            "source_name": "OpenStreetMap",
+            "licence": "ODbL 1.0",
+            "attribution_text": "Place data © OpenStreetMap contributors, available under the "
+            "Open Database Licence (ODbL)",
+            "url": "https://www.openstreetmap.org/copyright",
+        },
+        {
+            "source_name": "Wikipedia",
+            "licence": "CC BY-SA 4.0",
+            "attribution_text": "Guide text from Wikipedia (Liveton (SAMPLE)), by its "
+            "contributors, under CC BY-SA 4.0; excerpts, some sections left out",
+            "url": pedia_url,
+        },
+        {
+            "source_name": "Wikivoyage",
+            "licence": "CC BY-SA 4.0",
+            "attribution_text": "Guide text from Wikivoyage (Liveton (SAMPLE)), by its "
+            "contributors, under CC BY-SA 4.0; excerpts, some sections left out",
+            "url": voyage_url,
+        },
+    ]
+
+
+def test_tc_476_guide_page_attribution_reads_the_page_title_and_skips_other_sources() -> None:
+    entries = live_service.guide_page_attribution(
+        [
+            ("Wikivoyage", "CC BY-SA 4.0", "Wikivoyage: A — B — See", "https://x.test/a"),
+            ("Wikivoyage", "CC BY-SA 4.0", "Wikivoyage: A — B — Do", "https://x.test/a"),
+            ("Team guides", "CC BY 4.0", "Walking", "https://x.test/w"),
+        ]
+    )
+    assert [(e.source_name, e.attribution_text, e.url) for e in entries] == [
+        (
+            "Wikivoyage",
+            "Guide text from Wikivoyage (A — B), by its contributors, under CC BY-SA 4.0; "
+            "excerpts, some sections left out",
+            "https://x.test/a",
+        )
     ]
 
 
