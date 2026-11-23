@@ -141,3 +141,42 @@ Staging is off between planned staging windows, to keep the AWS bill down. Kirta
 `aws cloudwatch describe-alarms --alarm-name-prefix default/group12- --query 'MetricAlarms[].{name:AlarmName,state:StateValue,threshold:Threshold,operator:ComparisonOperator,periods:EvaluationPeriods,datapoints:DatapointsToAlarm}' --output table`
 
 Run it with `--query 'MetricAlarms[].Metrics'` instead to see the metrics the alarm adds up. Where the alarm is configured, and how to change it, is to be confirmed by Kirtan in the next staging window.
+
+## 10. Any-city mode addendum (Amendment A2 §7.2; IMP-733)
+
+Any-city mode is OFF by default, and its routes answer 404 then. Turning it on for staging or production is a configuration change, set by Kirtan as the AWS account owner. This addendum documents it; no `infra/` template or workflow is changed by it.
+
+**Switch.**
+
+- The token `!any_city_mode` goes into the repository variable `STAGING_FEATURES_DISABLED`, comma-separated with any cut-list names already there.
+- That one variable reaches both sides:
+  - the API, as `FEATURES_DISABLED` (`infra/aws/services/api.staging.json.tmpl`);
+  - the web build argument `NEXT_PUBLIC_FEATURES_DISABLED` (`deploy-staging.yml`).
+  Both must carry the token, so a redeploy rebuilds the web image.
+- An explicit `any_city_mode` in the list wins and keeps the mode OFF (A2 §3.1).
+
+**Variables (plain task-definition environment; none is a secret, IMD-102).**
+
+| Name | Default | Staging value with the switch ON |
+| --- | --- | --- |
+| `LIVE_DATA_PROVIDER` | `FAKE` | `LIVE` (start-up refuses `FAKE` in staging and production with the switch ON) |
+| `WIKI_USER_AGENT` | empty | "<to be set by Kirtan: app name + team contact>", for example `AITravelPlanner/1.0 (contact: <team address>)`; required with `LIVE`, never a placeholder |
+| `NOMINATIM_BASE_URL` | `https://nominatim.openstreetmap.org` | default (`https://` only) |
+| `OVERPASS_BASE_URL` | `https://overpass-api.de/api/interpreter` | default (`https://` only) |
+| `NOMINATIM_TIMEOUT_S` | 10 | default |
+| `OVERPASS_TIMEOUT_S` | 90 | default |
+| `MEDIAWIKI_TIMEOUT_S` | 10 | default |
+| `LIVE_MIN_USABLE_PLACES` | 40 | default |
+| `LIVE_DATA_TTL_DAYS` | 30 | default |
+| `LIVE_DAILY_IMPORTS_PER_USER` | 5 | default |
+| `LIVE_DAILY_IMPORTS_GLOBAL` | 50 | default (IMD-217) |
+
+No new `NEXT_PUBLIC_*` name is added. The names and defaults are in `.env.example`.
+
+**One API task while ON.** The outbound spacing and the circuit breakers of the live-data services are per process (A2 §7.3), and imports are serial in one process. Keep the API service at one running task while the switch is ON (IMD-12).
+
+**Pre-import.** Before a demo, import the demo cities with the CLI in a one-off task (`python -m app.places.live_import --query "<city>"`). The runbook is [any-city-staging.md](any-city-staging.md).
+
+**Rollback.** Remove `!any_city_mode` from `STAGING_FEATURES_DISABLED` and deploy. The routes answer 404, the city search disappears, curated trips are unchanged, and no data is deleted. `LIVE_DATA_PROVIDER` can stay `LIVE`: it has no effect with the switch OFF.
+
+**Production.** The same names apply to the production service (IMP-801). Production is not created yet.
