@@ -118,6 +118,7 @@ With the switch OFF:
 - **Existing tests with the switch ON.** Every existing unit, API, contract, authz and web test passes with `FEATURES_DISABLED=!any_city_mode`, except four inventory tests that by design pin the OFF route set:
   - `tests/contract/test_openapi_contract.py::test_committed_contract_is_current`, `::test_every_mvp_endpoint_maps_to_exactly_one_operation` and `::test_no_path_outside_the_mvp_set`, which render or read the contract of the OFF app;
   - `tests/authz/test_ownership.py::test_tc_065_every_implemented_owned_route_is_in_the_matrix`, which walks the app through `unlisted_routes` (`tests/authz/route_matrix.py:212-219`).
+  - in addition, for the switch-ON run only (IMD-219): `tests/authz/test_ownership.py::test_tc_065_an_unlisted_route_fails_the_check` and `tests/authz/test_route_inventory.py::test_inventory_docs_companions_are_only_fastapi_doc_pages`, which also pin the OFF route set; the OFF run is unchanged.
 
   `test_route_inventory.py::test_tc_344_…` reads the committed OFF contract, so it is not affected.
 
