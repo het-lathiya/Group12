@@ -17,12 +17,12 @@ Without the variable (every normal run, CI included), nothing changes.
 
 ## Commands
 
-Switch ON, with the four inventory tests that A2 §3.4 names deselected:
+Switch ON, with the inventory tests that A2 §3.4 names deselected: the original four, plus the two of IMD-219 (PD-730-1, agreed 24 November 2026, RUN-093):
 
 ```sh
 ANY_CITY_SUITE_ON=1 make test-unit
 ANY_CITY_SUITE_ON=1 make test-contract ARGS='--deselect tests/contract/test_openapi_contract.py::test_committed_contract_is_current --deselect tests/contract/test_openapi_contract.py::test_every_mvp_endpoint_maps_to_exactly_one_operation --deselect tests/contract/test_openapi_contract.py::test_no_path_outside_the_mvp_set'
-ANY_CITY_SUITE_ON=1 make test-authz ARGS='--deselect tests/authz/test_ownership.py::test_tc_065_every_implemented_owned_route_is_in_the_matrix'
+ANY_CITY_SUITE_ON=1 make test-authz ARGS='--deselect tests/authz/test_ownership.py::test_tc_065_every_implemented_owned_route_is_in_the_matrix --deselect tests/authz/test_ownership.py::test_tc_065_an_unlisted_route_fails_the_check --deselect tests/authz/test_route_inventory.py::test_inventory_docs_companions_are_only_fastapi_doc_pages'
 ANY_CITY_SUITE_ON=1 make test-api
 ```
 
@@ -44,7 +44,7 @@ The 2 deselected contract tests in both columns are the `live` tests that `make 
 1. **`tests/authz/test_ownership.py::test_tc_065_an_unlisted_route_fails_the_check`** builds the app and walks it with `unlisted_routes` (`route_matrix.py:212-219`), the same walk as the §3.4-named `test_tc_065_every_implemented_owned_route_is_in_the_matrix`. With the switch ON it also lists API-76 to API-79, which by design are not in `route_matrix.py` (§3.4; their ON counterpart is `test_any_city_routes.py`, TC-487). It is a fifth inventory test that pins the OFF route set.
 2. **`tests/authz/test_route_inventory.py::test_inventory_docs_companions_are_only_fastapi_doc_pages`** builds a *production* app. With the switch ON, start-up refuses `LIVE_DATA_PROVIDER=FAKE` in production ("LIVE_DATA_PROVIDER: FAKE is refused in staging and production when any_city_mode is on", TC-462). That is the start-up rule working as specified; the test's production settings have no live-data configuration.
 
-With these two also deselected, switch ON authz gives **84 passed, 14 skipped, 3 deselected, 1 warning in 21.55s**. Proposed decision **PD-730-1**: add both tests to A2 §3.4's switch-ON deselect list. No test was changed.
+With these two also deselected, switch ON authz gives **84 passed, 14 skipped, 3 deselected, 1 warning in 21.55s**. PD-730-1 proposed adding both tests to A2 §3.4's switch-ON deselect list. The team agreed, recorded as **IMD-219** (RUN-093), and A2 §3.4 now names them. The authz command above includes them. The result table keeps the RUN-092 lines, measured with the four §3.4 deselects. No test was changed.
 
 ## Switch-ON CI jobs (one added job per workflow; existing jobs unchanged)
 
@@ -57,6 +57,7 @@ With these two also deselected, switch ON authz gives **84 passed, 14 skipped, 3
   - runs `live-city.spec.ts` (E2E-10 `@live`, TC-486) at `chromium-360` and `chromium-1280` with the dispatch's `repeat_each`;
   - uploads the artifacts `live-city-screenshots` and `playwright-report-live`.
   - It does not run for a floor (`features_disabled`) or staging (`base_url`) dispatch.
+- **Repeat runs (RUN-093).** In dispatch 45228887894 (`repeat_each=3`), the `e2e` job's itinerary-edit step got 429 `RATE_LIMITED`. Every parallel test reaches the local API from one address, so together they used up the per-address window of `RATE_LIMIT_PER_MIN` (default 60 a minute, `app/core/rate_limit.py`). Each test already signs in as its own user. `e2e.yml` therefore sets `RATE_LIMIT_PER_MIN=1000` in its workflow environment, the IMD-203 pattern, for the E2E stacks only. The Settings default and the staging value stay 60.
 
 ## Screenshots
 

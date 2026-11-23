@@ -55,6 +55,11 @@ env:
   ALLOWED_ORIGINS: http://localhost:3000
   NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
   NEXT_PUBLIC_FEATURES_DISABLED: ""
+  # RUN-093 (IMP-730), the IMD-203 pattern for the API limiter: every parallel test reaches the
+  # local API from one address, so with repeat_each the shared address window of
+  # RATE_LIMIT_PER_MIN (default 60, app/core/rate_limit.py) answered 429 to the itinerary edits.
+  # E2E stacks only; the Settings default, staging and production keep 60.
+  RATE_LIMIT_PER_MIN: "1000"
 
 jobs:
   e2e:
