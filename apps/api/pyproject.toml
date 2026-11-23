@@ -95,5 +95,6 @@ addopts = ["--strict-markers", "--strict-config", "-ra"]
 markers = [
     "live: calls a real provider host (needs its key); the only tests the socket guard lets out; run by make live-smoke",
     "slow: long-running test",
+    "any_city: builds the app with any_city_mode ON through a settings override and fake live-data providers (Amendment A2 §3.4)",
 ]
 asyncio_default_fixture_loop_scope = "function"

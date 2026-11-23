@@ -91,6 +91,48 @@
         "title": "AmountRange",
         "type": "object"
       },
+      "Attribution": {
+        "properties": {
+          "attribution_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribution Text"
+          },
+          "licence": {
+            "title": "Licence",
+            "type": "string"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "source_name",
+          "licence",
+          "attribution_text",
+          "url"
+        ],
+        "title": "Attribution",
+        "type": "object"
+      },
       "BoundingBox": {
         "properties": {
           "max_lat": {
@@ -326,6 +368,116 @@
           "label"
         ],
         "title": "CategoryCostLine",
+        "type": "object"
+      },
+      "CityCandidate": {
+        "properties": {
+          "country_code": {
+            "title": "Country Code",
+            "type": "string"
+          },
+          "data_tier": {
+            "anyOf": [
+              {
+                "enum": [
+                  "curated",
+                  "live"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Tier"
+          },
+          "destination_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when the settlement already exists as a destination",
+            "title": "Destination Id"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "city",
+              "town",
+              "village",
+              "municipality"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "title": "Lon",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "osm_ref": {
+            "description": "Nominatim OSM reference",
+            "pattern": "^[NWR][0-9]{1,12}$",
+            "title": "Osm Ref",
+            "type": "string"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          }
+        },
+        "required": [
+          "osm_ref",
+          "name",
+          "display_name",
+          "region",
+          "country_code",
+          "lat",
+          "lon",
+          "kind",
+          "destination_id",
+          "data_tier"
+        ],
+        "title": "CityCandidate",
+        "type": "object"
+      },
+      "CitySearchOut": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/CityCandidate"
+            },
+            "maxItems": 8,
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "title": "CitySearchOut",
         "type": "object"
       },
       "Contingency": {
@@ -596,6 +748,114 @@
           "bbox"
         ],
         "title": "Destination",
+        "type": "object"
+      },
+      "DestinationDetailOut": {
+        "description": "Every field of the API-06 item, plus the tier, attribution and import state.",
+        "properties": {
+          "attribution": {
+            "items": {
+              "$ref": "#/components/schemas/Attribution"
+            },
+            "title": "Attribution",
+            "type": "array"
+          },
+          "bbox": {
+            "$ref": "#/components/schemas/BoundingBox"
+          },
+          "center": {
+            "$ref": "#/components/schemas/Point"
+          },
+          "country_code": {
+            "title": "Country Code",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "data_tier": {
+            "enum": [
+              "curated",
+              "live"
+            ],
+            "title": "Data Tier",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "import": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImportState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "imported_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imported At"
+          },
+          "is_sample": {
+            "description": "True for the SAMPLE fixture; the web shows a banner",
+            "title": "Is Sample",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "IANA time zone; trip dates and times are local to it",
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "region",
+          "country_code",
+          "timezone",
+          "currency",
+          "is_sample",
+          "center",
+          "bbox",
+          "data_tier",
+          "imported_at",
+          "attribution",
+          "import"
+        ],
+        "title": "DestinationDetailOut",
         "type": "object"
       },
       "EditResultOut": {
@@ -1179,6 +1439,120 @@
         "title": "HealthOut",
         "type": "object"
       },
+      "ImportState": {
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "provider_unavailable",
+                  "rate_limited",
+                  "timeout",
+                  "internal"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "imported_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imported At"
+          },
+          "nearby_city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set only with insufficient_data",
+            "title": "Nearby City"
+          },
+          "places_found": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Places Found"
+          },
+          "places_usable": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Places Usable"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "insufficient_data",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "failure_reason",
+          "places_found",
+          "places_usable",
+          "nearby_city",
+          "started_at",
+          "imported_at",
+          "expires_at"
+        ],
+        "title": "ImportState",
+        "type": "object"
+      },
       "Item": {
         "properties": {
           "cost": {
@@ -1659,6 +2033,68 @@
           "updated_at"
         ],
         "title": "LatestItineraryOut",
+        "type": "object"
+      },
+      "LiveDestinationOut": {
+        "properties": {
+          "country_code": {
+            "title": "Country Code",
+            "type": "string"
+          },
+          "currency": {
+            "description": "ISO 4217; the trip budget currency (IMD-128)",
+            "title": "Currency",
+            "type": "string"
+          },
+          "data_tier": {
+            "const": "live",
+            "title": "Data Tier",
+            "type": "string"
+          },
+          "destination_id": {
+            "format": "uuid",
+            "title": "Destination Id",
+            "type": "string"
+          },
+          "import": {
+            "$ref": "#/components/schemas/ImportState"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination_id",
+          "slug",
+          "name",
+          "region",
+          "country_code",
+          "timezone",
+          "currency",
+          "data_tier",
+          "import"
+        ],
+        "title": "LiveDestinationOut",
         "type": "object"
       },
       "Money-Input": {
@@ -2765,6 +3201,22 @@
         "title": "ReplaceIn",
         "type": "object"
       },
+      "ResolveCityIn": {
+        "additionalProperties": false,
+        "properties": {
+          "osm_ref": {
+            "description": "osm_ref of an API-76 result",
+            "pattern": "^[NWR][0-9]{1,12}$",
+            "title": "Osm Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "osm_ref"
+        ],
+        "title": "ResolveCityIn",
+        "type": "object"
+      },
       "SourceLabel": {
         "description": "price_label and hours_label (§6.1 Labels).",
         "enum": [
@@ -3603,6 +4055,207 @@
         "summary": "API-06 List the supported destinations",
         "tags": [
           "places"
+        ]
+      }
+    },
+    "/api/v1/destinations/resolve": {
+      "post": {
+        "operationId": "resolve_city_api_v1_destinations_resolve_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveCityIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveDestinationOut"
+                }
+              }
+            },
+            "description": "The destination exists"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveDestinationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error envelope (§6.3)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "API-77 Resolve a city into a live destination",
+        "tags": [
+          "any-city"
+        ]
+      }
+    },
+    "/api/v1/destinations/search": {
+      "get": {
+        "operationId": "search_cities_api_v1_destinations_search_get",
+        "parameters": [
+          {
+            "description": "City name, 2 to 100 characters after trimming",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "description": "City name, 2 to 100 characters after trimming",
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CitySearchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error envelope (§6.3)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "API-76 Search for a city",
+        "tags": [
+          "any-city"
+        ]
+      }
+    },
+    "/api/v1/destinations/{destination_id}": {
+      "get": {
+        "operationId": "get_destination_api_v1_destinations__destination_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "destination_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Destination Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DestinationDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error envelope (§6.3)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "API-79 Read one destination",
+        "tags": [
+          "any-city"
+        ]
+      }
+    },
+    "/api/v1/destinations/{destination_id}/import": {
+      "get": {
+        "operationId": "get_import_status_api_v1_destinations__destination_id__import_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "destination_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Destination Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveDestinationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Error envelope (§6.3)"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "API-78 Read a live destination's import status",
+        "tags": [
+          "any-city"
         ]
       }
     },

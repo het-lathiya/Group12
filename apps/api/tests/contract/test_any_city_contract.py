@@ -4,8 +4,7 @@
 must be current, and every path it adds to the switch-OFF contract must have an ``API-NN`` summary
 and no forbidden path word. With the switch OFF the any-city paths answer 404 NOT_FOUND.
 
-C1a narrowing (RUN-089): the router is still empty, so "exactly API-76 to API-79" is asserted by
-IMP-725 in C1b, when the routes exist.
+C1b (RUN-090, IMP-725): the switch-ON contract adds exactly API-76 to API-79.
 """
 
 import re
@@ -72,6 +71,28 @@ def test_any_city_contract_adds_only_api_nn_paths_without_forbidden_words() -> N
         assert re.match(r"API-\d{2}\b", operation.get("summary", "")), f"{method} {path}"
     for path in on["paths"]:
         assert not FORBIDDEN_PATH_WORDS.search(path), path
+
+
+ANY_CITY_ENDPOINTS: dict[str, tuple[str, str]] = {
+    "API-76": ("GET", f"{V1}/destinations/search"),
+    "API-77": ("POST", f"{V1}/destinations/resolve"),
+    "API-78": ("GET", f"{V1}/destinations/{{destination_id}}/import"),
+    "API-79": ("GET", f"{V1}/destinations/{{destination_id}}"),
+}
+
+
+def test_any_city_contract_adds_exactly_api_76_to_79() -> None:
+    off = openapi_document()
+    on = openapi_document(any_city_mode=True)
+    added = _operations(on) - _operations(off)
+    by_id: dict[str, tuple[str, str]] = {}
+    for method, path in added:
+        summary = on["paths"][path][method.lower()]["summary"]
+        match = re.match(r"API-\d{2}\b", summary)
+        assert match, f"{method} {path}"
+        assert match.group() not in by_id, f"{match.group()} maps to two operations"
+        by_id[match.group()] = (method, path)
+    assert by_id == ANY_CITY_ENDPOINTS
 
 
 @pytest.mark.parametrize(("method", "path"), ANY_CITY_REQUESTS)

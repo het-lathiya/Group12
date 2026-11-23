@@ -3,29 +3,110 @@
 Destinations and places are shared reference data with no owner, so no query takes a user_id;
 every query reads active rows only (§6.2: inactive destinations and places are invisible). Only
 the seed writes these tables, except that ``insert_data_source`` adds the source of a guide (A1 §5.1).
+
+Any-city mode (Amendment A2 §5, §6.1; IMP-725): the live-destination reads, the resolve-time
+insert and re-queue of a live destination row, and the attribution read. API-06 lists curated
+destinations only.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Text, func, literal, null, or_, select, tuple_
+from sqlalchemy import ColumnElement, Text, func, literal, null, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DataSource, Destination, Place, PlaceOpeningHours
+from app.db.models import DataSource, Destination, Place, PlaceOpeningHours, RagDocument
 from app.routing.estimate import EARTH_RADIUS_M
 
 
 async def active_destinations(session: AsyncSession) -> Sequence[Destination]:
+    """API-06: active curated destinations (A2 §5: live ones are reached through API-76 to 79)."""
     query = (
         select(Destination)
-        .where(Destination.is_active.is_(True))
+        .where(Destination.is_active.is_(True), Destination.data_tier == "curated")
         .order_by(Destination.name, Destination.id)
     )
     return (await session.scalars(query)).all()
+
+
+async def destinations_by_refs(
+    session: AsyncSession, provider: str, external_refs: Sequence[str]
+) -> dict[str, Destination]:
+    """Destinations already resolved for these OSM references, keyed by reference."""
+    if not external_refs:
+        return {}
+    query = select(Destination).where(
+        Destination.provider == provider, Destination.external_ref.in_(list(external_refs))
+    )
+    return {row.external_ref: row for row in await session.scalars(query) if row.external_ref}
+
+
+async def destination_by_ref(
+    session: AsyncSession, provider: str, external_ref: str
+) -> Destination | None:
+    query = select(Destination).where(
+        Destination.provider == provider, Destination.external_ref == external_ref
+    )
+    return (await session.scalars(query)).first()
+
+
+async def imports_started_since(
+    session: AsyncSession, since: datetime, user_id: UUID | None = None
+) -> int:
+    """New live imports started since ``since``: by ``user_id``, or by everyone (A2 §6.1 caps).
+
+    A queued row has no ``import_started_at`` yet, so its creation time counts until then.
+    """
+    started = func.coalesce(Destination.import_started_at, Destination.created_at)
+    query = select(func.count()).where(Destination.data_tier == "live", started >= since)
+    if user_id is not None:
+        query = query.where(Destination.import_requested_by == user_id)
+    return int(await session.scalar(query) or 0)
+
+
+async def insert_live_destination(session: AsyncSession, row: Destination) -> Destination:
+    """Add a resolved live destination (queued, inactive); the caller handles a duplicate ref."""
+    session.add(row)
+    await session.flush()
+    await session.refresh(row)
+    return row
+
+
+async def requeue_live_import(session: AsyncSession, destination_id: UUID) -> None:
+    """Queue a failed or expired live import again (A2 §6.1); places stay as they are."""
+    await session.execute(
+        update(Destination)
+        .where(Destination.id == destination_id, Destination.data_tier == "live")
+        .values(
+            import_status="queued",
+            import_failure_reason=None,
+            nearby_city=None,
+            import_started_at=None,
+            updated_at=func.now(),
+        )
+    )
+
+
+async def destination_sources(session: AsyncSession, destination_id: UUID) -> list[DataSource]:
+    """Sources of the destination's active places and active guide documents (API-79)."""
+    place_sources = select(Place.source_id).where(
+        Place.destination_id == destination_id, Place.is_active.is_(True)
+    )
+    guide_sources = select(RagDocument.source_id).where(
+        RagDocument.destination_id == destination_id,
+        RagDocument.kind == "guide",
+        RagDocument.is_active.is_(True),
+    )
+    query = (
+        select(DataSource)
+        .where(or_(DataSource.id.in_(place_sources), DataSource.id.in_(guide_sources)))
+        .order_by(DataSource.name)
+    )
+    return list((await session.scalars(query)).all())
 
 
 def _escape_like(text: str) -> str:

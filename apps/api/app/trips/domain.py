@@ -58,6 +58,8 @@ class SupportedDestination:
     id: UUID
     name: str
     currency: str
+    # Amendment A2 §5: a live destination is accepted once active, but never listed in the message.
+    data_tier: str = "curated"
 
 
 def trip_length_days(start_date: date, end_date: date) -> int:
@@ -182,9 +184,11 @@ def validate_destination(
 ) -> list[FieldError]:
     """FR-007 AC2: an unknown or inactive destination is rejected with the supported list.
 
-    `supported` holds the active destinations; an inactive one is simply not in it.
+    `supported` holds the active destinations; an inactive one is simply not in it. The message
+    names curated destinations only (A2 §5): live ones are found through city search.
     """
     if any(destination.id == destination_id for destination in supported):
         return []
-    listed = "; ".join(f"{d.name} ({d.id})" for d in supported) or "none"
+    curated = [d for d in supported if d.data_tier == "curated"]
+    listed = "; ".join(f"{d.name} ({d.id})" for d in curated) or "none"
     return [FieldError("destination_id", f"Choose a supported destination. Supported: {listed}.")]

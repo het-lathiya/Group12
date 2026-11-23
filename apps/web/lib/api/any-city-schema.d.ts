@@ -21,6 +21,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/destinations/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** API-77 Resolve a city into a live destination */
+        post: operations["resolve_city_api_v1_destinations_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/destinations/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** API-76 Search for a city */
+        get: operations["search_cities_api_v1_destinations_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/destinations/{destination_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** API-79 Read one destination */
+        get: operations["get_destination_api_v1_destinations__destination_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/destinations/{destination_id}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** API-78 Read a live destination's import status */
+        get: operations["get_import_status_api_v1_destinations__destination_id__import_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/generations/{generation_id}": {
         parameters: {
             query?: never;
@@ -528,6 +596,17 @@ export interface components {
             /** Min */
             min: string;
         };
+        /** Attribution */
+        Attribution: {
+            /** Attribution Text */
+            attribution_text: string | null;
+            /** Licence */
+            licence: string;
+            /** Source Name */
+            source_name: string;
+            /** Url */
+            url: string | null;
+        };
         /** BoundingBox */
         BoundingBox: {
             /** Max Lat */
@@ -603,6 +682,43 @@ export interface components {
             max: string;
             /** Min */
             min: string;
+        };
+        /** CityCandidate */
+        CityCandidate: {
+            /** Country Code */
+            country_code: string;
+            /** Data Tier */
+            data_tier: ("curated" | "live") | null;
+            /**
+             * Destination Id
+             * @description Set when the settlement already exists as a destination
+             */
+            destination_id: string | null;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "city" | "town" | "village" | "municipality";
+            /** Lat */
+            lat: number;
+            /** Lon */
+            lon: number;
+            /** Name */
+            name: string;
+            /**
+             * Osm Ref
+             * @description Nominatim OSM reference
+             */
+            osm_ref: string;
+            /** Region */
+            region: string | null;
+        };
+        /** CitySearchOut */
+        CitySearchOut: {
+            /** Results */
+            results: components["schemas"]["CityCandidate"][];
         };
         /** Contingency */
         Contingency: {
@@ -694,6 +810,49 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Is Sample
+             * @description True for the SAMPLE fixture; the web shows a banner
+             */
+            is_sample: boolean;
+            /** Name */
+            name: string;
+            /** Region */
+            region: string | null;
+            /** Slug */
+            slug: string;
+            /**
+             * Timezone
+             * @description IANA time zone; trip dates and times are local to it
+             */
+            timezone: string;
+        };
+        /**
+         * DestinationDetailOut
+         * @description Every field of the API-06 item, plus the tier, attribution and import state.
+         */
+        DestinationDetailOut: {
+            /** Attribution */
+            attribution: components["schemas"]["Attribution"][];
+            bbox: components["schemas"]["BoundingBox"];
+            center: components["schemas"]["Point"];
+            /** Country Code */
+            country_code: string;
+            /** Currency */
+            currency: string;
+            /**
+             * Data Tier
+             * @enum {string}
+             */
+            data_tier: "curated" | "live";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            import: components["schemas"]["ImportState"] | null;
+            /** Imported At */
+            imported_at: string | null;
             /**
              * Is Sample
              * @description True for the SAMPLE fixture; the web shows a banner
@@ -906,6 +1065,31 @@ export interface components {
             /** Version */
             version: string;
         };
+        /** ImportState */
+        ImportState: {
+            /** Expires At */
+            expires_at: string | null;
+            /** Failure Reason */
+            failure_reason: ("provider_unavailable" | "rate_limited" | "timeout" | "internal") | null;
+            /** Imported At */
+            imported_at: string | null;
+            /**
+             * Nearby City
+             * @description Set only with insufficient_data
+             */
+            nearby_city: string | null;
+            /** Places Found */
+            places_found: number | null;
+            /** Places Usable */
+            places_usable: number | null;
+            /** Started At */
+            started_at: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "completed" | "insufficient_data" | "failed";
+        };
         /** Item */
         Item: {
             cost: components["schemas"]["ItemCost"] | null;
@@ -1070,6 +1254,35 @@ export interface components {
             trip_id: string | null;
             /** Updated At */
             updated_at: string | null;
+        };
+        /** LiveDestinationOut */
+        LiveDestinationOut: {
+            /** Country Code */
+            country_code: string;
+            /**
+             * Currency
+             * @description ISO 4217; the trip budget currency (IMD-128)
+             */
+            currency: string;
+            /**
+             * Data Tier
+             * @constant
+             */
+            data_tier: "live";
+            /**
+             * Destination Id
+             * Format: uuid
+             */
+            destination_id: string;
+            import: components["schemas"]["ImportState"];
+            /** Name */
+            name: string;
+            /** Region */
+            region: string | null;
+            /** Slug */
+            slug: string;
+            /** Timezone */
+            timezone: string;
         };
         /**
          * Money
@@ -1497,6 +1710,14 @@ export interface components {
             /** Plan Revision */
             plan_revision: number;
         };
+        /** ResolveCityIn */
+        ResolveCityIn: {
+            /**
+             * Osm Ref
+             * @description osm_ref of an API-76 result
+             */
+            osm_ref: string;
+        };
         /**
          * SourceLabel
          * @description price_label and hours_label (§6.1 Labels).
@@ -1832,6 +2053,142 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Destination"][];
+                };
+            };
+            /** @description Error envelope (§6.3) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    resolve_city_api_v1_destinations_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveCityIn"];
+            };
+        };
+        responses: {
+            /** @description The destination exists */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveDestinationOut"];
+                };
+            };
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveDestinationOut"];
+                };
+            };
+            /** @description Error envelope (§6.3) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    search_cities_api_v1_destinations_search_get: {
+        parameters: {
+            query: {
+                /** @description City name, 2 to 100 characters after trimming */
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CitySearchOut"];
+                };
+            };
+            /** @description Error envelope (§6.3) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_destination_api_v1_destinations__destination_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                destination_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DestinationDetailOut"];
+                };
+            };
+            /** @description Error envelope (§6.3) */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_import_status_api_v1_destinations__destination_id__import_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                destination_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveDestinationOut"];
                 };
             };
             /** @description Error envelope (§6.3) */

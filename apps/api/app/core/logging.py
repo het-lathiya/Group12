@@ -41,6 +41,7 @@ _SECRET_IN_TEXT = re.compile(
 # The attributes every LogRecord has; anything else on a record came from ``extra``.
 _RECORD_ATTRIBUTES: Final = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
 _HANDLER_NAME: Final = "app-json"
+QUIET_HTTP_LOGGERS: Final = ("httpx", "httpcore")
 
 
 def redact_text(value: str) -> str:
@@ -88,7 +89,8 @@ def configure_logging(level: str, stream: TextIO | None = None) -> logging.Handl
     """Install (or replace) the JSON handler on the root logger at LOG_LEVEL.
 
     Uvicorn's own loggers are routed through it as well. Its access log is switched off, because it
-    would print the raw path and query string; ``app.core.request_id`` writes the access line.
+    would print the raw path and query string; ``app.core.request_id`` writes the access line. The
+    httpx and httpcore loggers are raised to WARNING for the same reason (request URLs).
     """
     root = logging.getLogger()
     for old in [h for h in root.handlers if h.get_name() == _HANDLER_NAME]:
@@ -104,4 +106,8 @@ def configure_logging(level: str, stream: TextIO | None = None) -> logging.Handl
         uvicorn_logger.handlers.clear()
         uvicorn_logger.propagate = True
     logging.getLogger("uvicorn.access").disabled = True
+    # httpx and httpcore log every request URL at INFO; a Nominatim search URL carries the
+    # traveller's query text (q=), which logs must never keep (Amendment A2 §11).
+    for name in QUIET_HTTP_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
     return handler

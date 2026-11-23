@@ -124,7 +124,9 @@ def _to_out(row: TripRow) -> TripOut:
 async def _validate(session: AsyncSession, draft: domain.TripDraft) -> None:
     """The API-07 field rules, shared by API-11 (§6.6.2: the same validation as API-07)."""
     supported = [
-        domain.SupportedDestination(id=d.id, name=d.name, currency=d.currency)
+        domain.SupportedDestination(
+            id=d.id, name=d.name, currency=d.currency, data_tier=d.data_tier
+        )
         for d in await repository.active_destinations(session)
     ]
     chosen = next((d for d in supported if d.id == draft.destination_id), None)
