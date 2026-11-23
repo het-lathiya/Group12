@@ -200,7 +200,7 @@ export function TripDetailsStep({
                 )}
                 {live && (
                   <option value={live.destination_id}>
-                    {live.name} (live data)
+                    {live.name} (Live data)
                   </option>
                 )}
               </select>

@@ -434,7 +434,7 @@ describe("switch ON: choosing a result (TC-483)", () => {
     );
     expect(
       within(screen.getByLabelText("Destination")).getByRole("option", {
-        name: "Udaipur (live data)",
+        name: "Udaipur (Live data)",
       }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Currency")).toHaveValue("INR");
