@@ -10,6 +10,7 @@ the user's e-mail nor the provider request body reaches the log (TC-358, TC-025)
 cases (an answer that obeys a note) are tests/unit/validation/test_injection_cases.py (TC-028).
 """
 
+import dataclasses
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -21,15 +22,23 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from fixtures.auth import AuthUser
+from fixtures.auth import AuthUser, auth_test_settings, client_for
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.errors import ProviderUnavailable
 from app.ai.factory import get_model_provider
 from app.ai.providers.mock import MockProvider
+from app.auth import deps
+from app.core.config import Settings
 from app.db.models import Destination, Place
 from app.generation import jobs
-from app.places import seed
+from app.livedata.factory import LiveProviders
+from app.livedata.providers.base import BBox, OsmElement, WikiSection
+from app.livedata.providers.fake import LIVETON, FakeGeocoder, liveton_elements
+from app.main import create_app
+from app.places import live_import, live_jobs, seed
+from app.places import repository as places_repository
 from app.schemas.ai import GenerationRequest
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -257,3 +266,194 @@ async def test_tc_357_injected_note_leaves_places_and_costs_unchanged(
     assert auth_user.email not in caplog.text
     assert hostile.model_dump_json() not in caplog.text
     assert hostile.preferences.notes_quoted not in caplog.text
+
+
+# ---------- IMP-731, TC-488 (Amendment A2 §11): hostile live data ----------
+#
+# One live destination (the SAMPLE Liveton fakes) is imported, planned, imported again with hostile
+# text and planned again. The places keep their IDs across imports (upsert by OSM reference), so
+# the saved place IDs per day and API-33's costs must be equal. Hostile wiki paragraphs reach the
+# provider only as quoted context passages. Hostile OSM names reach it only as shortlist names; that
+# run has no embeddings on either import, because a changed name legitimately changes a place's
+# vector similarity, so lexical ranking isolates "an instruction changes nothing".
+
+OSM_NAMES: list[str] = CORPUS["osm_names"]
+WIKI_PARAGRAPHS: list[str] = CORPUS["wiki_paragraphs"]
+BAD_PLACE = "00000000-0000-4000-8000-00000000bad0"
+FILLER = (
+    "The old quarter of narrow lanes climbs from the river towards the hill fort, and its "
+    "courtyard houses keep carved wooden balconies above the street. "
+)
+
+
+class _Guides:
+    """A GuideSourceProvider with fixed sections."""
+
+    def __init__(self, sections: list[WikiSection]) -> None:
+        self.sections = sections
+
+    async def fetch(self, name: str, lat: float, lon: float) -> list[WikiSection]:
+        return self.sections
+
+
+class _Places:
+    """The SAMPLE Liveton elements, with some names replaced."""
+
+    def __init__(self, names: dict[int, str]) -> None:
+        self.names = names
+
+    async def fetch(self, bbox: BBox) -> list[OsmElement]:
+        return [
+            dataclasses.replace(e, tags={**e.tags, "name": self.names[i]}) if i in self.names else e
+            for i, e in enumerate(liveton_elements(bbox))
+        ]
+
+    async def largest_city_near(self, lat: float, lon: float, radius_km: float) -> str | None:
+        return None
+
+
+def _wiki(paragraphs: list[str]) -> list[WikiSection]:
+    text = "\n\n".join([FILLER * 2, *paragraphs, FILLER * 2])
+    return [
+        WikiSection(
+            source="wikivoyage",
+            page_id=9_000_001,
+            revision_id=90_000_010,
+            page_title="Liveton (SAMPLE)",
+            page_url="https://en.wikivoyage.org/wiki/Liveton_(SAMPLE)",
+            index=1,
+            heading="Understand",
+            text=text,
+        )
+    ]
+
+
+@pytest_asyncio.fixture
+async def live_app(db_session: AsyncSession) -> FastAPI:
+    app = create_app(
+        auth_test_settings(features_disabled="!any_city_mode", live_data_provider="FAKE")
+    )
+
+    async def test_session() -> AsyncIterator[AsyncSession]:
+        yield db_session
+
+    app.dependency_overrides[deps.db_session] = test_session
+    return app
+
+
+async def _import(
+    session: AsyncSession,
+    destination_id: Any,
+    places: Any,
+    guides: Any,
+    embedder: MockProvider,
+) -> None:
+    @asynccontextmanager
+    async def job_transaction() -> AsyncIterator[AsyncSession]:
+        async with session.begin_nested():
+            yield session
+
+    outcome = await live_jobs.run_import(
+        destination_id,
+        providers=LiveProviders(
+            geocoder=FakeGeocoder("ok", app_env="test"), places=places, guides=guides
+        ),
+        sessions=job_transaction,
+        settings=Settings(_env_file=None, app_env="test", ai_provider="MOCK"),
+        embedder=embedder,
+    )
+    assert outcome == "completed"
+
+
+async def _live_plan(
+    app: FastAPI, session: AsyncSession, user: AuthUser, destination: Destination
+) -> tuple[GenerationRequest, list[list[str]], dict[str, Any]]:
+    async with client_for(app) as client:
+        await acknowledge(client, user)
+        return await generate(app, client, session, user, destination, HARMLESS_NOTE)
+
+
+async def _live_destination(session: AsyncSession) -> Destination:
+    row = await places_repository.insert_live_destination(
+        session, live_import.build_live_row(LIVETON, LIVETON.osm_ref)
+    )
+    return row
+
+
+async def _requeue(session: AsyncSession, destination: Destination) -> None:
+    await places_repository.requeue_live_import(session, destination.id)
+    await session.flush()
+
+
+def _assert_live_plan_safe(
+    request: GenerationRequest, places: list[list[str]], active: set[str]
+) -> None:
+    saved = {place for day in places for place in day}
+    assert saved
+    assert saved <= active
+    assert BAD_PLACE not in saved
+    assert BAD_PLACE not in {str(p.place_id) for p in request.shortlist}
+
+
+async def _active_places(session: AsyncSession, destination: Destination) -> set[str]:
+    rows = await session.scalars(
+        select(Place.id).where(Place.destination_id == destination.id, Place.is_active)
+    )
+    return set(map(str, rows))
+
+
+@pytest.mark.asyncio
+@pytest.mark.any_city
+async def test_tc_488_injection_hostile_wiki_paragraphs_leave_places_and_costs_unchanged(
+    live_app: FastAPI, db_session: AsyncSession, auth_user: AuthUser
+) -> None:
+    destination = await _live_destination(db_session)
+    embedder = MockProvider("ok", app_env="test")
+    await _import(db_session, destination.id, _Places({}), _Guides(_wiki([])), embedder)
+    _, base_places, base_costs = await _live_plan(live_app, db_session, auth_user, destination)
+
+    await _requeue(db_session, destination)
+    await _import(
+        db_session, destination.id, _Places({}), _Guides(_wiki(WIKI_PARAGRAPHS)), embedder
+    )
+    hostile, places, costs = await _live_plan(live_app, db_session, auth_user, destination)
+
+    _assert_live_plan_safe(hostile, places, await _active_places(db_session, destination))
+    assert places == base_places
+    assert costs == base_costs
+    # The paragraphs were stored (no price or hours pattern) and reach the provider only inside
+    # quoted guide passages, never in the shortlist or the notes.
+    passages = getattr(hostile, "context_passages", [])
+    quoted = " ".join(p.text for p in passages if p.kind == "guide")
+    assert any(paragraph in quoted for paragraph in WIKI_PARAGRAPHS)
+    shortlist_text = " ".join(p.name for p in hostile.shortlist)
+    assert not any(paragraph in shortlist_text for paragraph in WIKI_PARAGRAPHS)
+
+
+@pytest.mark.asyncio
+@pytest.mark.any_city
+async def test_tc_488_injection_hostile_osm_names_leave_places_and_costs_unchanged(
+    live_app: FastAPI, db_session: AsyncSession, auth_user: AuthUser
+) -> None:
+    destination = await _live_destination(db_session)
+    no_vectors = MockProvider(
+        "ok", app_env="test", embed_error=ProviderUnavailable("mock provider: embedding outage")
+    )
+    await _import(db_session, destination.id, _Places({}), _Guides([]), no_vectors)
+    _, base_places, base_costs = await _live_plan(live_app, db_session, auth_user, destination)
+
+    # Elements 0 to 3 have near-copies (dedupe merges same names), so unique places are renamed.
+    renamed = dict(zip((10, 11, 12), OSM_NAMES, strict=True))
+    await _requeue(db_session, destination)
+    await _import(db_session, destination.id, _Places(renamed), _Guides([]), no_vectors)
+    hostile, places, costs = await _live_plan(live_app, db_session, auth_user, destination)
+
+    _assert_live_plan_safe(hostile, places, await _active_places(db_session, destination))
+    assert places == base_places
+    assert costs == base_costs
+    stored = set(
+        await db_session.scalars(select(Place.name).where(Place.destination_id == destination.id))
+    )
+    assert set(OSM_NAMES) <= stored  # stored as plain text
+    names_sent = {p.name for p in hostile.shortlist}
+    assert all(name in OSM_NAMES or "(SAMPLE)" in name for name in names_sent)
