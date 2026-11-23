@@ -1,5 +1,7 @@
 # AMENDMENT A2 — Any-city mode (specification v1.5 for any-city mode)
 
+Updated 23 Nov 2026 by IMD-216.
+
 | Item | Value |
 | --- | --- |
 | Status | Written in RUN-088 (Batch E0) on 22 November 2026 under IMD-210 and IMD-215; part owner Het. The cards of §12 are 0 points, outside the contribution plan |
@@ -48,7 +50,6 @@ These rules stay exactly as before:
 - LLM-as-judge evaluation.
 - Parsing the OpenStreetMap `opening_hours` tag. Live places have no hours rows in C-lite: their hours are unknown (§6.3).
 - Prices from OpenStreetMap `fee` or `charge` tags, or from guide text. Live places have no price (§6.3).
-- Countries with more than one time zone that the country table cannot place, and currencies whose minor unit is not two decimals (§6.1).
 
 ### 1.3 "Cut if late"
 
@@ -61,7 +62,6 @@ These items are in scope, but are dropped without replacement if they do not fit
 | Lexical guide passages when embeddings are missing (§6.5) | Live plans made without embeddings cite no guide passage (IMD-112 as today) |
 | Prompt template `itinerary_generate/v4` and its activation (§6.7) | v2 stays active; the report states that its system text says "curated sources" |
 | Nearby-city lookup through Overpass (§6.4) | The "not enough data" message names the country's capital from the country table |
-| Multi-zone countries (§6.1) | Refused with "This country is not supported yet" |
 | The curated-versus-live evaluation report (IMP-732) | The live dataset runs in CI; the comparison is described as not measured |
 
 ## 2. Acceptance of "works for any city" (= IMD-210 a to e)
@@ -192,7 +192,7 @@ Behaviour:
 - **Search (API-76).** The service calls `GeocodingProvider.search(q)` (Nominatim `/search`, `format=jsonv2`, `addressdetails=1`, `namedetails=1`, `limit=10`, `accept-language=en`). It keeps only results whose `addresstype` is `city`, `town`, `village` or `municipality`, at most 8. Results are cached in process for 24 hours (`SEARCH_CACHE_TTL_S = 86400`, code constant; at most 1,000 keys), keyed by the normalised query. Nominatim forbids type-ahead use, so the web calls API-76 only on an explicit search (button or Enter), never on each keystroke.
 - **Resolve (API-77).** `osm_ref` is looked up again through `GeocodingProvider.lookup(osm_ref)` (Nominatim `/lookup`). The client never supplies coordinates, names or a country. Then:
   - The result must be a settlement, or 422 "Choose a city, town or village".
-  - **Country table.** `app/livedata/countries.py` (pure, code) maps ISO 3166-1 alpha-2 → `{currency (ISO 4217), timezone or zones, capital}`. A country is supported only when its currency has two decimal places (IMD-05) and its time zone can be decided. Single-zone countries have one IANA zone. A multi-zone country lists `(zone, lat, lon)` representative points, and the nearest point to the settlement's centre is chosen ("cut if late": multi-zone countries are refused). An unsupported country gives 422 "This country is not supported yet". Every zone in the table is checked with `zoneinfo` by a unit test (TC-464).
+  - **Country table.** `app/livedata/countries.py` (pure, code) maps ISO 3166-1 alpha-2 → `{currency (ISO 4217), zones, capital}` for every ISO 3166-1 country (IMD-216). A single-zone country uses its zone. A multi-zone country lists `(zone, lat, lon)` representative points taken from the IANA tz database file `zone1970.tab` and committed as a static table, and the zone whose point is nearest the settlement's centre is chosen. Currency: any ISO 4217 code from the table; money keeps two decimals (IMD-05), so zero-decimal currencies show `.00` and three-decimal currencies are rounded to two (a recorded limitation; live places carry no prices). Only a country code missing from the table gives 422 "This country is not supported yet". Every zone in the table is checked with `zoneinfo` by a unit test (TC-464).
   - **Destination row.**
     - `slug`: `live-` + the ASCII transliteration of the name (NFKD, non-ASCII dropped, lower-case, runs of other characters → `-`), cut to 40 characters, + `-` + `external_ref` in lower case (for example `live-udaipur-r1234567`). If the transliteration is empty: `live-` + `external_ref`. The slug matches the existing slug check.
     - `name`: `namedetails["name:en"]`, else `name`.
@@ -516,7 +516,7 @@ Every card has the specification card shape:
   2. Write the field rules.
   3. Write dedupe and cap.
   4. Write the gate of §6.4.
-  5. Write the country table for the supported countries, at least India and its neighbours plus the countries of the demo cities, with multi-zone points "cut if late".
+  5. Write the country table for every ISO 3166-1 country with a currency and at least one zone; zones and representative points from `zone1970.tab` (IMD-216).
   6. Add bbox clipping.
 - **Acceptance:**
   - Only vocabulary values are produced, and `stay` never is.
@@ -524,7 +524,7 @@ Every card has the specification card shape:
   - Dedupe and cap are deterministic.
   - The gate gives `insufficient_data` with a nearby city or capital.
   - Every zone passes `zoneinfo`.
-  - Currencies are two-decimal only.
+  - Every country has a currency and a zone; money stays two decimals (IMD-05).
 - **Tests:** TC-464, TC-465, TC-466, TC-467 — `make test-unit ARGS='-k normalise or countries'`.
 - **Evidence:** the part record.
 
@@ -709,7 +709,7 @@ Every card has the specification card shape:
 | TC-461 | OFF: any-city paths answer 404 `NOT_FOUND` and `openapi.v1.json` is unchanged; ON: API-76 to API-79 exactly, with `API-NN` summaries and no forbidden path word; the any-city contract is current | IMP-722 | Contract + API |
 | TC-462 | Start-up refuses `LIVE_DATA_PROVIDER=FAKE`, or `LIVE` with an empty or placeholder `WIKI_USER_AGENT`, in staging and production with the switch ON | IMP-722 | Unit |
 | TC-463 | Migration 0008 applies and survives the round trip; one Alembic head; the drift test passes unchanged; the CHECKs and the unique index reject the invalid rows of IMP-721 | IMP-721 | API |
-| TC-464 | The country table gives currency and zone; every zone loads in `zoneinfo`; multi-zone choice by nearest point; unsupported countries and non-two-decimal currencies are refused | IMP-724 | Unit |
+| TC-464 | The country table gives currency and zone for every country; every zone loads in `zoneinfo`; multi-zone choice by nearest `zone1970.tab` point; a country code missing from the table is refused; money stays two decimals (IMD-05) | IMP-724 | Unit |
 | TC-465 | OSM tags map to vocabulary categories, tags and durations; unmapped elements are dropped and counted; `stay` never appears; price and hours are always unknown; description is null; only `https` websites | IMP-724 | Unit |
 | TC-466 | Dedupe merges same-name places within 75 m deterministically; the cap keeps 300 by richness with the food share | IMP-724 | Unit |
 | TC-467 | The gate gives `insufficient_data` below the thresholds, with a nearby city or the capital, never the settlement itself | IMP-724, IMP-725 | Unit + API |
@@ -779,7 +779,7 @@ App code has no destination literal except example texts ("such as INR") in `app
 | 1 | apps/api/app/places/seed.py:3-4; app/places/service.py:4-6 | The reference tables have one writer: the file-based seed (plus `ensure_data_source` for guides) | The live import must live in the places module (MOD-B04) and reuse `import_pipeline.prepare/load` with an in-memory `Prepared` built from Overpass rows; other modules call places service only | Het (IMP-725) | C1 |
 | 2 | apps/api/app/places/import_pipeline.py:212-250 | Destination facts (timezone, currency, bbox, min_usable_places) come only from `destination.json` | A resolve step builds the destination row from Nominatim plus the country table; `min_usable_places` becomes a code constant or setting for live | Het (IMP-725) | C1 |
 | 3 | (none) — grep finds no country table in apps/api/app | No country→currency/time-zone data exists | Add a pure module (e.g. `app/places/countries.py`) mapping ISO 3166 → ISO 4217 and IANA zone; add it to the import-linter pure-domain list | Malhar (IMP-724) | C1 |
-| 4 | apps/api/migrations/sql/0002_reference_data.sql:13 + app/validation/rules.py:257 | One IANA time zone per destination, always valid | Multi-zone countries (US, CA, MX, BR, RU, AU, ID, KZ…) need a rule (lon-band table or fail with "not supported"); `ZoneInfo()` must never receive an invalid name | Malhar (IMP-724) | C1 |
+| 4 | apps/api/migrations/sql/0002_reference_data.sql:13 + app/validation/rules.py:257 | One IANA time zone per destination, always valid | Multi-zone countries (US, CA, MX, BR, RU, AU, ID, KZ…) take the zone of the nearest `zone1970.tab` representative point (IMD-216); `ZoneInfo()` must never receive an invalid name | Malhar (IMP-724) | C1 |
 | 5 | infra/aws/services/api.staging.json.tmpl:42; apps/api/scripts/release.sh:13-16 | Staging data arrives only by `SEED_DIRS` (Ahmedabad) at release | The "pre-imported live cities" of IMD-215 need an import CLI (e.g. `python -m app.places.live_import <query>`) that the release task or operator can run, idempotent per OSM id | Manal (IMP-725) | C1 |
 | 6 | apps/api/app/places/import_pipeline.py:98,337-345 | `is_sample` is the only tier flag; SAMPLE is refused outside local/test | Add the `data_tier` (curated/live) column and set it on load; live import never sets `is_sample` | Het (IMP-725) | C1 |
 | 7 | apps/api/migrations/sql/0002_reference_data.sql:6-26 | No `data_tier`, provider, external_ref, imported_at, expires_at or import status on destinations | Migration 0008 adds the columns of §4.1 to `destinations` (no new table), with the ORM in the same change | Malhar (IMP-721) | C1 |
@@ -824,7 +824,7 @@ App code has no destination literal except example texts ("such as INR") in `app
 | 46 | apps/api/app/validation/rules.py:245-305 | `HOURS_UNVERIFIED` (info) per item is rare with curated hours | For live plans every item gets one, so consider one aggregated message per day or tier-level copy in the UI (severity stays info, so no repair) | Krrish (IMP-729) | C2 |
 | 47 | apps/api/app/validation/rules.py:334-381 | `COST_INCOMPLETE` is occasional | For live plans it is always raised; the message must read "prices unknown" for live data, and the item references stay | Krrish (IMP-729) | C2 |
 | 48 | apps/api/app/budget/engine.py:13-14,214-219 | B6: a missing price counts 0; status from the priced total | Engine unchanged; the web shows "Known costs only" and "covers known costs only" on the live tier (§6.6, §9.2) | Krrish (IMP-729) | C2 |
-| 49 | apps/api/app/budget/engine.py:128-133; app/schemas/common.py:22-24 | Minor unit = 1/100; Money has two decimals (IMD-05) | The country table supports two-decimal currencies only (§6.1, IMD-05) | Malhar (IMP-724) | C1 |
+| 49 | apps/api/app/budget/engine.py:128-133; app/schemas/common.py:22-24 | Minor unit = 1/100; Money has two decimals (IMD-05) | The country table gives every country its ISO 4217 currency; money stays two decimals (IMD-05), so zero-decimal currencies show `.00` and three-decimal ones are rounded to two (IMD-216) | Malhar (IMP-724) | C1 |
 | 50 | apps/api/app/budget/engine.py:147-151 | Prices come only from curated `price_*` columns | The normaliser never turns OSM `fee`/`charge` text into prices (PR-02): price fields stay NULL with label `unavailable` | Jeel (IMP-724) | C1 |
 | 51 | apps/api/app/generation/fallback_planner.py:37,72,111-145 | Lunch slots need `food` places; durations are curated | The OSM mapping must give `food` (restaurant, cafe, fast_food…) and sane default durations, or every day says "No food place found nearby" | Jeel (IMP-724) | C1 |
 | 52 | apps/api/app/generation/fallback_planner.py:163-166 | Curated cities always have enough places | `NoPlanError` when nothing fits: the minimum-places gate must make sure a live city survives the hard filters for typical trips | Jeel (IMP-724) | C1 |
