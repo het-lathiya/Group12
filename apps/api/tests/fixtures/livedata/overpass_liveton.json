@@ -1,0 +1,14 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API (SAMPLE)",
+  "osm3s": {"copyright": "The data included in this document is from www.openstreetmap.org (SAMPLE). The data is made available under ODbL."},
+  "elements": [
+    {"type": "node", "id": 9100001, "lat": 23.501, "lon": 77.502, "tags": {"name": "Liveton Museum (SAMPLE)", "tourism": "museum", "wikidata": "Q9100001", "website": "https://example.org/liveton/museum"}},
+    {"type": "way", "id": 9100002, "center": {"lat": 23.51, "lon": 77.49}, "nodes": [1, 2, 3], "tags": {"name": "Liveton Fort (SAMPLE)", "historic": "fort", "addr:street": "Sample Road"}},
+    {"type": "relation", "id": 9100003, "center": {"lat": 23.49, "lon": 77.51}, "members": [], "tags": {"name": "Liveton Garden (SAMPLE)", "leisure": "garden", "wheelchair": "yes"}},
+    {"type": "node", "id": 9100004, "lat": 23.505, "lon": 77.505, "tags": {"name": "Liveton Cafe (SAMPLE)", "amenity": "cafe", "diet:vegetarian": "yes"}},
+    {"type": "way", "id": 9100005, "nodes": [4, 5], "tags": {"name": "Liveton Market (SAMPLE)", "amenity": "marketplace"}},
+    {"type": "area", "id": 9100006, "tags": {"name": "Liveton Area (SAMPLE)"}},
+    {"type": "node", "id": 9100007, "lat": 23.52, "lon": 77.52}
+  ]
+}

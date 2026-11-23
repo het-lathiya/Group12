@@ -1,0 +1,3 @@
+[
+  {"place_id": 1, "licence": "Data (SAMPLE) OpenStreetMap contributors, ODbL 1.0", "osm_type": "relation", "osm_id": 9000001, "lat": "23.5000000", "lon": "77.5000000", "category": "boundary", "type": "administrative", "place_rank": 16, "importance": 0.6, "addresstype": "city", "name": "Liveton Nagar (SAMPLE)", "display_name": "Liveton (SAMPLE), Sample State, India", "address": {"city": "Liveton (SAMPLE)", "state": "Sample State", "country": "India", "country_code": "in"}, "namedetails": {"name": "Liveton Nagar (SAMPLE)", "name:en": "Liveton (SAMPLE)"}, "boundingbox": ["23.4400000", "23.5600000", "77.4400000", "77.5600000"]}
+]

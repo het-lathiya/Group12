@@ -1,0 +1,1 @@
+{"error": {"code": "maxlag", "info": "Waiting for a database server: 6 seconds lagged (SAMPLE).", "host": "db.sample", "lag": 6, "type": "db"}, "servedby": "sample"}

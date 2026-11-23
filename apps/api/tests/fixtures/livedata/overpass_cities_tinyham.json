@@ -1,0 +1,9 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API (SAMPLE)",
+  "elements": [
+    {"type": "node", "id": 9300001, "lat": 25.0, "lon": 79.3, "tags": {"name": "Midtown (SAMPLE)", "place": "city", "population": "120000"}},
+    {"type": "node", "id": 9300002, "lat": 25.2, "lon": 79.5, "tags": {"name": "Bigtown (SAMPLE)", "place": "city", "population": "1,250,000"}},
+    {"type": "node", "id": 9300003, "lat": 24.6, "lon": 78.9, "tags": {"name": "Oddtown (SAMPLE)", "place": "city", "population": "about a million"}}
+  ]
+}

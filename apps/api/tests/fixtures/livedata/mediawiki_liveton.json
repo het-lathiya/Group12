@@ -1,0 +1,20 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "pages": [
+      {
+        "pageid": 9000001,
+        "ns": 0,
+        "title": "Liveton (SAMPLE)",
+        "contentmodel": "wikitext",
+        "pagelanguage": "en",
+        "touched": "2026-11-01T00:00:00Z",
+        "lastrevid": 90000010,
+        "length": 900,
+        "fullurl": "https://en.wikivoyage.org/wiki/Liveton_(SAMPLE)",
+        "canonicalurl": "https://en.wikivoyage.org/wiki/Liveton_(SAMPLE)",
+        "extract": "Liveton (SAMPLE) is an invented town used as test data.\n\n== Understand ==\nThe town grew around a river crossing. MARKER-BODY-TEXT-7731\n\n=== Climate ===\nWinters are mild in this sample text.\n\n== See ==\nThe hill fort gives wide views over the river.\n\n== Empty ==\n\n== Eat ==\nSmall restaurants surround the market square."
+      }
+    ]
+  }
+}
