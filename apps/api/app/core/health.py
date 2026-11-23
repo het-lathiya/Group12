@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 # The image ships no migrations folder (Dockerfile), so the head is a constant here;
 # tests/api/test_health.py fails when it differs from the head of migrations/versions.
-MIGRATION_HEAD: Final = "0007"
+MIGRATION_HEAD: Final = "0008"
 DATABASE_TIMEOUT_S: Final = 2.0
 PROVIDER_CACHE_S: Final = 60.0
 

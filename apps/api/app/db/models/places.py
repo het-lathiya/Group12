@@ -54,6 +54,22 @@ class Destination(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )
+    # Live destination columns of migration 0008 (Amendment A2 §4.1); null or the default for
+    # curated destinations.
+    data_tier: Mapped[str] = mapped_column(Text, server_default=text("'curated'"))
+    provider: Mapped[str | None] = mapped_column(Text)
+    external_ref: Mapped[str | None] = mapped_column(Text)
+    imported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    import_status: Mapped[str | None] = mapped_column(Text)
+    import_failure_reason: Mapped[str | None] = mapped_column(Text)
+    import_requested_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL")
+    )
+    import_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    places_found: Mapped[int | None] = mapped_column(Integer)
+    places_usable: Mapped[int | None] = mapped_column(Integer)
+    nearby_city: Mapped[str | None] = mapped_column(Text)
 
 
 class DataSource(Base):
