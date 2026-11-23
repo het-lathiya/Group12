@@ -115,3 +115,44 @@ forbidden_modules =
     app.budget
     app.validation
     app.evaluation
+
+; A2 §8.2 Live-data isolation (IMP-723), one contract with two rules.
+; Rule 1: within app.livedata, app.places and app.rag, httpx is imported only by the two real
+; adapters, app.livedata.providers.osm (Nominatim, Overpass) and app.livedata.providers.wiki
+; (MediaWiki); their two imports are ignored. Indirect imports are allowed, as in
+; routing-isolation: app.livedata.factory builds the adapters, and app.rag reaches httpx through
+; app.ai.factory and the Gemini adapter, which vendor-sdk already confines.
+; Rule 2: app.livedata imports no generation, itinerary, budget, validation, trips or db module; it
+; returns data and the places and RAG services store it. That rule is for app.livedata only, so
+; the imports of those modules by app.places and app.rag (which own their tables) are ignored
+; here; app.rag's imports of generation, itinerary, budget and validation stay forbidden by
+; rag-service-order. unmatched_ignore_imports_alerting = none because most of these imports do
+; not exist (and must not appear in app.livedata).
+[importlinter:contract:livedata-isolation]
+name = Live-data isolation: httpx only in the osm and wiki adapters; app.livedata stores nothing
+type = forbidden
+source_modules =
+    app.livedata
+    app.places
+    app.rag
+forbidden_modules =
+    httpx
+    app.generation
+    app.itinerary
+    app.budget
+    app.validation
+    app.trips
+    app.db
+ignore_imports =
+    app.livedata.providers.osm -> httpx
+    app.livedata.providers.wiki -> httpx
+    app.places.** -> app.db.**
+    app.places.** -> app.trips.**
+    app.places.** -> app.generation.**
+    app.places.** -> app.itinerary.**
+    app.places.** -> app.budget.**
+    app.places.** -> app.validation.**
+    app.rag.** -> app.db.**
+    app.rag.** -> app.trips.**
+allow_indirect_imports = True
+unmatched_ignore_imports_alerting = none

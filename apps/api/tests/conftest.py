@@ -26,10 +26,15 @@ from app.routing import client as routing_client
 
 # Provider API hosts the guard refuses. A pattern "*.example.org" matches example.org and every
 # subdomain. Extension cards add their hosts here (§13.1: api.open-meteo.com, *.wikipedia.org,
-# *.wikivoyage.org).
+# *.wikivoyage.org). Amendment A2 §11 (IMP-723) adds the live-data hosts: Nominatim, Overpass and
+# the MediaWiki wikis; a configured mirror's host is added here too.
 PROVIDER_HOSTS: tuple[str, ...] = (
     "generativelanguage.googleapis.com",  # Gemini API (google-genai)
     "api.openrouteservice.org",  # OpenRouteService
+    "nominatim.openstreetmap.org",  # Nominatim (live-data geocoding)
+    "overpass-api.de",  # Overpass API (live-data places)
+    "*.wikivoyage.org",  # MediaWiki API, Wikivoyage
+    "*.wikipedia.org",  # MediaWiki API, Wikipedia
 )
 
 

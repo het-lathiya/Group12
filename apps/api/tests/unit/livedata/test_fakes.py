@@ -31,6 +31,7 @@ from app.livedata.providers.fake import (
 )
 from app.livedata.providers.osm import NominatimGeocoder, OverpassPlaces
 from app.livedata.providers.wiki import MediaWikiGuides
+from app.livedata.throttle import GuardedGeocoder, GuardedGuides, GuardedPlaces
 
 FOOD = {"restaurant", "cafe", "fast_food", "food_court"}
 ALLOWED_TAGS = {(key, value) for key, values in OVERPASS_TAGS for value in values}
@@ -220,6 +221,13 @@ def test_livedata_factory_builds_real_clients_for_live(
     clean_settings_env.setenv("APP_ENV", "test")
     clean_settings_env.setenv("LIVE_DATA_PROVIDER", "LIVE")
     clean_settings_env.setenv("WIKI_USER_AGENT", "AITravelPlanner-test/1.0")
-    assert isinstance(factory.get_geocoder(), NominatimGeocoder)
-    assert isinstance(factory.get_places_provider(), OverpassPlaces)
-    assert isinstance(factory.get_guide_provider(), MediaWikiGuides)
+    # The real clients sit inside the throttle and breaker wrappers (A2 §7.1, §7.3).
+    geocoder = factory.get_geocoder()
+    places = factory.get_places_provider()
+    guides = factory.get_guide_provider()
+    assert isinstance(geocoder, GuardedGeocoder)
+    assert isinstance(geocoder.inner, NominatimGeocoder)
+    assert isinstance(places, GuardedPlaces)
+    assert isinstance(places.inner, OverpassPlaces)
+    assert isinstance(guides, GuardedGuides)
+    assert isinstance(guides.inner, MediaWikiGuides)

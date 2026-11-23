@@ -42,14 +42,19 @@ def _build_fake(settings: Settings) -> LiveProviders:
 def _build_live(settings: Settings) -> LiveProviders:
     from app.livedata.providers.osm import NominatimGeocoder, OverpassPlaces
     from app.livedata.providers.wiki import MediaWikiGuides
+    from app.livedata.throttle import guard_geocoder, guard_guides, guard_places
 
+    # A2 §7.1, §7.3: the real adapters are spaced per host and Nominatim and Overpass sit behind
+    # their circuit breakers; the fakes are not wrapped.
     user_agent = settings.wiki_user_agent
     return LiveProviders(
-        geocoder=NominatimGeocoder(
-            settings.nominatim_base_url, settings.nominatim_timeout_s, user_agent
+        geocoder=guard_geocoder(
+            NominatimGeocoder(settings.nominatim_base_url, settings.nominatim_timeout_s, user_agent)
         ),
-        places=OverpassPlaces(settings.overpass_base_url, settings.overpass_timeout_s, user_agent),
-        guides=MediaWikiGuides(settings.mediawiki_timeout_s, user_agent),
+        places=guard_places(
+            OverpassPlaces(settings.overpass_base_url, settings.overpass_timeout_s, user_agent)
+        ),
+        guides=guard_guides(MediaWikiGuides(settings.mediawiki_timeout_s, user_agent)),
     )
 
 
