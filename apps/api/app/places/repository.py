@@ -6,7 +6,9 @@ the seed writes these tables, except that ``insert_data_source`` adds the source
 
 Any-city mode (Amendment A2 §5, §6.1; IMP-725): the live-destination reads, the resolve-time
 insert and re-queue of a live destination row, and the attribution read. API-06 lists curated
-destinations only.
+destinations only. The live import job (A2 §6.2) writes, through the places service, the claim and
+state of a live destination, the shared OpenStreetMap source and the live places (section at the
+end of this file).
 """
 
 from collections.abc import Sequence
@@ -15,8 +17,20 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Text, func, literal, null, or_, select, tuple_, update
+from sqlalchemy import (
+    ColumnElement,
+    Text,
+    and_,
+    func,
+    literal,
+    null,
+    or_,
+    select,
+    tuple_,
+    update,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DataSource, Destination, Place, PlaceOpeningHours, RagDocument
@@ -336,3 +350,139 @@ async def candidates(
         if hours is not None:
             entry[1].append(hours)
     return list(grouped.values())
+
+
+# ---------- Live import writes (Amendment A2 §6.2; IMP-725 job runner) ----------
+# Written only by the live import job through the places service: the claim and the state of a
+# live destination row, the shared OpenStreetMap source, the live places and the reaper.
+
+_RUNNING = "running"
+
+
+async def claim_live_import(
+    session: AsyncSession, destination_id: UUID, now: datetime
+) -> Destination | None:
+    """Move a queued live import to running; None when another job holds it or it is not queued."""
+    query = (
+        update(Destination)
+        .where(Destination.id == destination_id, Destination.import_status == "queued")
+        .values(import_status=_RUNNING, import_started_at=now, updated_at=func.now())
+        .returning(Destination)
+        .execution_options(populate_existing=True)
+    )
+    return (await session.scalars(query)).first()
+
+
+async def finish_live_import(session: AsyncSession, destination_id: UUID, **values: object) -> bool:
+    """Set the end state of a running import; False when the row is no longer running."""
+    result = await session.execute(
+        update(Destination)
+        .where(Destination.id == destination_id, Destination.import_status == _RUNNING)
+        .values(**values, updated_at=func.now())
+        .returning(Destination.id)
+    )
+    return result.first() is not None
+
+
+async def upsert_data_source(
+    session: AsyncSession,
+    *,
+    name: str,
+    source_type: str,
+    licence: str,
+    url: str | None,
+    retrieved_on: date | None,
+    attribution_text: str | None,
+) -> UUID:
+    """Insert the source, or bring the row of the same name to these terms; returns its id."""
+    values = {
+        "name": name,
+        "source_type": source_type,
+        "licence": licence,
+        "url": url,
+        "retrieved_on": retrieved_on,
+        "attribution_text": attribution_text,
+    }
+    insert = pg_insert(DataSource).values(**values)
+    statement = insert.on_conflict_do_update(
+        index_elements=[DataSource.name],
+        set_={key: insert.excluded[key] for key in values if key != "name"},
+    ).returning(DataSource.id)
+    source_id: UUID = (await session.execute(statement)).scalar_one()
+    return source_id
+
+
+_PLACE_KEY_COLUMNS = frozenset({"source_id", "external_ref"})
+
+
+async def upsert_places(session: AsyncSession, rows: Sequence[dict[str, object]]) -> int:
+    """Insert or update places by ``(source_id, external_ref)``, active; returns the row count.
+
+    Each row holds the same keys (place columns). An existing place keeps its id, so trips and
+    saved plans that refer to it stay valid.
+    """
+    if not rows:
+        return 0
+    insert = pg_insert(Place).values(list(rows))
+    updated = {key: insert.excluded[key] for key in rows[0] if key not in _PLACE_KEY_COLUMNS}
+    statement = insert.on_conflict_do_update(
+        index_elements=[Place.source_id, Place.external_ref],
+        index_where=Place.external_ref.is_not(None),
+        set_={**updated, "is_active": True, "updated_at": func.now()},
+    ).returning(Place.id)
+    return len((await session.execute(statement)).all())
+
+
+async def deactivate_places_except(
+    session: AsyncSession, destination_id: UUID, source_id: UUID, keep_refs: Sequence[str]
+) -> int:
+    """Deactivate (never delete) the destination's active places of the source not in
+    ``keep_refs``; returns how many changed."""
+    query = (
+        update(Place)
+        .where(
+            Place.destination_id == destination_id,
+            Place.source_id == source_id,
+            Place.is_active.is_(True),
+            or_(Place.external_ref.is_(None), Place.external_ref.not_in(list(keep_refs))),
+        )
+        .values(is_active=False, updated_at=func.now())
+        .returning(Place.id)
+    )
+    return len((await session.execute(query)).all())
+
+
+async def reap_live_imports(
+    session: AsyncSession, *, running_before: datetime, queued_before: datetime
+) -> int:
+    """Fail with ``timeout`` the imports running since before ``running_before`` and those
+    queued (or queued again) before ``queued_before``; returns how many."""
+    query = (
+        update(Destination)
+        .where(
+            Destination.data_tier == "live",
+            or_(
+                and_(
+                    Destination.import_status == _RUNNING,
+                    Destination.import_started_at < running_before,
+                ),
+                and_(
+                    Destination.import_status == "queued",
+                    Destination.updated_at < queued_before,
+                ),
+            ),
+        )
+        .values(import_status="failed", import_failure_reason="timeout", updated_at=func.now())
+        .returning(Destination.id)
+    )
+    return len((await session.execute(query)).all())
+
+
+async def set_live_counts(
+    session: AsyncSession, destination_id: UUID, *, found: int, usable: int
+) -> None:
+    await session.execute(
+        update(Destination)
+        .where(Destination.id == destination_id)
+        .values(places_found=found, places_usable=usable, updated_at=func.now())
+    )

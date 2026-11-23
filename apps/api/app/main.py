@@ -29,6 +29,7 @@ from app.core.request_id import REQUEST_ID_HEADER, RequestIdMiddleware
 from app.generation.jobs import reap_forever
 from app.generation.router import router as generation_router
 from app.itinerary.router import router as itinerary_router
+from app.places.live_jobs import reap_imports_forever
 from app.places.live_router import router as live_places_router
 from app.places.router import router as places_router
 from app.schemas.common import ErrorEnvelope
@@ -42,13 +43,6 @@ API_V1_PREFIX = "/api/v1"
 # §6.1 CORS: exact origins, these methods and headers, no credentials (bearer token).
 CORS_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
 CORS_HEADERS = ["Authorization", "Content-Type", REQUEST_ID_HEADER]
-
-
-async def reap_live_imports_forever() -> None:
-    """Hook for the live import reaper (Amendment A2 §6.2), started only with any_city_mode ON.
-
-    The runner and its reaper are built by IMP-725; until then the hook returns at once.
-    """
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -66,7 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             logger.error("configuration error: %s", exc)
             raise
         reaper = asyncio.create_task(reap_forever())  # stale generation jobs (§6.4, IMP-210)
-        import_reaper = asyncio.create_task(reap_live_imports_forever()) if any_city_mode else None
+        import_reaper = asyncio.create_task(reap_imports_forever()) if any_city_mode else None
         yield
         reaper.cancel()
         if import_reaper is not None:

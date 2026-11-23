@@ -3,17 +3,25 @@
 The session is the request's transaction (app.auth.deps.DbSession), as in trips/service.py. Only
 active destinations and places are read. The seed writes the reference tables; the one write here
 is ``ensure_data_source``, the source of a RAG guide (A1 §5.1).
+
+Any-city mode (Amendment A2 §6.2; IMP-725): the live import job stores through this service: the
+claim and end state of a live destination, the shared OpenStreetMap source and the live places,
+upserted and deactivated in the job's one transaction (section at the end of this file).
 """
 
 from collections.abc import Sequence
-from datetime import date
-from decimal import Decimal
+from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Final
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFound, ValidationFailed
+from app.db.models import Destination as DestinationRow
 from app.db.models import Place
+from app.livedata.normalise import LivePlace
 from app.places import repository
 from app.places.schemas import Destination, PlaceOut, PlaceSummary
 from app.schemas.common import ErrorDetail, Page
@@ -175,3 +183,150 @@ async def ensure_data_source(
     if (rows[0].licence, rows[0].attribution_text) != (licence, attribution_text):
         raise DataSourceConflictError(name)
     return rows[0].id
+
+
+# ---------- Live import store (Amendment A2 §6.2 steps 3, 4 and 6; IMP-725 job runner) ----------
+
+OSM_SOURCE_NAME: Final = "OpenStreetMap"
+OSM_SOURCE_TYPE: Final = "osm_import"
+OSM_LICENCE: Final = "ODbL 1.0"
+OSM_ATTRIBUTION: Final = (
+    "Place data © OpenStreetMap contributors, available under the Open Database Licence (ODbL)"
+)
+OSM_COPYRIGHT_URL: Final = "https://www.openstreetmap.org/copyright"
+NEARBY_CITY_MAX_CHARS: Final = 120
+_SIX_PLACES: Final = Decimal("0.000001")
+
+
+@dataclass(frozen=True)
+class LiveStoreResult:
+    stored: int
+    deactivated: int
+
+
+async def claim_live_import(
+    session: AsyncSession, destination_id: UUID, now: datetime
+) -> DestinationRow | None:
+    """The live destination moved from queued to running, or None when no row changed."""
+    return await repository.claim_live_import(session, destination_id, now)
+
+
+def _coordinate(value: float) -> Decimal:
+    return Decimal(str(value)).quantize(_SIX_PLACES, rounding=ROUND_HALF_UP)
+
+
+def _live_place_values(
+    place: LivePlace, destination_id: UUID, source_id: UUID
+) -> dict[str, object]:
+    """The places columns of one normalised place: no price, no hours, no description (§6.3)."""
+    return {
+        "destination_id": destination_id,
+        "source_id": source_id,
+        "external_ref": place.external_ref,
+        "name": place.name,
+        "category": place.category.value,
+        "tags": [tag.value for tag in place.tags],
+        "description": None,
+        "address": place.address,
+        "lat": _coordinate(place.lat),
+        "lon": _coordinate(place.lon),
+        "typical_duration_min": place.typical_duration_min,
+        "price_min": None,
+        "price_max": None,
+        "price_currency": None,
+        "price_label": place.price_label.value,
+        "hours_label": place.hours_label.value,
+        "hours_checked_on": None,
+        "verification_status": place.verification_status.value,
+        "step_free": place.step_free,
+        "child_friendly": None,
+        "indoor": place.indoor,
+        "website_url": place.website_url,
+        "booking_url": None,
+        "is_active": True,
+    }
+
+
+async def store_live_places(
+    session: AsyncSession,
+    destination_id: UUID,
+    places: Sequence[LivePlace],
+    *,
+    found: int,
+    retrieved_on: date,
+) -> LiveStoreResult:
+    """A2 §6.2 step 4, inside the caller's one transaction: the shared OpenStreetMap source,
+    the places upserted by ``(source_id, external_ref)``, the destination's places missing from
+    this run deactivated (never deleted), and the counts. No opening-hours rows are written."""
+    source_id = await repository.upsert_data_source(
+        session,
+        name=OSM_SOURCE_NAME,
+        source_type=OSM_SOURCE_TYPE,
+        licence=OSM_LICENCE,
+        url=OSM_COPYRIGHT_URL,
+        retrieved_on=retrieved_on,
+        attribution_text=OSM_ATTRIBUTION,
+    )
+    stored = await repository.upsert_places(
+        session, [_live_place_values(place, destination_id, source_id) for place in places]
+    )
+    deactivated = await repository.deactivate_places_except(
+        session, destination_id, source_id, [place.external_ref for place in places]
+    )
+    await repository.set_live_counts(session, destination_id, found=found, usable=len(places))
+    return LiveStoreResult(stored=stored, deactivated=deactivated)
+
+
+async def record_live_insufficient_data(
+    session: AsyncSession,
+    destination_id: UUID,
+    *,
+    found: int,
+    usable: int,
+    nearby_city: str | None,
+    expires_at: datetime,
+) -> bool:
+    """A2 §6.4: only the destination row changes (counts, nearby city, expiry); it stays as it
+    is otherwise. False when the import is no longer running."""
+    city = nearby_city.strip()[:NEARBY_CITY_MAX_CHARS] if nearby_city else None
+    return await repository.finish_live_import(
+        session,
+        destination_id,
+        import_status="insufficient_data",
+        import_failure_reason=None,
+        places_found=found,
+        places_usable=usable,
+        nearby_city=city or None,
+        expires_at=expires_at,
+    )
+
+
+async def complete_live_import(
+    session: AsyncSession, destination_id: UUID, *, now: datetime, expires_at: datetime
+) -> bool:
+    """A2 §6.2 step 6: active and completed; False when the import is no longer running."""
+    return await repository.finish_live_import(
+        session,
+        destination_id,
+        is_active=True,
+        import_status="completed",
+        import_failure_reason=None,
+        nearby_city=None,
+        imported_at=now,
+        expires_at=expires_at,
+    )
+
+
+async def fail_live_import(session: AsyncSession, destination_id: UUID, reason: str) -> bool:
+    """A failed import keeps the destination's earlier places and activity as they were."""
+    return await repository.finish_live_import(
+        session, destination_id, import_status="failed", import_failure_reason=reason
+    )
+
+
+async def reap_stale_live_imports(
+    session: AsyncSession, *, running_before: datetime, queued_before: datetime
+) -> int:
+    return await repository.reap_live_imports(
+        session, running_before=running_before, queued_before=queued_before
+    )
