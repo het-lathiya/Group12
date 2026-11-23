@@ -265,9 +265,13 @@ test(
       retimed.duration_min + 15 <= 480
         ? retimed.duration_min + 15
         : retimed.duration_min - 15;
-    await column
-      .getByRole("button", { name: `Edit time of ${retimed.place.name}` })
-      .press("Enter");
+    // The removal's toast and focus come before its refetch ends; until then every edit control is
+    // disabled (one edit at a time) and a key press on it does nothing (RUN-092 floor journey).
+    const editTime = column.getByRole("button", {
+      name: `Edit time of ${retimed.place.name}`,
+    });
+    await expect(editTime).toBeEnabled();
+    await editTime.press("Enter");
     const form = column.getByRole("form", {
       name: `Edit time of ${retimed.place.name}`,
     });

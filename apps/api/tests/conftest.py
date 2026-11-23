@@ -161,6 +161,27 @@ def isolate_local_provider_keys(request: pytest.FixtureRequest) -> Iterator[None
     routing_client.get_client.cache_clear()
 
 
+# TC-490 (Amendment A2 §3.4, IMP-730): ANY_CITY_SUITE_ON=1 runs the existing suites once with the
+# switch ON. FEATURES_DISABLED=!any_city_mode then reaches every Settings a test builds from the
+# environment; a value a test passes itself still wins, and ``clean_settings_env`` still gives a
+# test the empty environment it asks for. Unset (the default), nothing changes.
+ANY_CITY_SUITE_ON: bool = os.environ.get("ANY_CITY_SUITE_ON") == "1"
+ANY_CITY_ON_FEATURES = "!any_city_mode"
+
+
+@pytest.fixture(autouse=True)
+def any_city_suite_on() -> Iterator[None]:
+    """With ``ANY_CITY_SUITE_ON=1``, the switch is ON for the test (TC-490 record only)."""
+    if not ANY_CITY_SUITE_ON:
+        yield
+        return
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("FEATURES_DISABLED", ANY_CITY_ON_FEATURES)
+        get_settings.cache_clear()
+        yield
+    get_settings.cache_clear()
+
+
 @pytest.fixture(autouse=True)
 def reset_settings_cache() -> Iterator[None]:
     """Let each test read the settings afresh."""

@@ -259,6 +259,101 @@ jobs:
             ${{ runner.temp }}/web-3002.log
           retention-days: 14
 
+  # Amendment A2 §3.4, E2E-10, TC-486 (IMP-730): the one switch-ON job. The API and the web build run
+  # with `!any_city_mode` and the offline fake live-data providers (LIVE_DATA_PROVIDER=FAKE), and the
+  # @live specs (live-city.spec.ts) run at 360 and 1280 px. The job above keeps the switch OFF. The
+  # screenshots the spec takes are uploaded as the live-city-screenshots artifact.
+  live:
+    name: live
+    if: ${{ !inputs.base_url && !inputs.features_disabled }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      FEATURES_DISABLED: "!any_city_mode"
+      NEXT_PUBLIC_FEATURES_DISABLED: "!any_city_mode"
+      LIVE_DATA_PROVIDER: FAKE
+      REPEAT_EACH: ${{ inputs.repeat_each || '1' }}
+    steps:
+      - name: Validate repeat count
+        run: '[[ "$REPEAT_EACH" =~ ^[1-9][0-9]*$ ]]'
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: apps/api/pyproject.toml
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - uses: supabase/setup-cli@v3
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+      - run: make setup ARGS=--with-browsers
+
+      # supabase start prints the keys, before they can be masked.
+      - name: Start the local stack
+        run: make stack-up > /dev/null
+
+      - name: Export the local stack's values into the job
+        run: |
+          eval "$(supabase status -o env 2>/dev/null)"
+          echo "::add-mask::$ANON_KEY"
+          echo "::add-mask::$SERVICE_ROLE_KEY"
+          {
+            echo "SUPABASE_URL=$API_URL"
+            echo "SUPABASE_JWKS_URL=$API_URL/auth/v1/.well-known/jwks.json"
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+          } >> "$GITHUB_ENV"
+
+      - run: make db-migrate
+      - run: make seed
+
+      - name: Start the API with MOCK and the switch ON
+        working-directory: apps/api
+        run: |
+          nohup .venv/bin/uvicorn app.main:app --port 8000 > "$RUNNER_TEMP/api-live.log" 2>&1 &
+          curl -fsS --retry 30 --retry-delay 1 --retry-all-errors http://localhost:8000/health
+
+      - name: Build and start the web app with the switch ON
+        working-directory: apps/web
+        run: |
+          npm run build
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public
+          cp -r .next/standalone "$RUNNER_TEMP/web-live"
+          cd "$RUNNER_TEMP/web-live"
+          PORT=3000 HOSTNAME=0.0.0.0 nohup node server.js > "$RUNNER_TEMP/web-live.log" 2>&1 &
+          curl -fsS --retry 30 --retry-delay 1 --retry-all-errors -o /dev/null http://localhost:3000/
+
+      - name: Run the @live specs
+        env:
+          BASE_URL: http://localhost:3000
+          PLAYWRIGHT_HTML_REPORT: playwright-report/live
+        run: make e2e ARGS="live-city --project=chromium-360 --project=chromium-1280 --repeat-each=$REPEAT_EACH"
+
+      - name: Upload the screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-city-screenshots
+          path: apps/web/test-results/live-city-screens/
+          retention-days: 14
+
+      - name: Upload the Playwright report and the server logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-live
+          path: |
+            apps/web/playwright-report/
+            ${{ runner.temp }}/api-live.log
+            ${{ runner.temp }}/web-live.log
+          retention-days: 14
+
   # TC-370: the same journey against a deployment. It signs in with the pre-created staging account
   # (CI secrets E2E_STAGING_EMAIL and E2E_STAGING_PASSWORD) and deletes that account's trips through
   # the API before and after the run. The deployment's AI_PROVIDER decides MOCK or Gemini.
