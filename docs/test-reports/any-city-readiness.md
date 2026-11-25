@@ -49,6 +49,15 @@
 | MediaWiki API | Read 23 Nov 2026 | recorded |
 | OSM copyright | Page read 23 Nov 2026; the exact credit wording could not be read | exact wording **not verified — Junaid to confirm** |
 
+**Facts recorded on 25 November 2026 (RUN-096).** Status of each: "checked by the planner on 25 Nov 2026 against the source; confirmation by Junaid (IMP-723 step 8) pending". They are also in A2 §16.
+
+| Service | Source | Fact |
+| --- | --- | --- |
+| Nominatim | https://operations.osmfoundation.org/policies/nominatim/ | End-user-triggered use with a moderate number of users is acceptable; periodic app requests count as bulk geocoding and are strongly discouraged; a valid Referer or User-Agent identifying the application is required (stock library agents are not accepted); absolute maximum 1 request per second. Matches A2 §7.3 |
+| Overpass API | https://dev.overpass-api.de/overpass-doc/en/preface/commons.html, https://wiki.openstreetmap.org/wiki/Overpass_API | Rate limit per IP; denials answered with HTTP 429; default run time 180 s and memory 512 MiB unless declared; 10,000 queries and under 1 GB per day for one-off use, divided by 100 for regular use. The daily cap (50 new imports, at most 2 queries each) gives at most 100 queries per day; the 15-minute breaker on 429 matches the request to back off. Not covered by that cap: re-queued failed imports (G20), CLI imports, and the data volume |
+| Wikimedia | https://www.mediawiki.org/wiki/Wikimedia_APIs/Access_policy, https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy, https://www.mediawiki.org/wiki/Manual:Maxlag_parameter | A User-Agent with contact information is required on every request, preferred form `<client>/<version> (<contact>) <library>/<version>`; library-default agents are rate limited down to 1 request per second per IP or blocked; a maxlag refusal returns HTTP 200 with error code `maxlag`, which `wiki.py:98-100` maps to a failure (tests: `IMP-725-live-import-hardening.md`, addendum) |
+| OpenStreetMap ODbL attribution | — | not re-checked in this run |
+
 `security-any-city.md` ("Policy pages: Junaid to confirm by reading") still lists all three services as open, while the IMP-723 record dates two of them. A2 §7.3 asks for the reading before the first call outside tests, so it comes before section 6.
 
 **Settings per host**
@@ -201,8 +210,8 @@ Severity 1 blocks an IMD-220 production-ON condition; 2 is a visible defect; 3 i
 | # | Sev | Gap and evidence | Proposed owner (A2 §12) | Before cutoff |
 | --- | --- | --- | --- | --- |
 | G1 | 1 | `LIVE_DATA_PROVIDER` and `WIKI_USER_AGENT` are not in the staging template, so staging with the switch ON refuses to start (section 4). With the switch OFF the values have no effect (`deployment.md:180`), so they can land early | Kirtan (IMP-733) | yes |
-| G2 | 1 | `WIKI_USER_AGENT` has no agreed team contact (`deployment.md:163`) | Kirtan (IMP-733) | yes |
-| G3 | 1 | The Nominatim policy and the exact OSM credit text are not read; A2 §7.3 requires it before the first real call, so it blocks section 6 and TC-491 | Junaid (IMP-723, IMP-731) | yes (reading and a record) |
+| G2 | 1 | `WIKI_USER_AGENT` has no agreed team contact (`deployment.md:163`). It must follow the Wikimedia preferred form with a real contact (Kirtan) | Kirtan (IMP-733) | yes |
+| G3 | 1 | The Nominatim policy and the exact OSM credit text are not read; A2 §7.3 requires it before the first real call, so it blocks section 6 and TC-491. Facts recorded by the planner (section 3); Junaid's confirmation pending | Junaid (IMP-723, IMP-731) | yes (reading and a record) |
 | G4 | 1 | ACC-22 cannot be run on staging from the template, and no procedure is written (section 4) | Kirtan (IMP-733) | yes (procedure) |
 | G5 | 1 | No production template, so the production A2 §7.2 values cannot be reviewed (A2 §15.1) | Kirtan (IMP-733, IMP-801) | not needed; before IMP-801 |
 | G6 | 1 | Live place names without attribution on the summary page (`apps/web/app/(app)/trips/[tripId]/summary/page.tsx:53`, `PrintLayout.tsx:92`) and in the trip form (`PlacesStep.tsx:155`, `ReviewStep.tsx:171`); `LiveAttribution` is used on explore, itinerary and costs only. A2 §9.2 lists those three, A2 §10 says every screen: the team decides which reading IMD-220 (c) means | Krrish (IMP-729) | yes |
