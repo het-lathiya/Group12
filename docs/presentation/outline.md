@@ -1,6 +1,6 @@
 # Presentation outline: AI Travel Planner
 
-**Draft — RUN-087, 22 November 2026; human completion pending (Jeel)**
+**DRAFT — completed after SG-7** (RUN-087, 22 November 2026; updated in RUN-096, 25 November 2026; human completion pending: Jeel)
 
 **Slot length and rehearsal timing: pending (Jeel)**
 
@@ -8,8 +8,8 @@
 | --- | --- |
 | Card | IMP-804, part "Presentation slides" (US-148 AC2; NFR-041; TC-397) |
 | Owner | Jeel |
-| State described | `main` at `4fe514c` (the SG-7 release-candidate commit), 22 November 2026 |
-| Sources | [final-report.md](../final-report.md) only, including its section 5 (AI chapter). No figure in this outline comes from anywhere else |
+| State described | `main` at `4fe514c` (the SG-7 release-candidate commit), 22 November 2026; any-city and prompt v4 slides: `main` at `5fa8e6d`, 25 November 2026 |
+| Sources | [final-report.md](../final-report.md) only, including its sections 5 (AI chapter) and 11 (any-city mode). No figure in this outline comes from anywhere else |
 | Claims check | Every number below has a row in [final-report-claims-check.md](../final-report-claims-check.md), section "Presentation outline (docs/presentation/outline.md)", rows O1 onwards, each naming the report section and the claims-check row it comes from |
 | Slides file | Not made yet: pending (Jeel). This file is the outline only |
 
@@ -86,10 +86,10 @@ Every slide has the target slot time "to be measured in rehearsal (Jeel)". No ti
 
 - Journey: sign in, create a trip, generate, read the itinerary with warnings, costs and sources, edit, restore a version, open the summary
 - Step-by-step reference: [user guide](../guides/user-guide.md), sections 2 to 10
-- Demo script and backup video: IMP-801, pending (Kirtan, Nidhi)
+- Demo hand-off: [demo script](../demo/demo-script.md) (draft), path A with the any-city switch ON or path B with it OFF; the backup video is pending (Nidhi)
 - Ahmedabad saved sample itineraries (FR-036 AC3): pending (Jeel)
 
-**Speaker notes.** There is no `docs/demo/` folder yet; the demo script, rehearsal log and backup video belong to IMP-801 (Kirtan lead, Nidhi for the script and video). Until then the user guide is the reference for the journey; its section 12 lists where the built app differs from the specification's screens. No demo result is reported here. The journey has been recorded only with the MOCK provider in CI (slide 8); the staging journey with Gemini is pending (Kirtan). Do not show a live result as evidence unless it is recorded.
+**Speaker notes.** The demo script, rehearsal log and checklist in `docs/demo/` are drafts; no rehearsal is recorded, and the backup video belongs to IMP-801 (Nidhi). This slide hands over to the presenter of the demo. The user guide is the reference for the journey; its section 12 lists where the built app differs from the specification's screens. No demo result is reported here. The journey has been recorded only with the MOCK provider in CI (slide 8); the staging journey with Gemini is pending (Kirtan). Do not show a live result as evidence unless it is recorded.
 
 **Target slot time:** to be measured in rehearsal (Jeel)
 
@@ -101,7 +101,7 @@ Every slide has the target slot time "to be measured in rehearsal (Jeel)". No ti
 
 - Next.js web app (displays only what the API returns) → FastAPI modular monolith → PostgreSQL 16 with pgvector
 - Layer rules (routers → services → domain and repositories → adapters) enforced by import-linter: `Contracts: 6 kept, 0 broken.`
-- Schema: versioned SQL migrations `0001` to `0007`: the MVP tables plus `rag_documents` and `rag_chunks`
+- Schema: versioned SQL migrations `0001` to `0008`: the MVP tables, `rag_documents` and `rag_chunks`, and the live-destination columns
 - AWS `ap-south-1` as configured in the repository: ECS Express Mode on Fargate, ECR, SSM Parameter Store, CloudWatch, RDS; GitHub Actions deploys through an OIDC role
 - Production not created yet (IMP-801); staging last deployed for `964327f`, not the candidate
 
@@ -127,6 +127,22 @@ Every slide has the target slot time "to be measured in rehearsal (Jeel)". No ti
 
 ---
 
+## Slide 7b — Any-city mode
+
+**On the slide**
+
+- Any city: search (Nominatim) → import of open places (OpenStreetMap) and guide text (Wikivoyage, Wikipedia) → the normal trip, generation and costs screens
+- Behind a switch, OFF by default; production ON only if the staging conditions hold (IMD-220), else "built but disabled": pending (Kirtan)
+- Always labelled: "Live data", the OpenStreetMap badge, "Price unknown", "Hours unknown", and a "Data sources" footer with licences
+- Live dataset, 24 attempts each: MOCK 24 / 24 and rule-based 24 / 24 usable; Gemini with prompt v4: 1 usable of 24, so v4 is not active
+- Too few places gives a message naming a larger city, not an empty plan
+
+**Speaker notes.** From report sections 4.1, 5.6 and 11. Say what did not change: the model still chooses only stored place IDs, and no price or opening hour comes from the model or from guide text. No real city had been imported when this was written; the staging window is pending (Kirtan). The Gemini failures were provider failures (22 unavailable, 1 rate-limited); the 503 cause is the operator's report, not a run record. MOCK does not read the prompt, so its figures show that the path works, not model quality.
+
+**Target slot time:** to be measured in rehearsal (Jeel)
+
+---
+
 ## Slide 8 — Testing
 
 **On the slide**
@@ -143,6 +159,22 @@ Every slide has the target slot time "to be measured in rehearsal (Jeel)". No ti
 
 ---
 
+## Slide 8b — Cut items and why
+
+**On the slide**
+
+- All extensions cut to protect the MVP (IMD-65): no route, table or screen
+- Booking, payments and live prices excluded by decision (IMD-46)
+- Any-city mode kept small (A2 §1.2): no function-calling planner, scraping, paid services or grounding
+- Prompts v3 and v4 exist but are not active: the activation gate was not met (v3) or could not be run (v4)
+- SG-4: no cut-list switch was applied (IMD-167)
+
+**Speaker notes.** From report sections 2.2, 2.3, 5.4 and 5.10. Each cut has a recorded decision; name it when asked.
+
+**Target slot time:** to be measured in rehearsal (Jeel)
+
+---
+
 ## Slide 9 — Limitations
 
 **On the slide**
@@ -150,7 +182,7 @@ Every slide has the target slot time "to be measured in rehearsal (Jeel)". No ti
 - Ahmedabad is the only curated destination loaded; the further demo destination (IMP-603) is not in the repository
 - Staging not checked on the candidate; Gemini on staging last ended `config_error`; production not created
 - Performance and usability targets (NFR-003, NFR-004, NFR-005, NFR-027, NFR-050) not measured; no cost in money
-- Prompt v3 not active (14 duplicate-place items in 3 attempts); the model can repeat places, and the validator's rejection shortens the plan
+- Gemini availability: 22 of 45 (final v2 run) and 23 of 24 (live dataset) attempts ended in a provider failure; the labelled rule-based plan is the answer. Prompt v3 not active (14 duplicate-place items in 3 attempts); the model can repeat places, and the validator's rejection shortens the plan
 - No itinerary cost strip; no delete-account button (operator procedure); usability, interview and device results not recorded
 
 **Speaker notes.** From report sections 2.4, 4.3, 5.4 and 7. Prices, hours and travel times are curated or estimated and labelled; there is no booking, payment or live price, and the budget uses the destination currency only. Account deletion is a documented operator procedure (report section 8) that has not yet been run on staging (pending, Kirtan). The open items and their owners are in report section 10, due 26 November 2026.

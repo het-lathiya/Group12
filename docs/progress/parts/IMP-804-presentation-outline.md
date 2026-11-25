@@ -58,3 +58,13 @@ None.
 - Demo script, rehearsal log and backup video: IMP-801, pending (Kirtan, Nidhi); `docs/demo/` does not exist.
 - Ahmedabad saved sample itineraries (FR-036 AC3), used by the demo: pending (Jeel).
 - If a figure in the final report changes, the outline and rows O1 to O28 change in the same change.
+
+## Update of RUN-096 (batch H, 25 November 2026; this file and the outline existed and are modified)
+
+- Owner: Jeel. Branch `fix/RUN-096-batch-h`. Base commit: 5fa8e6d (on `main`). Status: PR_OPEN candidate. 0 points in this run.
+- Changed files: `docs/presentation/outline.md` (any-city slide 7b, cut items slide 8b, the demo hand-off, migration `0008`, Gemini availability); `docs/final-report-claims-check.md` rows O29 to O31 (outside the prompt's file list: the outline's own rule asks for a row per number), each "pending Junaid review"; this record.
+- No slide software file. Every number names its report section and source record.
+- Commands: documents only; the run checks on the branch head are in the SYNC REPORT of RUN-096.
+- Acceptance: slide list of the run prompt covered, 3 to 5 bullets on each slide (**verified** by count); rehearsal against the slot and the slides file **not verified** — pending (Jeel).
+- Proposed decisions: none. Blockers: none.
+- Open issue: slide numbers 7b and 8b keep the numbering of the claims rows; Jeel renumbers when making the slides.
