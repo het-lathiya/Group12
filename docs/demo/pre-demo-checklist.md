@@ -20,3 +20,14 @@
 | M6 | `make smoke URL=<production API URL>` passes | paste the summary line: ____ | | |
 | M7 | Local stack with `AI_PROVIDER=MOCK` runs on the presenter machine | [README.md](README.md); `/health` says provider MOCK | | |
 | M8 | Any-city switch state as decided at IMP-801 (IMD-220) | state: ____; with ON, the demo cities answer in the city search | | |
+
+## Keys, accounts, itineraries and demo path (Jeel)
+
+| # | Step | How to check | Done by | Time |
+| --- | --- | --- | --- | --- |
+| J1 | Gemini key, `GEMINI_MODEL_ID` and remaining quota checked | Kirtan or Het check the key; no key is written here. A 503 "high demand" answer is possible: the plan is then rule-based and labelled | | |
+| J2 | Demo accounts sign in on production | each account signs in and out; no password is written here | | |
+| J3 | Saved sample itinerary ready: curated Ahmedabad | open it on the demo account | | |
+| J4 | Saved sample itinerary ready: one live demo city, only if production is ON | open it; "Live data" badge and "Data sources" footer visible; write "not applicable" if OFF | | |
+| J5 | Network at the venue | the production web page loads on the demo machine | | |
+| J6 | Demo path run once, start to end | [demo-script.md](demo-script.md), path: ____ | | |
