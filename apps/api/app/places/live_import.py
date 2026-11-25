@@ -9,9 +9,10 @@ is completed or has too little data and has not expired is only printed; a new o
 a failed, expired or queued one is queued again, then the import runs inline (not through
 ``submit``). It is idempotent per OSM reference; ``--force`` imports a completed or too-little-data
 destination again before it expires, but never one that is running. The CLI has no user, so
-``import_requested_by`` stays null and the per-user daily cap does not apply. The API's start-up
-checks run first. The providers come from ``LIVE_DATA_PROVIDER``; the factory refuses FAKE outside
-local and test.
+``import_requested_by`` stays null and the per-user daily cap does not apply. A completed
+destination that is only printed gets the embeddings an earlier outage left out (A2 §6.5), and
+nothing else changes. The API's start-up checks run first. The providers come from
+``LIVE_DATA_PROVIDER``; the factory refuses FAKE outside local and test.
 
 Exit codes: 0 completed or not enough data; 1 the import failed, the city cannot be imported or the
 configuration is refused; 2 bad arguments; 3 another process is running the import.
@@ -23,7 +24,7 @@ import os
 import re
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Final
@@ -32,6 +33,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.providers.base import ModelProvider
 from app.core.config import ConfigError, Settings, check_settings, get_settings
 from app.db.models import Destination as DestinationRow
 from app.db.session import get_engine, transaction
@@ -46,6 +48,7 @@ from app.places.live_service import (
     PROVIDER,
     live_slug,
 )
+from app.rag import service as rag_service
 
 EXIT_OK: Final = 0
 EXIT_FAILED: Final = 1
@@ -64,6 +67,8 @@ class Outcome:
     destination_id: UUID
     ran: bool  # False: the existing state was only printed
     row: DestinationRow
+    embedded: int | None = None  # chunks embedded on a re-run; None when the import ran
+    embeddings_incomplete: bool = False
 
 
 def _six(value: float) -> Decimal:
@@ -161,6 +166,7 @@ async def import_destination(
     force: bool = False,
     providers: LiveProviders | None = None,
     sessions: live_jobs.Sessions = transaction,
+    embedder: ModelProvider | None = None,
 ) -> Outcome:
     """Resolve the settlement and run its import inline when needed; the final row is returned."""
     providers = providers or get_providers()
@@ -171,8 +177,17 @@ async def import_destination(
     async with sessions() as session:
         prepared = await _prepare(session, providers, osm_ref, force=force)
     if not prepared.ran:
-        return prepared
-    await live_jobs.run_import(prepared.destination_id, providers=providers, sessions=sessions)
+        if prepared.row.import_status != "completed":
+            return prepared
+        report = await rag_service.embed_destinations(
+            [prepared.destination_id], provider=embedder, sessions=sessions, missing_only=True
+        )
+        return replace(
+            prepared, embedded=report.embedded, embeddings_incomplete=report.provider_failed
+        )
+    await live_jobs.run_import(
+        prepared.destination_id, providers=providers, sessions=sessions, embedder=embedder
+    )
     async with sessions() as session:
         row = await repository.destination_by_id(session, prepared.destination_id)
         if row is None:  # never deleted; only a concurrent reset of the database could do it
@@ -183,7 +198,7 @@ async def import_destination(
 
 def _lines(outcome: Outcome) -> list[str]:
     row = outcome.row
-    return [
+    lines = [
         f"destination_id: {row.id}",
         f"slug: {row.slug}",
         f"import_ran: {'yes' if outcome.ran else 'no (existing state)'}",
@@ -196,6 +211,10 @@ def _lines(outcome: Outcome) -> list[str]:
         f"imported_at: {row.imported_at.isoformat() if row.imported_at else '-'}",
         f"expires_at: {row.expires_at.isoformat() if row.expires_at else '-'}",
     ]
+    if outcome.embedded is not None:
+        state = " (incomplete: provider failed)" if outcome.embeddings_incomplete else ""
+        lines.append(f"embedded_on_re_run: {outcome.embedded}{state}")
+    return lines
 
 
 def exit_code(outcome: Outcome) -> int:

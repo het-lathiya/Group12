@@ -97,6 +97,15 @@ def providers(guides: Any | None = None) -> LiveProviders:
     )
 
 
+def never_called() -> LiveProviders:
+    """Live-data providers that fail any call: a re-run of a completed city makes none."""
+    return LiveProviders(
+        geocoder=FakeGeocoder("timeout", app_env="test"),
+        places=FakePlaces("timeout", app_env="test"),
+        guides=FakeGuides("timeout", app_env="test"),
+    )
+
+
 def embedder(**kwargs: Any) -> MockProvider:
     return MockProvider("ok", app_env="test", **kwargs)
 
@@ -341,6 +350,55 @@ async def test_live_guides_global_cap_without_room_stores_places_without_guides(
 
     assert len(await documents(db_session, destination_id, "place")) == LIVETON_USABLE
     assert await documents(db_session, destination_id, "guide") == []
+
+
+async def test_live_guides_cli_re_run_embeds_what_an_outage_left_out(
+    db_session: AsyncSession, sessions: Sessions
+) -> None:
+    destination_id = await queued(db_session)
+    broken = embedder(embed_error=ProviderUnavailable("mock provider: embedding outage"))
+    assert await run(destination_id, sessions, StubGuides(RICH), embedder=broken) == "completed"
+    missing = await chunks(db_session, destination_id)
+
+    still_down = await live_import.import_destination(
+        osm_ref=LIVETON.osm_ref, providers=never_called(), sessions=sessions, embedder=broken
+    )
+    assert (still_down.ran, still_down.embedded) == (False, 0)
+    assert still_down.embeddings_incomplete
+    assert live_import.exit_code(still_down) == live_import.EXIT_OK  # IMD-112
+    assert "embedded_on_re_run: 0 (incomplete: provider failed)" in live_import._lines(still_down)
+
+    filled = await live_import.import_destination(
+        osm_ref=LIVETON.osm_ref, providers=never_called(), sessions=sessions, embedder=embedder()
+    )
+    assert (filled.ran, filled.embedded) == (False, len(missing))
+    stored = await chunks(db_session, destination_id)
+    assert all(c.embedding is not None for c in stored)
+
+    again = await live_import.import_destination(
+        osm_ref=LIVETON.osm_ref, providers=never_called(), sessions=sessions, embedder=broken
+    )
+    assert (again.embedded, again.embeddings_incomplete) == (0, False)  # nothing left, no call
+
+
+async def test_live_guides_cli_re_run_keeps_another_models_vectors(
+    db_session: AsyncSession, sessions: Sessions
+) -> None:
+    destination_id = await queued(db_session)
+    assert await run(destination_id, sessions, StubGuides(RICH)) == "completed"
+    await db_session.execute(
+        update(RagChunk)
+        .where(RagChunk.id.in_([c.id for c in await chunks(db_session, destination_id)]))
+        .values(embedding_model_id="another-model")
+    )
+
+    outcome = await live_import.import_destination(
+        osm_ref=LIVETON.osm_ref, providers=never_called(), sessions=sessions, embedder=embedder()
+    )
+
+    assert outcome.embedded == 0
+    kept = await chunks(db_session, destination_id)
+    assert {c.embedding_model_id for c in kept} == {"another-model"}
 
 
 async def test_live_guides_per_destination_cap_is_400_chunks(

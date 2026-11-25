@@ -142,9 +142,17 @@ async def count_inactive_documents(session: AsyncSession, destination_ids: Seque
 
 
 async def pending_chunks(
-    session: AsyncSession, model_id: str, destination_ids: Sequence[UUID]
+    session: AsyncSession,
+    model_id: str,
+    destination_ids: Sequence[UUID],
+    *,
+    missing_only: bool = False,
 ) -> list[tuple[UUID, str, str]]:
-    """(id, content, document title) of active chunks with no embedding from ``model_id``."""
+    """(id, content, document title) of active chunks with no embedding from ``model_id``.
+
+    With ``missing_only``, only chunks with no embedding at all: another model's vectors stay.
+    """
+    missing = RagChunk.embedding.is_(None)
     query = (
         select(RagChunk.id, RagChunk.content, RagDocument.title)
         .join(RagDocument, RagDocument.id == RagChunk.document_id)
@@ -152,7 +160,7 @@ async def pending_chunks(
             RagDocument.destination_id.in_(list(destination_ids)),
             RagDocument.is_active.is_(True),
             RagChunk.is_active.is_(True),
-            or_(RagChunk.embedding.is_(None), RagChunk.embedding_model_id != model_id),
+            missing if missing_only else or_(missing, RagChunk.embedding_model_id != model_id),
         )
         .order_by(RagDocument.doc_key, RagChunk.chunk_index)
     )

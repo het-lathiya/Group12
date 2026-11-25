@@ -217,10 +217,12 @@ async def _embed(
     sessions: Sessions,
     destination_ids: Sequence[UUID],
     report: IndexReport,
+    *,
+    missing_only: bool = False,
 ) -> None:
     async with sessions() as session:
         pending = await repository.pending_chunks(
-            session, provider.embedding_model_id, destination_ids
+            session, provider.embedding_model_id, destination_ids, missing_only=missing_only
         )
     for start in range(0, len(pending), RAG_EMBED_BATCH):
         batch = pending[start : start + RAG_EMBED_BATCH]
@@ -359,15 +361,24 @@ async def embed_destinations(
     *,
     provider: ModelProvider | None = None,
     sessions: Sessions = transaction,
+    missing_only: bool = False,
 ) -> IndexReport:
     """Embed the destinations' active chunks that have no vector from the active model.
 
+    ``missing_only`` leaves chunks that hold another model's vector as they are, so a later run
+    (the import CLI on a completed city) only fills what an outage left out.
     A provider failure stops it with ``provider_failed`` set and the chunks left without vectors,
     so generation uses ``lexical_fallback`` (IMD-112); ``embedded`` counts what was stored.
     """
     report = IndexReport()
     try:
-        await _embed(provider or get_provider(), sessions, destination_ids, report)
+        await _embed(
+            provider or get_provider(),
+            sessions,
+            destination_ids,
+            report,
+            missing_only=missing_only,
+        )
     except ProviderError as exc:
         report.provider_failed = True
         logger.warning(
