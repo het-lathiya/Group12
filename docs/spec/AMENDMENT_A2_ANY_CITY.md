@@ -100,7 +100,7 @@ Rules for the code (IMP-722, IMP-728):
 | Local, CI, the existing E2E runs | empty (OFF) | unchanged |
 | CI switch-ON jobs (IMP-730) | `!any_city_mode`, with `LIVE_DATA_PROVIDER=FAKE` | Krrish |
 | Staging, 28 November window | `!any_city_mode` in `STAGING_FEATURES_DISABLED` and the web build argument, only if the batches are green by the cutoff (IMD-215) | Kirtan |
-| Production | OFF unless the team decides otherwise after SG-7 | Kirtan |
+| Production | ON at IMP-801 if the conditions of IMD-220 hold on staging, otherwise OFF (IMD-220) | Kirtan |
 
 ### 3.3 Switch OFF equals `c23d78b`
 

@@ -23,6 +23,7 @@ Card: IMP-733 (Amendment A2 §12 Batch C3, §13.3). Owner: Nidhi (documents); st
 | Item | Value |
 | --- | --- |
 | Switch state at the release | to be recorded at the cutoff (27 Nov 2026 23:59 IST) |
+| Switch state of the release candidate (IMD-220, 25 Nov 2026) | staging: ON in the 28 Nov window; production: target ON at IMP-801 if the conditions of IMD-220 hold on staging, otherwise OFF ("built but disabled", IMD-215) |
 | If ON: demo cities pre-imported (PD-AC-2) | pending; runbook [any-city-staging.md](../guides/any-city-staging.md) |
 | If ON: ACC-20 to ACC-23 recorded | pending (table above) |
 | If ON: attribution footer visible on every live page | pending (staging); supported by IMP-729 tests and E2E-10 |
