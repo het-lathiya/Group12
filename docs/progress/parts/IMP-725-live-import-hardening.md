@@ -57,3 +57,17 @@ none
 ## Blockers
 
 none
+
+## Addendum of RUN-096: G15 (MediaWiki maxlag)
+
+- Owner: Manal. Second commit of this part on `fix/RUN-096-batch-h`; the first one was already pushed and is not rewritten.
+- "G15" here is the number of the run's addendum (MediaWiki maxlag). The readiness audit's row G15 is a different gap (an expired `insufficient_data` city), which stays open.
+- **No code change was needed.** Since IMP-723, `MediaWikiGuides._query` raises `LiveDataUnavailable` for a 200 answer with an error object ("maxlag" or "api error"), in one attempt, with no body in the logs; `mediawiki_maxlag.json` and `test_livedata_mediawiki_maxlag_is_unavailable` already existed.
+- Added tests (marked `any_city`, respx, the recorded maxlag body):
+  - `test_mediawiki_error_object_is_a_failure_after_one_attempt` (maxlag and two other codes; nothing of the body logged);
+  - `test_mediawiki_error_object_beside_pages_is_still_a_failure`;
+  - `test_live_guides_maxlag_refusal_keeps_the_import_without_guides` (through the real client; the import completes without guides, IMD-218).
+- Changed files: `apps/api/tests/unit/livedata/test_live_import_hardening.py`, `apps/api/tests/api/test_live_guides_index.py`, this record.
+- Command: `.venv/bin/pytest tests/unit/livedata tests/api/test_live_guides_index.py -q`: `607 passed in 4.07s`.
+- Acceptance: a maxlag or other error object is never read as "no sections": **verified**; a refusal keeps the import: **verified**.
+- Open issue: a refusal from the second source still drops the sections already read from the first (audit G16).

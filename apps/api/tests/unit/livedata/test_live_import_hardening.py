@@ -1,8 +1,10 @@
-"""Live import hardening (any-city readiness gaps G8, G10, G11; A2 §6.3, §6.5, §7.2; IMP-725).
+"""Live import hardening (any-city readiness gaps G8, G10, G11 and the RUN-096 addendum G15;
+A2 §6.3, §6.5, §7.1, §7.2; IMP-725).
 
 G8: an Overpass answer with an error note is a failure, never data. G10: a guide page carries its
 coordinates, and only sections of a page inside the destination's box are kept. G11: the import CLI
-runs the API's start-up checks. Offline only: respx and synthetic SAMPLE bodies.
+runs the API's start-up checks. G15: a MediaWiki answer with HTTP 200 and an error object (maxlag)
+is a failure, never "no sections". Offline only: respx and synthetic SAMPLE bodies.
 """
 
 import json
@@ -112,6 +114,41 @@ async def test_mediawiki_malformed_coordinates_are_a_safe_failure(coordinates: o
     with respx.mock() as router:
         router.get(WIKIVOYAGE_API).mock(return_value=httpx.Response(200, json=body))
         with pytest.raises(LiveDataUnavailable, match=r"^malformed response$"):
+            await voyage().fetch("Liveton (SAMPLE)", 23.5, 77.5)
+
+
+# ---------- G15: an error object in a 200 answer ----------
+
+
+def refusal(code: str) -> dict[str, Any]:
+    body = load("mediawiki_maxlag.json")
+    body["error"] = {**body["error"], "code": code, "info": "MARKER-INFO-5521"}
+    return body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("code", "message"),
+    [("maxlag", "maxlag"), ("ratelimited", "api error"), ("readonly", "api error")],
+)
+async def test_mediawiki_error_object_is_a_failure_after_one_attempt(
+    code: str, message: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    with respx.mock() as router, caplog.at_level(logging.DEBUG, logger="app.livedata"):
+        route = router.get(WIKIVOYAGE_API).respond(200, json=refusal(code))
+        with pytest.raises(LiveDataUnavailable) as raised:
+            await voyage().fetch("Liveton (SAMPLE)", 23.5, 77.5)
+    assert str(raised.value) == message
+    assert route.call_count == 1
+    assert "MARKER-INFO-5521" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_mediawiki_error_object_beside_pages_is_still_a_failure() -> None:
+    body = {**load("mediawiki_liveton.json"), **refusal("maxlag")}
+    with respx.mock() as router:
+        router.get(WIKIVOYAGE_API).respond(200, json=body)
+        with pytest.raises(LiveDataUnavailable, match=r"^maxlag$"):
             await voyage().fetch("Liveton (SAMPLE)", 23.5, 77.5)
 
 

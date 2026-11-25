@@ -12,6 +12,7 @@ job's transactions are savepoints of the test's rolled-back session.
 """
 
 import dataclasses
+import json
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -20,6 +21,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import pytest
+import respx
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +32,7 @@ from app.db.models import DataSource, Destination, RagChunk, RagDocument
 from app.livedata.factory import LiveProviders
 from app.livedata.providers.base import LiveDataTimeout, WikiSection
 from app.livedata.providers.fake import LIVETON, FakeGeocoder, FakeGuides, FakePlaces
+from app.livedata.providers.wiki import WIKIVOYAGE_API, MediaWikiGuides
 from app.places import live_import, live_jobs, repository
 from app.rag import live_guides
 from app.rag import service as rag_service
@@ -287,6 +290,23 @@ async def test_live_guides_source_failure_stores_places_without_guides(
 
     assert await run(destination_id, sessions, failing) == "completed"
 
+    assert len(await documents(db_session, destination_id, "place")) == LIVETON_USABLE
+    assert await documents(db_session, destination_id, "guide") == []
+
+
+async def test_live_guides_maxlag_refusal_keeps_the_import_without_guides(
+    db_session: AsyncSession, sessions: Sessions
+) -> None:
+    """HTTP 200 with error code maxlag, through the real MediaWiki client (IMD-218, G15)."""
+    destination_id = await queued(db_session)
+    recorded = Path(__file__).parents[1] / "fixtures" / "livedata" / "mediawiki_maxlag.json"
+    guides = MediaWikiGuides(10, "AITravelPlanner-tests/1.0 (contact: none)")
+
+    with respx.mock() as router:
+        route = router.get(WIKIVOYAGE_API).respond(200, json=json.loads(recorded.read_text()))
+        assert await run(destination_id, sessions, guides) == "completed"
+
+    assert route.call_count == 1
     assert len(await documents(db_session, destination_id, "place")) == LIVETON_USABLE
     assert await documents(db_session, destination_id, "guide") == []
 
