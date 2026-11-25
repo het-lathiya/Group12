@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { BudgetSettingsForm } from "@/components/costs/BudgetSettingsForm";
+import { LiveAttribution } from "@/components/labels/LiveAttribution";
+import { useDestinationTier } from "@/components/labels/TierBadge";
 import {
   ErrorState,
   type ErrorStateError,
@@ -168,6 +170,7 @@ function Wizard({
   const savePreferences = useSavePreferences(trip?.id ?? "");
   const preferences = usePreferences(trip?.id);
   const profile = useProfile();
+  const tier = useDestinationTier(trip?.destination_id);
   const heading = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
   const saving =
@@ -365,6 +368,13 @@ function Wizard({
             )}
           </div>
         </div>
+
+        {/* Amendment A2 §10: the steps that name live places carry their sources. */}
+        {step >= 2 && tier.live && (
+          <div className="mt-8">
+            <LiveAttribution tier={tier.tier} attribution={tier.attribution} />
+          </div>
+        )}
 
         {(saveError ?? preferences.error) && (
           <div className="mt-6">

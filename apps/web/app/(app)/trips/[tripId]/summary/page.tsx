@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
+import { LiveAttribution } from "@/components/labels/LiveAttribution";
+import { useDestinationTier } from "@/components/labels/TierBadge";
 import { EmptyState } from "@/components/states/EmptyState";
 import { ErrorState } from "@/components/states/ErrorState";
 import { LoadingSkeleton } from "@/components/states/LoadingSkeleton";
@@ -15,6 +17,8 @@ import { useSummary } from "@/lib/api/queries";
 export default function SummaryPage() {
   const { tripId } = useParams<{ tripId: string }>();
   const summary = useSummary(tripId);
+  // Amendment A2 §10: API-79 is read only with `any_city_mode` ON.
+  const tier = useDestinationTier(summary.data?.trip.destination_id);
   const noPlan =
     summary.error instanceof ApiError && summary.error.status === 404;
   return (
@@ -50,7 +54,12 @@ export default function SummaryPage() {
           onRetry={() => void summary.refetch()}
         />
       ) : (
-        <PrintLayout summary={summary.data} />
+        <PrintLayout
+          summary={summary.data}
+          footer={
+            <LiveAttribution tier={tier.tier} attribution={tier.attribution} />
+          }
+        />
       )}
     </div>
   );

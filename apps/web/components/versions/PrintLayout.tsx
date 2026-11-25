@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { formatDuration } from "@/components/itinerary/ItineraryItemCard";
 import { AiBadge } from "@/components/labels/AiBadge";
 import { SourceBadge } from "@/components/labels/SourceBadge";
@@ -44,8 +46,17 @@ function Cost({ cost }: { cost: Item["cost"] }) {
   );
 }
 
-/** The printable trip summary (FR-094): every value comes from API-35, nothing is computed here. */
-export function PrintLayout({ summary }: { summary: Summary }) {
+/**
+ * The printable trip summary (FR-094): every value comes from API-35, nothing is computed here.
+ * `footer` (the live data sources, Amendment A2 §10) is inside the printed part.
+ */
+export function PrintLayout({
+  summary,
+  footer,
+}: {
+  summary: Summary;
+  footer?: ReactNode;
+}) {
   const { trip, days, unresolved_findings: findings, costs } = summary;
   return (
     <article data-print-root className="flex flex-col gap-6">
@@ -149,6 +160,7 @@ export function PrintLayout({ summary }: { summary: Summary }) {
         )}
       </section>
       <p className="text-sm text-muted-foreground">{ESTIMATE_STATEMENT}</p>
+      {footer}
     </article>
   );
 }
