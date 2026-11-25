@@ -123,7 +123,7 @@ The SRS (§11), the architecture document (§11), the deployment guide (§11) an
 
 ## 5. AI: provider, prompts, retrieval and evaluation
 
-Owner: Manya. This chapter describes the AI path as built on `main` at `4fe514c` and reports only the evaluation figures recorded by IMP-705 ([final-baseline.md](../eval/reports/final-baseline.md), [cost-latency-report.md](test-reports/cost-latency-report.md)). Every figure names its run record under `eval/results/`; each one has a row in the claims check.
+**DRAFT — completed after SG-7.** Owner: Manya. This chapter describes the AI path as built on `main` at `4fe514c`, updated on 25 November 2026 for `main` at `5fa8e6d` where a sentence says so. It reports only the evaluation figures recorded by IMP-705 ([final-baseline.md](../eval/reports/final-baseline.md), [cost-latency-report.md](test-reports/cost-latency-report.md)) and by IMP-732 ([live-v1-2026-11-23.md](../eval/reports/live-v1-2026-11-23.md), [live-v1-gemini-2026-11-25.md](../eval/reports/live-v1-gemini-2026-11-25.md)). Every figure names its run record under `eval/results/`; each one has a row in the claims check.
 
 ### 5.1 What the model does and what code does
 
@@ -158,14 +158,15 @@ Evidence in the browser: the provider-failure specs passed on the candidate ([E2
 | `itinerary_generate/v1` | gr-1 / io-1 | Baseline-1 with Gemini ([`20261114T104200Z-gemini`](../eval/results/20261114T104200Z-gemini/run.json)): usable outputs 44 / 45, 1 failure (`schema_violation`). [baseline-1.md](../eval/reports/baseline-1.md) found that 492 of the 557 item notes start with "AI-written:" (the screen would show the label twice) and that 88 items reuse a place already in the plan | Kept for comparison; not active |
 | `itinerary_generate/v2` | gr-2 / io-2 | Added by IMP-316 for RAG ([model-change-log.md](model-change-log.md)): passages reach the model as quoted reference data, instructions inside them are ignored, a note that relies on a passage cites its ID, prices, hours, travel times and totals are never written; first version with a repair template | **Active** (`PROMPT_TEMPLATE_VERSION=v2` in the application default and the staging template; IMD-200) |
 | `itinerary_generate/v3` | gr-2 / io-2 | RUN-079 ([RUN-079-prompt-v3.md](../eval/reports/RUN-079-prompt-v3.md), [`20261116T042246Z-gemini`](../eval/results/20261116T042246Z-gemini/run.json)): Gemini usable 44 / 45 and 0 of 564 notes with "AI-written", but 14 duplicate-place items in 3 attempts, so the IMD-195 activation gate was **not met** | Not active (IMD-200) |
+| `itinerary_generate/v4` | gr-2 / io-2 | v2 with one sentence of the system text changed, for passages imported from public sources (A2 §6.7). MOCK on `trips/v1`: 45 / 45 on every count, in two runs. Gemini on the live dataset: 1 usable attempt of 24. The Gemini run on `trips/v1` that the gate needs was not made (section 5.6, [live-v1-gemini-2026-11-25.md](../eval/reports/live-v1-gemini-2026-11-25.md)) | Not active (IMD-200, IMD-220): the gate evidence is missing; v4 was not found worse |
 
-Because v3 is not active, the v1 findings stay recorded as open under v2 (SRS D-14). The validator rejects any repeated place, so a saved plan holds no duplicate, but the plan is shorter. An optional v4 was allowed in Sprint 7 (IMD-200); no v4 exists in the repository.
+Because v3 is not active, the v1 findings stay recorded as open under v2 (SRS D-14). The validator rejects any repeated place, so a saved plan holds no duplicate, but the plan is shorter. v2's system text calls passages "curated sources", which is inexact for the guide passages of a live city (A2 §1.3).
 
 IMD-213 set the final Gemini evaluation to the active v2. Baseline-1 ran v1, so any comparison between the v1 and v2 runs is **across prompt versions**, not like for like.
 
 ### 5.5 Retrieval-augmented generation
 
-RAG is part of the MVP and not on the cut list (IMD-105). It is built only from `google-genai` (through `ModelProvider.embed_texts`) and pgvector in the same PostgreSQL database, with no LangChain, LlamaIndex or separate vector database ([architecture.md](architecture.md) §7).
+RAG is part of the MVP and not on the cut list (IMD-105). It is built only from `google-genai` (through `ModelProvider.embed_texts`) and pgvector in the same PostgreSQL database, with no LangChain, LlamaIndex or separate vector database ([architecture.md](architecture.md) §7). With any-city mode, a live city's places and its Wikivoyage and Wikipedia sections use the same store and the same rules; section 11 describes that corpus.
 
 - **Corpus.** Place documents from active curated places (never prices, hours, websites or booking links) and guide documents from `data/guides/<slug>/`, written by members; the only exception is the synthetic SAMPLE guides used in tests (IMP-313). Guides pass a strict gate that refuses missing provenance, out-of-range length and price, clock-time or opening-hours statements ([rag-corpus.md](guides/rag-corpus.md)). Section 3 gives the data counts.
 - **Indexing.** `python -m app.rag.index` chunks the documents, embeds them through `embed_texts` (Gemini embeddings on staging and production, `mock-embed-v1` in local and test) and stores the vectors in `rag_chunks`; removed documents become inactive and are never deleted, so saved citations still resolve. The release task runs it with `--strict` on every deploy.
@@ -193,6 +194,18 @@ RAG is part of the MVP and not on the cut list (IMD-105). It is built only from 
 - **MOCK.** Both runs score 45 / 45 on every count; the `metrics` objects of the two records are identical and their raw outputs are identical, so the harness is reproducible (ACC-14). MOCK returns fixed answers, so these runs show that the pipeline runs and scores every case, not model quality.
 - **Against baseline-1** ([`20261114T104200Z-gemini`](../eval/results/20261114T104200Z-gemini/run.json): prompt v1, metrics v1, usable 44 / 45, average daily travel 92.2 minutes). The comparison is across prompt versions and across different attempt sets (45 attempts of 15 cases against 23 attempts of 12 cases). Among completed attempts the v2 run had no schema failure, and its average daily travel is 119.4 against 92.2. No conclusion about v2 against v1 is drawn.
 - The numbered metrics 1 to 13 are not computed; each record states why.
+
+**Live dataset (IMP-732).** `trips/live-v1` holds 8 SAMPLE cases for a live city, in which no place has a price or opening hours. It carries no retrieved passages, so it measures neither citations nor v4's changed sentence.
+
+| Measure | MOCK [`20261123T171053Z-mock`](../eval/results/20261123T171053Z-mock/run.json) | Rule-based [`20261123T171053Z-rule_based`](../eval/results/20261123T171053Z-rule_based/run.json) | Gemini, prompt v4, three runs [`20261124T160457Z-gemini`](../eval/results/20261124T160457Z-gemini/run.json), [`20261124T163607Z-gemini`](../eval/results/20261124T163607Z-gemini/run.json), [`20261125T155029Z-gemini`](../eval/results/20261125T155029Z-gemini/run.json) |
+| --- | --- | --- | --- |
+| Attempts | 24 | 24 | 8, 8 and 8 |
+| Usable | 24 / 24 | 24 / 24 | 0 / 8, 0 / 8 and 1 / 8 |
+| Failures | 0 | 0 | 23: 22 `provider_unavailable`, 1 `provider_rate_limited` |
+
+- **Prompt v4 is not active.** MOCK v4 on `trips/v1` scored 45 / 45 on all four counts in both runs ([`20261124T160444Z-mock`](../eval/results/20261124T160444Z-mock/run.json), [`20261125T155020Z-mock`](../eval/results/20261125T155020Z-mock/run.json)), but MOCK does not read the prompt text. The IMD-195 gate also needs a Gemini run on `trips/v1`, with at most 1 failure in 45. With 1 usable attempt in 24 it could not pass, so it was not made. v2 stays (IMD-200, IMD-220).
+- **The one usable Gemini attempt supports no comparison.** Three runs were made although the card foresees one; all three are counted ([live-v1-gemini-2026-11-25.md](../eval/reports/live-v1-gemini-2026-11-25.md) section 3).
+- **Cause, reported by the operator and not reproducible from the repository:** on 24 November 2026 a probe through the same call path answered HTTP 503 with a "high demand" message (same report, section 4). The records hold only the mapped error.
 
 **Retrieval suite** (`retrieval/v1`, 12 queries, 6 per destination; MOCK embeddings and MOCK answers):
 
@@ -234,6 +247,13 @@ The Stage 2 readiness package ([stage2/README.md](stage2/README.md), IMP-706, ow
 - No claim about plan quality, accuracy or reliability beyond these runs over `trips/v1` and `retrieval/v1`, or for other destinations, models, prompt versions or live use.
 - No Gemini retrieval figure, no money cost and no end-to-end timing.
 - No staging generation result: Gemini on staging last ended `config_error` (section 4.3), and the staging journey with Gemini is pending (Kirtan).
+
+### 5.10 Limitations and future work
+
+- **Gemini availability is the main limitation of the AI path.** In the final v2 run 22 of 45 attempts, and on the live dataset 23 of 24, ended in a provider failure. The product then answers with the labelled rule-based plan. Nothing in the repository shows how available Gemini will be on demo day.
+- **Repeated places.** Under v2 the model can repeat a place; the validator rejects the repeat and the plan is shorter (section 5.6).
+- **Live guide passages** depend on embeddings: without them a live plan cites no guide (A2 §1.3, cut). The operator can embed missing chunks later by running the import command again ([IMP-726 live-embed-backfill](progress/parts/IMP-726-live-embed-backfill.md)).
+- **Future work, not built:** the Gemini gate run for v4 (PD-IMP-732-1), a live dataset with passages, a function-calling planner, grounding with other services, LLM-as-judge evaluation (A2 §1.2), and Stage 2 (section 9).
 
 ## 6. Testing and quality
 

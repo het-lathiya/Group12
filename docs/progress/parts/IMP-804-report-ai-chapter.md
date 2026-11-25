@@ -64,3 +64,13 @@ All read only, 22 November 2026, in the main checkout at `4fe514c`. No evaluatio
 - `docs/stage2/migration-gate-criteria.md` "Current reference values" still shows the final Gemini run as "not measured: no key in the run environment"; it should cite `20261120T165222Z-gemini` (23 of 45 completed) (owner Manya, IMP-706).
 - Blueprint criteria E1 to E7 of the Stage 2 gate are still to be confirmed (Manya).
 - No Gemini retrieval record exists; the one attempt ended HTTP 503 and was not re-run.
+
+## Update of RUN-096 (batch H, 25 November 2026; this file existed and is modified)
+
+- Owner: Manya. Branch `fix/RUN-096-batch-h`. Base commit: 5fa8e6d (on `main`). Status: PR_OPEN candidate. 0 points in this run.
+- Changed files: `docs/final-report.md` section 5 only (prompt v4 row, the live dataset results, section 5.10); `docs/final-report-claims-check.md` rows 76 to 84, each "pending Junaid review"; this record.
+- The sentence "no v4 exists in the repository" was out of date and is removed. Rows 34 to 75 are unchanged.
+- Commands: `python3` read of `metrics` and `failures` in the seven IMP-732 `run.json` files; the values are those of the rows. The run checks on the branch head are in the SYNC REPORT of RUN-096.
+- Acceptance: every new number has a row (**verified**); the operator's 503 probe is labelled as reported (**verified**); review of the claims check **not verified** — pending (Junaid).
+- Proposed decisions: none. Blockers: none.
+- Open issue: the chapter still describes the candidate `4fe514c` where it does not say otherwise; Manya brings it to the released commit after SG-7.
