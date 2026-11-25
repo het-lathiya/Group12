@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Final
 
-from app.livedata.providers.base import WikiSection
+from app.livedata.providers.base import BBox, WikiSection
 from app.rag.chunker import HEADING_MAX
 from app.rag.constants import GUIDE_MAX_CHARS, GUIDE_MIN_CHARS
 from app.rag.documents import CorpusDocument, guide_document
@@ -76,6 +76,21 @@ def _parts(paragraphs: Sequence[str]) -> list[str]:
             joined = paragraph
         current = joined
     return [*parts, current] if current else parts
+
+
+def sections_inside(sections: Iterable[WikiSection], bbox: BBox) -> list[WikiSection]:
+    """The sections whose page coordinates lie inside the destination's box.
+
+    A page is found by its title, so it can be about another place of the same name; a page
+    without coordinates cannot be checked. Neither is stored.
+    """
+    return [
+        section
+        for section in sections
+        if section.page_lat is not None
+        and section.page_lon is not None
+        and bbox.contains(section.page_lat, section.page_lon)
+    ]
 
 
 @dataclass(frozen=True)

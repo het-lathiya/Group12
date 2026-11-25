@@ -139,6 +139,10 @@ class WikiSection:
     index: int
     heading: str
     text: str
+    # The page's own coordinates; None when the page has none. ``rag.live_guides`` keeps a section
+    # only when they lie in the destination's box, so a same-named place elsewhere is left out.
+    page_lat: float | None = None
+    page_lon: float | None = None
 
 
 class GeocodingProvider(Protocol):

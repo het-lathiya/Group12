@@ -286,21 +286,23 @@ _TINYHAM_VOYAGE: Final[tuple[tuple[str, str], ...]] = (
 def _sections(
     source: Literal["wikivoyage", "wikipedia"],
     page_id: int,
-    title: str,
+    place: GeoPlace,
     parts: tuple[tuple[str, str], ...],
 ) -> list[WikiSection]:
     host = "en.wikivoyage.org" if source == "wikivoyage" else "en.wikipedia.org"
-    slug = title.replace(" ", "_")
+    slug = place.name.replace(" ", "_")
     return [
         WikiSection(
             source=source,
             page_id=page_id,
             revision_id=page_id * 10,
-            page_title=title,
+            page_title=place.name,
             page_url=f"https://{host}/wiki/{slug}",
             index=index,
             heading=heading,
             text=text,
+            page_lat=place.lat,
+            page_lon=place.lon,
         )
         for index, (heading, text) in enumerate(parts)
     ]
@@ -314,7 +316,7 @@ class FakeGuides(_Fake):
         if self.scenario == "empty":
             return []
         if self.scenario == "small" or "tinyham" in name.casefold():
-            return _sections("wikivoyage", 9_000_002, TINYHAM.name, _TINYHAM_VOYAGE)
-        return _sections("wikivoyage", 9_000_001, LIVETON.name, _LIVETON_VOYAGE) + _sections(
-            "wikipedia", 9_000_011, LIVETON.name, _LIVETON_PEDIA
+            return _sections("wikivoyage", 9_000_002, TINYHAM, _TINYHAM_VOYAGE)
+        return _sections("wikivoyage", 9_000_001, LIVETON, _LIVETON_VOYAGE) + _sections(
+            "wikipedia", 9_000_011, LIVETON, _LIVETON_PEDIA
         )

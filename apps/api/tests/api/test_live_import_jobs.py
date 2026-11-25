@@ -46,7 +46,13 @@ from app.db.models import (
 from app.generation import jobs
 from app.livedata.countries import capital
 from app.livedata.factory import LiveProviders, get_geocoder
-from app.livedata.providers.base import BBox, LiveDataUnavailable, OsmElement, PlacesProvider
+from app.livedata.providers.base import (
+    BBox,
+    LiveDataUnavailable,
+    OsmElement,
+    PlacesProvider,
+    WikiSection,
+)
 from app.livedata.providers.fake import (
     BIGTOWN_NAME,
     LIVETON,
@@ -609,6 +615,92 @@ async def test_cli_refuses_a_bad_reference() -> None:
     with pytest.raises(SystemExit) as raised:
         live_import.parse_args(["--osm-ref", "1234; drop"])
     assert raised.value.code == live_import.EXIT_USAGE
+
+
+# The readiness fixes: a forced re-import (G8) and the guide-page coordinate check (G10)
+
+
+async def test_cli_force_imports_a_current_destination_again(
+    db_session: AsyncSession, sessions: Sessions
+) -> None:
+    few = await live_import.import_destination(
+        osm_ref=LIVETON_REF, providers=with_places(StubPlaces(tinyham_elements)), sessions=sessions
+    )
+    assert few.row.import_status == "insufficient_data"
+
+    printed = await live_import.import_destination(
+        osm_ref=LIVETON_REF, providers=fakes(), sessions=sessions
+    )
+    assert (printed.ran, printed.row.import_status) == (False, "insufficient_data")
+
+    forced = await live_import.import_destination(
+        osm_ref=LIVETON_REF, force=True, providers=fakes(), sessions=sessions
+    )
+    assert forced.ran
+    assert forced.destination_id == few.destination_id
+    assert (forced.row.import_status, forced.row.is_active) == ("completed", True)
+    assert forced.row.nearby_city is None
+
+    again = await live_import.import_destination(
+        osm_ref=LIVETON_REF, force=True, providers=fakes("timeout"), sessions=sessions
+    )
+    assert (again.row.import_status, again.row.is_active) == ("failed", True)  # IMD-217
+
+
+async def test_cli_force_never_touches_a_running_import(
+    db_session: AsyncSession, sessions: Sessions
+) -> None:
+    destination_id = await queued(db_session)
+    async with sessions() as session:
+        started = datetime.now(UTC)
+        assert await places_service.claim_live_import(session, destination_id, started)
+
+    busy = await live_import.import_destination(
+        osm_ref=LIVETON_REF, force=True, providers=fakes(), sessions=sessions
+    )
+    assert (busy.ran, busy.row.import_status) == (False, "running")
+    assert live_import.exit_code(busy) == live_import.EXIT_BUSY
+
+
+class MovedGuides:
+    """The SAMPLE sections, with every page moved to the given coordinates."""
+
+    def __init__(self, lat: float | None, lon: float | None) -> None:
+        self.lat, self.lon = lat, lon
+
+    async def fetch(self, name: str, lat: float, lon: float) -> list[WikiSection]:
+        sections = await FakeGuides("ok", app_env="test").fetch(name, lat, lon)
+        return [dataclasses.replace(s, page_lat=self.lat, page_lon=self.lon) for s in sections]
+
+
+@pytest.mark.parametrize(
+    ("lat", "lon", "kept"),
+    [
+        (LIVETON.lat, LIVETON.lon, True),
+        (LIVETON.lat + 5, LIVETON.lon, False),  # a same-named place elsewhere
+        (None, None, False),  # a page without coordinates cannot be checked
+    ],
+    ids=["inside", "elsewhere", "none"],
+)
+async def test_guides_are_stored_only_from_a_page_inside_the_box(
+    db_session: AsyncSession,
+    sessions: Sessions,
+    lat: float | None,
+    lon: float | None,
+    kept: bool,
+) -> None:
+    destination_id = await queued(db_session)
+    base = fakes()
+    providers = LiveProviders(
+        geocoder=base.geocoder, places=base.places, guides=MovedGuides(lat, lon)
+    )
+    assert await run(destination_id, sessions, providers) == "completed"
+    stored = await db_session.scalar(
+        select(func.count())
+        .select_from(RagDocument)
+        .where(RagDocument.destination_id == destination_id, RagDocument.kind == "guide")
+    )
+    assert bool(stored) is kept
 
 
 # API-77 resolve, then the job, a trip (API-07) and a MOCK generation (API-22): TC-479 share

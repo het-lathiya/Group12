@@ -47,6 +47,7 @@ from app.livedata.providers.base import (
 )
 from app.places import service as places_service
 from app.places.schemas import Destination
+from app.rag import live_guides
 from app.rag import service as rag_service
 
 logger = logging.getLogger(__name__)
@@ -183,7 +184,14 @@ async def _import(
         )
         return "insufficient_data"
 
-    sections = await rag_service.fetch_live_guides(guides, destination)
+    fetched = await rag_service.fetch_live_guides(guides, destination)
+    sections = live_guides.sections_inside(fetched, claimed.bbox)
+    if len(sections) < len(fetched):
+        logger.info(
+            "live import %s guide sections outside the box or without coordinates: %d",
+            destination.id,
+            len(fetched) - len(sections),
+        )
     async with sessions() as session:
         stored = await places_service.store_live_places(
             session, destination.id, result.places, found=result.found, retrieved_on=now.date()

@@ -60,6 +60,14 @@ def split_sections(extract: str) -> list[tuple[int, str, str]]:
     return result
 
 
+def _coordinates(page: dict[str, Any]) -> tuple[float | None, float | None]:
+    """The page's primary coordinates (the API's default), or ``(None, None)``."""
+    listed = page.get("coordinates")
+    if not listed:
+        return None, None
+    return float(listed[0]["lat"]), float(listed[0]["lon"])
+
+
 class MediaWikiGuides:
     """``GuideSourceProvider``: plain-text sections of the Wikivoyage and Wikipedia pages."""
 
@@ -105,7 +113,7 @@ class MediaWikiGuides:
             client,
             api,
             {
-                "prop": "extracts|info",
+                "prop": "extracts|info|coordinates",
                 "explaintext": 1,
                 "exsectionformat": "wiki",
                 "inprop": "url",
@@ -153,6 +161,7 @@ class MediaWikiGuides:
         revision_id = int(page["lastrevid"])
         page_title = str(page["title"])
         page_url = str(page["fullurl"])
+        page_lat, page_lon = _coordinates(page)
         extract = page.get("extract") or ""
         if not isinstance(extract, str):
             raise TypeError("extract is not text")
@@ -166,6 +175,8 @@ class MediaWikiGuides:
                 index=index,
                 heading=heading,
                 text=text,
+                page_lat=page_lat,
+                page_lon=page_lon,
             )
             for index, heading, text in split_sections(extract)
         ]

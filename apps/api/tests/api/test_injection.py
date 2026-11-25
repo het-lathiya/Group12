@@ -324,6 +324,8 @@ def _wiki(paragraphs: list[str]) -> list[WikiSection]:
             index=1,
             heading="Understand",
             text=text,
+            page_lat=LIVETON.lat,
+            page_lon=LIVETON.lon,
         )
     ]
 

@@ -76,6 +76,8 @@ def section(
         index=index,
         heading=heading,
         text=text,
+        page_lat=LIVETON.lat,
+        page_lon=LIVETON.lon,
     )
 
 

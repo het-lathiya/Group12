@@ -213,6 +213,16 @@ def _element(item: Any) -> OsmElement | None:
     )
 
 
+def _has_error_note(body: Any) -> bool:
+    """True when the answer carries a server-side error note beside its elements.
+
+    The elements of such an answer are missing or partial, so they are never used. The note itself
+    is never logged or kept.
+    """
+    note = body.get("remark") if isinstance(body, dict) else None
+    return isinstance(note, str) and "error" in note.casefold()
+
+
 def _population(tags: dict[str, str]) -> int | None:
     raw = tags.get("population", "").replace(",", "").replace(" ", "")
     try:
@@ -238,6 +248,8 @@ class OverpassPlaces:
             data={"data": query},
         )
         try:
+            if _has_error_note(body):
+                raise LiveDataUnavailable("error note")
             raw = body["elements"]
             if not isinstance(raw, list):
                 raise TypeError("elements is not a list")

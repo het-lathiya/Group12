@@ -2,20 +2,24 @@
 
     python -m app.places.live_import --osm-ref R1234567
     python -m app.places.live_import --query "<city>"   # the first settlement the geocoder finds
+    python -m app.places.live_import --osm-ref R1234567 --force   # import again before it expires
 
 It runs the same resolve-then-import path as API-77 and the job, synchronously: a destination that
 is completed or has too little data and has not expired is only printed; a new one is created and
 a failed, expired or queued one is queued again, then the import runs inline (not through
-``submit``). It is idempotent per OSM reference. The CLI has no user, so ``import_requested_by``
-stays null and the per-user daily cap does not apply. The providers come from
-``LIVE_DATA_PROVIDER``; the factory refuses FAKE outside local and test.
+``submit``). It is idempotent per OSM reference; ``--force`` imports a completed or too-little-data
+destination again before it expires, but never one that is running. The CLI has no user, so
+``import_requested_by`` stays null and the per-user daily cap does not apply. The API's start-up
+checks run first. The providers come from ``LIVE_DATA_PROVIDER``; the factory refuses FAKE outside
+local and test.
 
-Exit codes: 0 completed or not enough data; 1 the import failed or the city cannot be imported;
-2 bad arguments; 3 another process is running the import.
+Exit codes: 0 completed or not enough data; 1 the import failed, the city cannot be imported or the
+configuration is refused; 2 bad arguments; 3 another process is running the import.
 """
 
 import argparse
 import asyncio
+import os
 import re
 import sys
 from collections.abc import Sequence
@@ -28,7 +32,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
+from app.core.config import ConfigError, Settings, check_settings, get_settings
 from app.db.models import Destination as DestinationRow
 from app.db.session import get_engine, transaction
 from app.livedata.countries import choose_timezone, clip_bbox, country
@@ -120,12 +124,14 @@ def _current(row: DestinationRow, now: datetime) -> bool:
     return row.import_status in ("completed", "insufficient_data") and fresh
 
 
-async def _prepare(session: AsyncSession, providers: LiveProviders, osm_ref: str) -> Outcome:
+async def _prepare(
+    session: AsyncSession, providers: LiveProviders, osm_ref: str, *, force: bool = False
+) -> Outcome:
     """The existing row as it is, or a new or re-queued row ready for the import."""
     now = datetime.now(UTC)
     existing = await repository.destination_by_ref(session, PROVIDER, osm_ref)
     if existing is not None:
-        if _current(existing, now) or existing.import_status == "running":
+        if existing.import_status == "running" or (_current(existing, now) and not force):
             return Outcome(existing.id, ran=False, row=existing)
         if existing.import_status != "queued":
             await repository.requeue_live_import(session, existing.id)
@@ -152,6 +158,7 @@ async def import_destination(
     *,
     osm_ref: str | None = None,
     query: str | None = None,
+    force: bool = False,
     providers: LiveProviders | None = None,
     sessions: live_jobs.Sessions = transaction,
 ) -> Outcome:
@@ -162,7 +169,7 @@ async def import_destination(
             raise CannotImportError("Give --osm-ref or --query.")
         osm_ref = await _osm_ref_for_query(providers, query)
     async with sessions() as session:
-        prepared = await _prepare(session, providers, osm_ref)
+        prepared = await _prepare(session, providers, osm_ref, force=force)
     if not prepared.ran:
         return prepared
     await live_jobs.run_import(prepared.destination_id, providers=providers, sessions=sessions)
@@ -208,16 +215,37 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--osm-ref", help="Nominatim OSM reference, for example R1234567")
     target.add_argument("--query", help="City name; the first settlement found is imported")
+    parser.add_argument(
+        "--force", action="store_true", help="import again before the current state expires"
+    )
     args = parser.parse_args(argv)
     if args.osm_ref is not None and not re.fullmatch(OSM_REF_PATTERN, args.osm_ref):
         parser.error("--osm-ref must look like R1234567 (N, W or R and 1 to 12 digits)")
     return args
 
 
+def check_start(settings: Settings) -> list[str]:
+    """The API's start-up checks (A2 §7.2), before any work; returns the warnings.
+
+    The API checks ``WIKI_USER_AGENT`` only with the switch ON. The CLI calls the services whatever
+    the switch, so with LIVE it always needs one ("required when ``LIVE_DATA_PROVIDER=LIVE``").
+    """
+    warnings = check_settings(settings, os.environ)
+    agent = settings.wiki_user_agent.strip()
+    if settings.live_data_provider == "LIVE" and (not agent or agent.startswith("<")):
+        raise ConfigError(["WIKI_USER_AGENT is empty or a placeholder (needed with LIVE)"])
+    return warnings
+
+
 async def _main(args: argparse.Namespace) -> int:
-    get_settings()  # refuses an invalid configuration before any work
     try:
-        outcome = await import_destination(osm_ref=args.osm_ref, query=args.query)
+        for warning in check_start(get_settings()):
+            print(f"warning: {warning}", file=sys.stderr)
+    except ConfigError as exc:  # names variables, never values
+        print(f"configuration error: {exc}", file=sys.stderr)
+        return EXIT_FAILED
+    try:
+        outcome = await import_destination(osm_ref=args.osm_ref, query=args.query, force=args.force)
     except CannotImportError as exc:
         print(f"cannot import: {exc}", file=sys.stderr)
         return EXIT_FAILED
