@@ -1,13 +1,13 @@
 # Final report: AI Travel Planner
 
-**Draft — RUN-087, 22 November 2026; human completion pending (Malhar, Manya, Jeel)**
+**DRAFT — completed after SG-7** (RUN-087, 22 November 2026; sections 3, 4, 5 and 7 updated in RUN-096, 25 November 2026; human completion pending: Malhar, Manya, Jeel)
 
 | Item | Value |
 | --- | --- |
 | Document | Final report of the course project (IMP-804, US-148; NFR-041; CHK-19) |
 | Owners | Malhar (lead; data and architecture chapters), Manya (AI chapter), Jeel (presentation, `docs/presentation/`) |
-| Version | 0.1, draft of 22 November 2026 |
-| Repository state described | `main` at `4fe514c` (the SG-7 release-candidate commit), 22 November 2026 |
+| Version | 0.2, draft of 25 November 2026 |
+| Repository state described | `main` at `4fe514c` (the SG-7 release-candidate commit), 22 November 2026; statements marked `5fa8e6d` describe `main` on 25 November 2026 |
 | Claims check | [final-report-claims-check.md](final-report-claims-check.md): every numeric claim in this report with the run record, test report, CI run or repository file it comes from (TC-397) |
 | Built from | the document set of IMP-707 ([srs.md](srs.md), [architecture.md](architecture.md), [api.md](api.md), [test-plan.md](test-plan.md), [guides/](guides/README.md)), the gate records ([progress/gates.md](progress/gates.md)), [progress/deferred.md](progress/deferred.md), the test reports ([test-reports/](test-reports/README.md)), the evaluation reports ([../eval/reports/](../eval/reports/README.md)), [stage2/](stage2/README.md) and the decision register |
 
@@ -71,6 +71,7 @@ The MVP release (specification §1.2) with the catalogue item C-13 "Retrieval-au
 | Demo destination Ahmedabad | `data/places/ahmedabad/` | **103** places loaded, meeting the seed's minimum of usable places, with sources, licences and opening hours | [final-baseline.md](../eval/reports/final-baseline.md) (count); [quality report](../data/places/ahmedabad/quality_report.md) (minimum met) |
 | Ahmedabad guides (RAG corpus) | `data/guides/ahmedabad/` | Member-written guides, each checked statement by statement against its source by a reviewer (Malhar, 6 November 2026); licences from Creative Commons (CC BY-SA) sources, a U.S. government source and facts-only summaries | [guide quality report](../data/guides/ahmedabad/quality_report.md) |
 | Further demo destination | — | Not in the repository (IMP-603 pending) | [deferred.md](progress/deferred.md) |
+| Live cities (any-city mode, switch OFF by default) | database rows with `data_tier = 'live'` (migration `0008_live_destinations`) | No real city has been imported yet; only the offline SAMPLE fakes have run | [any-city-readiness.md](test-reports/any-city-readiness.md) section 3; section 11 |
 
 **Index used for the final evaluation.** Seeded with Sampleton and Ahmedabad and indexed with MOCK embeddings, the RAG index held **151** documents and **227** chunks, all embedded (`rag-index: documents=151 chunks=227 embedded=227 inactive=0 warnings=0 errors=0`, [final-baseline.md](../eval/reports/final-baseline.md)). The staging index is built by the release task with Gemini embeddings; no staging index line is recorded (pending, Kirtan).
 
@@ -81,6 +82,8 @@ The MVP release (specification §1.2) with the catalogue item C-13 "Retrieval-au
 - Guides of real destinations are written by members. The only generated guides are the synthetic SAMPLE ones (IMP-313).
 - No private user data is used for training or evaluation datasets (PD-09); the evaluation datasets are fixed files under `eval/datasets/`.
 
+**Two data tiers (`5fa8e6d`, Amendment A2).** Curated places pass the file-based quality gate above. Live places come from OpenStreetMap through a separate import: they are normalised to the same vocabulary, deduplicated and capped, and a city with too few usable places is refused with a message naming a larger city. A live place never has a price or opening hours, is labelled as live with its source and licence, and is never checked by the team. Every live value is stored before a plan can use it, so the model still chooses only stored place IDs. Section 11 describes the mode.
+
 Open: the IMD-120 data checks (Malhar plan, Junaid sample check, Jeel and Malhar row checks) have no record on `main` (SG-4 and SG-5 open items).
 
 ## 4. Architecture and deployment
@@ -88,9 +91,10 @@ Open: the IMD-120 data checks (Malhar plan, Junaid sample check, Jeel and Malhar
 ### 4.1 Application
 
 - **Web:** Next.js App Router with React and TypeScript, Tailwind CSS and shadcn/ui, TanStack Query, react-hook-form with zod, dnd-kit and MapLibre GL with OpenFreeMap tiles. The API client is generated from the OpenAPI contract. The browser displays what the API returns; it never computes prices, totals, times or travel gaps, and only `NEXT_PUBLIC_*` values may reach it ([architecture.md](architecture.md) §4).
-- **API:** a modular FastAPI monolith (Python, Pydantic v2, SQLAlchemy 2 async). In every module, routers call services, services call pure domain code and repositories, and clients and adapters sit at the bottom. Each table has a single writing module. The import-linter contracts that enforce these rules report `Contracts: 6 kept, 0 broken.` on the candidate ([CI 45037634091](https://github.com/het-lathiya/Group12/actions/runs/45037634091), job `lint-types`).
+- **API:** a modular FastAPI monolith (Python, Pydantic v2, SQLAlchemy 2 async). In every module, routers call services, services call pure domain code and repositories, and clients and adapters sit at the bottom. Each table has a single writing module. The import-linter contracts that enforce these rules report `Contracts: 6 kept, 0 broken.` on the candidate ([CI 45037634091](https://github.com/het-lathiya/Group12/actions/runs/45037634091), job `lint-types`) and, with the live-data isolation contract added, `Contracts: 7 kept, 0 broken.` at `5fa8e6d` ([CI 45664284226](https://github.com/het-lathiya/Group12/actions/runs/45664284226), job `lint-types`).
 - **Generation:** an asynchronous in-process job per request; the browser polls the generation record. The pipeline normalises preferences, retrieves and ranks candidates, builds the request, calls the provider, then parses, checks, recalculates, repairs and saves in a single transaction ([architecture.md](architecture.md) §6). The AI chapter describes the provider layer and RAG.
-- **Data:** PostgreSQL 16 with pgvector. The schema is the versioned SQL migrations `0001` to `0007` (`0007_rag_store`): the MVP tables plus `rag_documents` and `rag_chunks` ([srs.md](srs.md) §9 and difference D-02). The extension migrations are retired (IMD-65, IMD-113).
+- **Data:** PostgreSQL 16 with pgvector. The schema is the versioned SQL migrations `0001` to `0008`: the MVP tables, `rag_documents` and `rag_chunks` (`0007_rag_store`; [srs.md](srs.md) §9 and difference D-02), and the live-destination columns on `destinations` (`0008_live_destinations`, Amendment A2 §4; no new table). `0008` is applied in every environment, whatever the switch. The extension migrations are retired (IMD-65, IMD-113).
+- **Any-city mode:** the live-data module fetches from Nominatim, Overpass and MediaWiki behind a throttle and circuit breakers, and stores nothing itself; the places and RAG modules stay the only writers of their tables. The routes are mounted only when the switch `any_city_mode` is ON (Amendment A2 §3, §7; section 11).
 - **Authorization:** the user ID comes only from the verified token; a resource that belongs to someone else answers 404 `NOT_FOUND`. Row-level security is an additional lock ([architecture.md](architecture.md) §5).
 
 ### 4.2 Deployment on AWS (as designed and configured in the repository)
@@ -109,7 +113,7 @@ The hosting decision is IMD-99 to IMD-104 and Amendment A1 §2 to §5. What the 
 | CI and deploys | GitHub Actions. `deploy-staging.yml` runs after CI succeeds on `main`; `deploy-production.yml` runs by hand from a release tag with approval in the GitHub environment `production`. Both authenticate through the OIDC role `group12-github-deploy`, so no AWS key is stored (IMD-102) |
 | Release task | A one-off ECS task with the new API image before any service changes: auth stub if missing, `alembic upgrade head`, the place seed, then `python -m app.rag.index --strict`; a failure stops the deploy and the running version keeps serving |
 
-Production is not created: `infra/aws/services/` holds only the staging templates (`api.staging.json.tmpl`, `web.staging.json.tmpl`), and IMP-801 creates production. Only Kirtan, the AWS account owner, runs the `infra/aws/` scripts; staging is switched off between staging windows to control cost (IMD-137).
+Production is not created: `infra/aws/services/` holds only the staging templates (`api.staging.json.tmpl`, `web.staging.json.tmpl`), and IMP-801 creates production. The any-city switch is planned ON in the staging window of 28 November 2026, and ON in production only if the conditions of IMD-220 hold on staging; otherwise production ships with it OFF. Its state in both is pending (Kirtan). Only Kirtan, the AWS account owner, runs the `infra/aws/` scripts; staging is switched off between staging windows to control cost (IMD-137).
 
 ### 4.3 Recorded staging state
 
@@ -311,7 +315,8 @@ The gate records of SG-3 to SG-6 each hold a working-agreement audit of the merg
 
 ## 7. Known limitations
 
-- **A single curated destination.** Planning works only for loaded destinations: Ahmedabad, plus Sampleton in local and test. The further demo destination (IMP-603) is not loaded.
+- **A single curated destination.** With the any-city switch OFF, planning works only for loaded destinations: Ahmedabad, plus Sampleton in local and test. The further demo destination (IMP-603) is not loaded.
+- **Live cities (switch ON) are unchecked open data.** No prices, no opening hours, little step-free information; places and guides come from public services that can be slow or refuse a request. No real city has been imported and no staging scenario has run; the gaps and their owners are in [any-city-readiness.md](test-reports/any-city-readiness.md), and several are closed by the RUN-096 part records in [progress/parts/](progress/parts/README.md).
 - **Staging not checked on the candidate.** The staging journey with Gemini, smoke test, fallback demo and generation cap have no staging record on the candidate; Gemini on staging last ended `config_error` (section 4.3).
 - **Production not created** (IMP-801).
 - **Estimates, not live data.** Prices, hours and travel times are curated or estimated and labelled; there is no booking, payment or live price (IMD-46). The budget uses the destination currency only (IMD-128).

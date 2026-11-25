@@ -65,3 +65,13 @@ All read only, 22 November 2026, in the main checkout at `4fe514c`.
 - The difference lists of `docs/srs.md` §11 and `docs/architecture.md` §11 describe `main` at `f75aa94`; SRS D-18 (no IMP-705 or IMP-706 record) is out of date. The SG-7 gate should update them.
 - `docs/guides/aws-setup.md` §14 (monthly cost estimate) is still "TO BE FILLED BY KIRTAN", so the report gives no cost figure for AWS.
 - The last Deploy staging run is for `964327f`, not the candidate `4fe514c`.
+
+## Update of RUN-096 (batch H, 25 November 2026; this file existed and is modified)
+
+- Owner: Malhar. Branch `fix/RUN-096-batch-h`. Base commit: 5fa8e6d (on `main`). Status: PR_OPEN candidate. 0 points in this run.
+- Changed files: `docs/final-report.md` header, sections 3, 4.1, 4.2 and 7 (two data tiers, migration `0008`, the live-data module, the switch state of IMD-220, limitations of live cities); `docs/final-report-claims-check.md` row 33a, "pending Junaid review"; this record.
+- Already in the report and unchanged: the SG-4 cut-list decisions (section 2.2), the manual account-deletion procedure (section 8), the Stage 2 position (section 9, CHK-19). Section 5 (Manya) and section 11 (any-city, #297) are linked, not rewritten.
+- Commands: `gh run view 45664284226 --log`: `Contracts: 7 kept, 0 broken.` (job `lint-types`, head `5fa8e6d`). `gh run list --workflow deploy-staging.yml`: the last run is still 44733049430 (`964327f`), so section 4.3 stands. The run checks on the branch head are in the SYNC REPORT of RUN-096.
+- Acceptance: the chapters state the switch state as pending (**verified**); every new number has a row (**verified**); staging and production results **not verified** — pending (Kirtan); claims review pending (Junaid).
+- Proposed decisions: none. Blockers: none.
+- Open issues: section 11 still calls PD-AC-2 proposed and names v4's Gemini run as pending; IMD-220 and the IMP-732 report have settled both. Sections 6 and 10 still describe the candidate `4fe514c`.

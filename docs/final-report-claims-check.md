@@ -57,6 +57,7 @@ Rules used:
 | 31 | "journey `4 passed (31.6s)` with **40** axe scans" | final-report.md §6.4 | `docs/test-reports/accessibility-sprint7.md` §6.1b | `4 passed (31.6s)`; "40 `axe scan` lines (10 per project), each ending `[]`" |
 | 32 | "keyboard `4 passed (10.8s)` with **20** scans, every scan `[]`" | final-report.md §6.4 | `docs/test-reports/accessibility-sprint7.md` §6.1b | `4 passed (10.8s)`; "20 `axe scan` lines (5 per project), each ending `[]`" |
 | 33 | "43431854989, `4 passed (36.7s)` at four widths" | final-report.md §6.5 | `docs/test-reports/journey-sprint4.md`; [E2E 43431854989](https://github.com/het-lathiya/Group12/actions/runs/43431854989) | report: journey step `4 passed (36.7s)`, "Four widths (360, 768, 1280, 1920 px)"; run: workflow_dispatch on `f741fd6`, success |
+| 33a | "`Contracts: 7 kept, 0 broken.` at `5fa8e6d`" | final-report.md §4.1 | [CI 45664284226](https://github.com/het-lathiya/Group12/actions/runs/45664284226), job `lint-types`, `make imports` | `Contracts: 7 kept, 0 broken.`; head `5fa8e6d`; **pending Junaid review** |
 
 ## Claims removed while drafting
 
