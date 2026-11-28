@@ -1,0 +1,128 @@
+name: Course reports
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "docs/course/**"
+      - ".github/workflows/course-reports.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: course-reports-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  AI_PROVIDER: MOCK
+  APP_ENV: test
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  coverage-api:
+    name: course-coverage-api
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: travel_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d travel_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # §4.7 test default; make db-migrate reads DATABASE_URL, so both name the blank service database.
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/travel_test
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/travel_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: apps/api/pyproject.toml
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: make setup
+      # §5.5 CI row: the blank postgres:16 gets the Supabase auth stub, then the migrations run up,
+      # all the way down and up again, before the suites.
+      - name: Apply the auth stub to the blank database
+        run: >-
+          psql "postgresql://postgres:postgres@localhost:5432/travel_test" -v ON_ERROR_STOP=1
+          -f apps/api/migrations/sql/test_auth_stub.sql
+      - run: make db-migrate
+      - name: Alembic has one head
+        working-directory: apps/api
+        run: |
+          heads="$(.venv/bin/alembic heads)"
+          echo "$heads"
+          [ "$(printf '%s\n' "$heads" | wc -l)" -eq 1 ]
+      - name: Round trip (downgrade base, upgrade head)
+        working-directory: apps/api
+        run: .venv/bin/alembic downgrade base && .venv/bin/alembic upgrade head
+      - name: API suites with line and branch coverage
+        working-directory: apps/api
+        run: |
+          mkdir -p course-coverage
+          .venv/bin/coverage erase
+          # Separate pytest processes match the existing jobs and avoid duplicate test basenames.
+          for suite in api authz unit contract; do
+            .venv/bin/pytest "tests/$suite" -m "not live" \
+              --cov=app --cov-branch --cov-append \
+              --cov-report=xml:course-coverage/coverage.xml \
+              --cov-report=html:course-coverage/html \
+              --cov-report=json:course-coverage/coverage.json \
+              --cov-report=term-missing \
+              | tee -a course-coverage/pytest-summary.txt
+          done
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage-api
+          path: apps/api/course-coverage/
+          if-no-files-found: error
+
+  coverage-web:
+    name: course-coverage-web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci --prefix apps/web
+      - name: Web unit suites with coverage
+        working-directory: apps/web
+        run: |
+          mkdir -p course-coverage
+          npm run test -- --coverage --coverage.reportsDirectory=course-coverage/report \
+            --coverage.include='lib/**/*.{ts,tsx}' \
+            --coverage.include='components/**/*.{ts,tsx}' \
+            --coverage.include='app/**/*.{ts,tsx}' \
+            --coverage.reporter=text --coverage.reporter=json-summary \
+            --coverage.reporter=json --coverage.reporter=html --coverage.reporter=lcov \
+            | tee course-coverage/vitest-summary.txt
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage-web
+          path: apps/web/course-coverage/
+          if-no-files-found: error
