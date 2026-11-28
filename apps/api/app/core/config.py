@@ -13,7 +13,7 @@ from pydantic import Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 AppEnv = Literal["local", "test", "staging", "production"]
-AiProvider = Literal["GEMINI", "MOCK", "FINETUNED_MODEL"]
+AiProvider = Literal["GEMINI", "GROQ", "MOCK", "FINETUNED_MODEL"]
 MockScenario = Literal[
     "ok", "flawed", "timeout", "rate_limited", "quota", "invalid_json", "unknown_place"
 ]
@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     gemini_embedding_model_id: str = ""
     # IMD-222: one call with this model when the configured one ends in 429 or 503; empty = off.
     gemini_fallback_model_id: str = ""
+    # IMD-223: both must be configured for the optional second provider to be enabled.
+    groq_api_key: SecretStr = SecretStr("")
+    groq_model_id: str = ""
     gemini_timeout_s: float = Field(default=35, gt=0)
     gemini_max_retries: int = Field(default=1, ge=0)
     ai_temperature: float = 0.4
@@ -194,6 +197,12 @@ def check_settings(settings: Settings, environ: Mapping[str, str]) -> list[str]:
                 "GEMINI_TIMEOUT_S x (GEMINI_MAX_RETRIES + 1) exceeds "
                 f"the {GEMINI_TIME_ALLOWANCE_S} s generation allowance"
             )
+
+    if settings.ai_provider == "GROQ" and deployed:
+        if _is_unset(settings.groq_api_key.get_secret_value()):
+            problems.append("GROQ_API_KEY is empty or a placeholder")
+        if _is_unset(settings.groq_model_id):
+            problems.append("GROQ_MODEL_ID is empty or a placeholder")
 
     # Amendment A2 §7.2 (TC-462): any-city mode in a deployed environment needs the real
     # providers, and real providers need an identifying User-Agent.

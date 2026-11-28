@@ -148,7 +148,7 @@ def test_tc_165_the_factory_refuses_an_unknown_value_without_echoing_it(
     unchecked = Settings.model_construct(**{**settings().model_dump(), "ai_provider": "OPENAI"})
     with pytest.raises(ProviderConfigError) as raised:
         get_provider(unchecked)
-    assert str(raised.value) == "AI_PROVIDER must be one of GEMINI, MOCK, FINETUNED_MODEL"
+    assert str(raised.value) == "AI_PROVIDER must be one of GEMINI, GROQ, MOCK, FINETUNED_MODEL"
     with pytest.raises(ConfigError) as at_start:
         asyncio.run(factory.startup_provider(unchecked))
     assert "OPENAI" not in str(at_start.value)

@@ -10,6 +10,8 @@ environment), never from a file in the repository (TC-013), and no message holds
   ``failed`` with ``config_error``, and the app keeps running (§8.4: a down provider never stops
   the app). A missing key already stops start-up in staging and production
   (``app.core.config.check_settings``).
+- GROQ: ``GroqProvider`` (IMD-223); Gemini embeddings stay delegated to the Gemini provider.
+  ``get_groq_provider`` builds the optional second provider only when both settings are present.
 - FINETUNED_MODEL: refused with ``ProviderBadRequest`` (IMD-92), "not enabled before Stage 2".
 
 ``breaker_for`` gives each provider its one ``CircuitBreaker`` (IMP-401); the Gemini adapter gets
@@ -42,6 +44,7 @@ FINETUNED_NOT_ENABLED: Final = (
 
 
 _gemini_providers: dict[tuple[object, ...], ModelProvider] = {}
+_groq_providers: dict[tuple[object, ...], ModelProvider] = {}
 _breakers: "weakref.WeakKeyDictionary[ModelProvider, CircuitBreaker]" = weakref.WeakKeyDictionary()
 
 
@@ -76,6 +79,8 @@ def get_provider(settings: Settings | None = None) -> ModelProvider:
     settings = settings or get_settings()
     if settings.ai_provider == "GEMINI":
         return _gemini(settings)
+    if settings.ai_provider == "GROQ":
+        return _groq(settings)
     return _build(settings.ai_provider, settings.app_env, settings.mock_provider_scenario)
 
 
@@ -84,6 +89,7 @@ def _gemini(settings: Settings) -> ModelProvider:
     key = (
         settings.gemini_api_key.get_secret_value(),
         settings.gemini_model_id,
+        settings.gemini_fallback_model_id,
         settings.gemini_embedding_model_id,
         settings.gemini_timeout_s,
         settings.gemini_max_retries,
@@ -100,10 +106,38 @@ def _gemini(settings: Settings) -> ModelProvider:
     return _gemini_providers[key]
 
 
+def get_groq_provider(settings: Settings | None = None) -> ModelProvider | None:
+    """IMD-223: the optional second provider; either setting unset keeps today's path."""
+    settings = settings or get_settings()
+    key, model = settings.groq_api_key.get_secret_value().strip(), settings.groq_model_id.strip()
+    if not key or not model or key.startswith("<") or model.startswith("<"):
+        return None
+    return _groq(settings)
+
+
+def _groq(settings: Settings) -> ModelProvider:
+    embeddings = _gemini(settings)  # IMD-112: retrieval keeps Gemini and its lexical fallback
+    key = (
+        settings.groq_api_key.get_secret_value(),
+        settings.groq_model_id,
+        settings.gemini_timeout_s,
+        settings.gemini_max_retries,
+        settings.ai_max_input_tokens,
+        settings.ai_max_output_tokens,
+        embeddings,
+    )
+    if key not in _groq_providers:
+        from app.ai.providers.groq import GroqProvider
+
+        _groq_providers[key] = GroqProvider(settings, embeddings=embeddings)
+    return _groq_providers[key]
+
+
 def reset_provider_cache() -> None:
     """Forget the built providers (tests only)."""
     _build.cache_clear()
     _gemini_providers.clear()
+    _groq_providers.clear()
     _breakers.clear()
 
 

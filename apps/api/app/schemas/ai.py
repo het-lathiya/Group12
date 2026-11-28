@@ -94,7 +94,7 @@ FindingCode = Literal[
     "ESTIMATE_USED",
 ]
 Severity = Literal["error", "warning", "info"]
-ProviderName = Literal["GEMINI", "MOCK", "FINETUNED_MODEL"]
+ProviderName = Literal["GEMINI", "GROQ", "MOCK", "FINETUNED_MODEL"]
 
 
 class StrictModel(BaseModel):

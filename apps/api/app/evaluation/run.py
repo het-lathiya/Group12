@@ -81,7 +81,7 @@ DATASETS: Final = REPO_ROOT / "eval" / "datasets"
 RESULTS: Final = REPO_ROOT / "eval" / "results"
 REPORTS: Final = REPO_ROOT / "eval" / "reports"
 METRICS_FILE: Final = REPO_ROOT / "eval" / "metrics_v2.md"
-PROVIDERS: Final = ("MOCK", "GEMINI", "RULE_BASED")
+PROVIDERS: Final = ("MOCK", "GEMINI", "GROQ", "RULE_BASED")
 NO_RULE_BASED: Final = "the rule-based planner runs the generation suite only (IMD-213)"
 RULE_BASED_MODEL_ID: Final = "rule-based"
 NOT_APPLICABLE: Final = "not applicable"
@@ -307,6 +307,10 @@ def unavailable(name: str, settings: Settings, suite: str = "generation") -> str
         return NO_RULE_BASED
     if name == "GEMINI" and not settings.gemini_api_key.get_secret_value():
         return NO_GEMINI_KEY
+    if name == "GROQ" and not (
+        settings.groq_api_key.get_secret_value().strip() and settings.groq_model_id.strip()
+    ):
+        return "GROQ_API_KEY and GROQ_MODEL_ID are required; GROQ runs are manual"
     return None
 
 

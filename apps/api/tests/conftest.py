@@ -30,6 +30,7 @@ from app.routing import client as routing_client
 # the MediaWiki wikis; a configured mirror's host is added here too.
 PROVIDER_HOSTS: tuple[str, ...] = (
     "generativelanguage.googleapis.com",  # Gemini API (google-genai)
+    "api.groq.com",  # Groq chat completions (IMD-223)
     "api.heigit.org",  # OpenRouteService (api.openrouteservice.org retired 2026-11-24)
     "api.openrouteservice.org",  # the retired OpenRouteService host
     "nominatim.openstreetmap.org",  # Nominatim (live-data geocoding)
@@ -128,7 +129,7 @@ def provider_socket_guard(request: pytest.FixtureRequest) -> Iterator[ProviderSo
 
 @pytest.fixture(autouse=True)
 def isolate_local_provider_keys(request: pytest.FixtureRequest) -> Iterator[None]:
-    """Keep a developer's ``ORS_API_KEY`` out of every test that is not marked ``live``.
+    """Keep local ORS and Groq keys out of every test that is not marked ``live``.
 
     A real key in the shell or in the untracked ``apps/api/.env`` would make the routing client
     call OpenRouteService, which the socket guard refuses, so results depended on the machine.
@@ -142,18 +143,22 @@ def isolate_local_provider_keys(request: pytest.FixtureRequest) -> Iterator[None
 
     load_with_local_keys = config.load_settings
 
-    def load_without_local_ors_key() -> Settings:
+    def load_without_local_provider_keys() -> Settings:
         settings = load_with_local_keys()
-        if "ORS_API_KEY" in os.environ:  # set by the test itself after this fixture ran
-            return settings
-        return settings.model_copy(update={"ors_api_key": SecretStr("")})
+        overrides = {
+            name.lower(): SecretStr("")
+            for name in ("ORS_API_KEY", "GROQ_API_KEY")
+            if name not in os.environ  # a test may explicitly enable a mocked adapter
+        }
+        return settings.model_copy(update=overrides)
 
     # A private context, not the shared monkeypatch fixture: sharing it would change the order in
     # which a test's own socket patches and the socket guard are undone.
     with pytest.MonkeyPatch.context() as patch:
         patch.delenv("ORS_API_KEY", raising=False)
+        patch.delenv("GROQ_API_KEY", raising=False)
         # get_settings() looks load_settings up in its module at call time, so this reaches it.
-        patch.setattr(config, "load_settings", load_without_local_ors_key)
+        patch.setattr(config, "load_settings", load_without_local_provider_keys)
         get_settings.cache_clear()
         # The routing client caches the key it was built with, so build it afresh too.
         routing_client.get_client.cache_clear()

@@ -52,11 +52,25 @@ name = Vendor isolation: concrete adapters only imported by app.ai.factory
 type = protected
 protected_modules =
     app.*.providers.gemini
+    app.*.providers.groq
     app.*.providers.mock
     app.*.providers.finetuned
 allowed_importers =
     app.ai.factory
 as_packages = False
+
+; IMD-223: provider HTTP stays inside the two adapters; factory and prompts use the interface.
+[importlinter:contract:ai-http]
+name = Vendor isolation: AI HTTP only in adapter modules
+type = forbidden
+source_modules =
+    app.ai
+forbidden_modules =
+    httpx
+ignore_imports =
+    app.ai.providers.gemini -> httpx
+    app.ai.providers.groq -> httpx
+allow_indirect_imports = True
 
 ; §4.4 Pure domain, first module (IMP-209): app.routing.estimate does no I/O, so it imports no web
 ; framework, ORM, HTTP client or vendor SDK, nothing from app.db or app.core, and no router,

@@ -63,7 +63,7 @@ def l2_normalised(vector: Sequence[float]) -> list[float]:
 
 @runtime_checkable
 class ModelProvider(Protocol):
-    """One model provider: GEMINI, MOCK or FINETUNED_MODEL (Stage 2).
+    """One model provider: GEMINI, GROQ, MOCK or FINETUNED_MODEL (Stage 2).
 
     Every operation raises only ``app.ai.errors.ProviderError`` subclasses. The assistive EXT
     operations of §8.20 are added by their own cards.
@@ -71,7 +71,7 @@ class ModelProvider(Protocol):
 
     @property
     def name(self) -> ProviderName:
-        """GEMINI, MOCK or FINETUNED_MODEL; an adapter sets it as a class attribute.
+        """GEMINI, GROQ, MOCK or FINETUNED_MODEL; an adapter sets it as a class attribute.
 
         Read-only in the interface, so an adapter may declare its own single literal.
         """

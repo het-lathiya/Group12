@@ -1154,6 +1154,7 @@
           "provider": {
             "enum": [
               "GEMINI",
+              "GROQ",
               "MOCK",
               "FINETUNED_MODEL"
             ],
@@ -2643,6 +2644,7 @@
           "name": {
             "enum": [
               "GEMINI",
+              "GROQ",
               "MOCK",
               "FINETUNED_MODEL"
             ],

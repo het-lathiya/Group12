@@ -897,7 +897,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "GEMINI" | "MOCK" | "FINETUNED_MODEL";
+            provider: "GEMINI" | "GROQ" | "MOCK" | "FINETUNED_MODEL";
             /**
              * Status
              * @constant
@@ -1441,7 +1441,7 @@ export interface components {
              * Name
              * @enum {string}
              */
-            name: "GEMINI" | "MOCK" | "FINETUNED_MODEL";
+            name: "GEMINI" | "GROQ" | "MOCK" | "FINETUNED_MODEL";
             /**
              * Status
              * @enum {string}
