@@ -201,3 +201,9 @@ mutation-api:
 
 mutation-web:
 	cd $(WEB_DIR) && timeout --signal=INT --kill-after=20s 15m npm run mutation -- $(ARGS)
+
+# IMD-221: tooling stays in external caches; item 10 is the filtered git archive.
+SUBMISSION_REF ?= HEAD
+.PHONY: submission-zip
+submission-zip:
+	bash scripts/build_submission_zip.sh "$(SUBMISSION_REF)" $(ARGS)
