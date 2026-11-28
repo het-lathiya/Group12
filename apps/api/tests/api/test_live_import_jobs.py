@@ -381,6 +381,28 @@ async def test_nearby_city_without_a_bounded_result_has_no_capital_fallback(
     assert row.nearby_city is None
 
 
+async def test_n2_imported_at_is_the_completion_time_after_embedding(
+    db_session: AsyncSession, sessions: Sessions, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination_id = await queued(db_session)
+    embed = live_jobs._embed
+    embedded_at: list[datetime] = []
+
+    async def timed_embed(*args: Any, **kwargs: Any) -> int:
+        queued_chunks = await embed(*args, **kwargs)
+        embedded_at.append(datetime.now(UTC))
+        return queued_chunks
+
+    monkeypatch.setattr(live_jobs, "_embed", timed_embed)
+    assert await run(destination_id, sessions) == "completed"
+
+    row = await row_of(db_session, destination_id)
+    assert row.imported_at is not None
+    assert embedded_at
+    assert embedded_at[0] <= row.imported_at <= datetime.now(UTC)
+    assert row.expires_at - row.imported_at == timedelta(days=30)
+
+
 # TC-475
 
 
