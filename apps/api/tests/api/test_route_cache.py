@@ -21,7 +21,7 @@ from app.routing.service import RoutingService
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SAMPLETON = REPO_ROOT / "data" / "fixtures" / "sampleton"
-WALK_URL = "https://api.openrouteservice.org/v2/directions/foot-walking/json"
+WALK_URL = "https://api.heigit.org/openrouteservice/v2/directions/foot-walking/json"
 ROUTE = TravelEstimate(12, 900, TravelMode.WALKING, "routing_api")
 ESTIMATE = TravelEstimate(20, 800, TravelMode.WALKING, "fallback_estimate")
 ANSWER: dict[str, Any] = {"routes": [{"summary": {"distance": 900.0, "duration": 720.0}}]}

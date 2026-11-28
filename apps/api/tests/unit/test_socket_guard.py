@@ -16,7 +16,7 @@ import respx
 
 # The provider hosts step 9 of IMP-101 requires the guard to refuse.
 GEMINI_HOST = "generativelanguage.googleapis.com"
-ORS_HOST = "api.openrouteservice.org"
+ORS_HOST = "api.heigit.org"
 PROVIDER_HOSTS = [GEMINI_HOST, ORS_HOST]
 
 

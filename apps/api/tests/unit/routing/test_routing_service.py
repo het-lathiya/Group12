@@ -26,8 +26,8 @@ from app.routing.estimate import TravelEstimate, TravelMode, buffer_minutes
 from app.routing.service import RoutingService
 
 RECORDINGS = Path(__file__).resolve().parents[2] / "fixtures" / "provider_recordings" / "ors"
-WALK_URL = "https://api.openrouteservice.org/v2/directions/foot-walking/json"
-DRIVE_URL = "https://api.openrouteservice.org/v2/directions/driving-car/json"
+WALK_URL = "https://api.heigit.org/openrouteservice/v2/directions/foot-walking/json"
+DRIVE_URL = "https://api.heigit.org/openrouteservice/v2/directions/driving-car/json"
 KEY = "test-ors-key-not-real"
 
 
@@ -218,3 +218,70 @@ def test_get_client_reads_the_settings_once(clean_settings_env: pytest.MonkeyPat
         assert made._daily_allowance == 7
     finally:
         client_module.get_client.cache_clear()
+
+
+# D5 (live-local 2026-11-28): the current host, and one fast attempt while ORS is down
+
+
+def test_d5_the_client_calls_the_current_heigit_host() -> None:
+    assert client_module.DIRECTIONS_URL.startswith("https://api.heigit.org/openrouteservice/v2/")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure", [httpx.Response(410), httpx.Response(503), httpx.ConnectError("x")]
+)
+async def test_d5_a_service_failure_is_remembered_so_later_legs_make_no_call(
+    ors: respx.MockRouter, caplog: pytest.LogCaptureFixture, failure: Any
+) -> None:
+    route = ors.post(WALK_URL).mock(
+        side_effect=failure if isinstance(failure, Exception) else None,
+        return_value=None if isinstance(failure, Exception) else failure,
+    )
+    cache = MemoryCache()
+    routing = service(cache)
+    with caplog.at_level(logging.INFO, logger="app.routing.service"):
+        for lat in ("53.876", "53.880", "53.884"):
+            result = await routing.travel(place(), place(lat, "2.120"), "walking")
+            assert result.travel_source == "fallback_estimate"
+    assert route.call_count == 1
+    assert caplog.messages[-1] == "route fallback mode=walking reason=recent failure"
+
+
+@pytest.mark.asyncio
+async def test_d5_a_no_route_answer_is_not_remembered(ors: respx.MockRouter) -> None:
+    route = ors.post(WALK_URL).respond(404, json=recording("directions_error_no_route.json"))
+    ors_client = OrsClient(KEY, 8, 5)
+    for _ in range(2):
+        with pytest.raises(RoutingUnavailable, match="http 404"):
+            await ors_client.route((53.0, 2.0), (53.1, 2.1), TravelMode.WALKING)
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_d5_the_memo_ends_and_ors_is_tried_again(
+    ors: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    route = ors.post(WALK_URL).mock(
+        side_effect=[
+            httpx.Response(410),
+            httpx.Response(200, json=recording("directions_foot_walking.json")),
+        ]
+    )
+    ors_client = OrsClient(KEY, 8, 5)
+    with pytest.raises(RoutingUnavailable, match="http 410"):
+        await ors_client.route((53.0, 2.0), (53.1, 2.1), TravelMode.WALKING)
+    now = client_module.time.monotonic()
+    monkeypatch.setattr(
+        client_module.time, "monotonic", lambda: now + client_module.FAILURE_MEMO_S + 1
+    )
+    assert (await ors_client.route((53.0, 2.0), (53.1, 2.1), TravelMode.WALKING)).metres == 1241
+    assert route.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_d5_connect_timeout_is_short(ors: respx.MockRouter) -> None:
+    route = ors.post(WALK_URL).respond(json=recording("directions_foot_walking.json"))
+    await OrsClient(KEY, 8, 5).route((53.0, 2.0), (53.1, 2.1), TravelMode.WALKING)
+    timeout = route.calls.last.request.extensions["timeout"]
+    assert (timeout["connect"], timeout["read"]) == (client_module.CONNECT_TIMEOUT_S, 8)
