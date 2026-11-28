@@ -130,6 +130,40 @@ Staging is off between planned staging windows, to keep the AWS bill down. Kirta
 | --- | --- | --- | --- | --- | --- |
 | | | | | | |
 
+### 8.1 Course demo window and production through evaluation (IMD-221, IMD-222)
+
+Run by Kirtan. Every command here is **Not verified — run by Kirtan**; record the outcome in the log above and in the window's gate record. No value (model ID, URL, key) is written into the repository except the live URL in step 13.
+
+**Before the window**
+
+1. Nidhi sets the Gemini budget cap on the team Gemini project and records it in [provider-spend-limit.md](../decisions/provider-spend-limit.md) (IMD-222).
+2. Nidhi gives Kirtan the fallback model ID (not a secret, but keep it out of the repository).
+3. Kirtan sets it for staging and, once IMP-801 has created production, for production. It is a repository variable, not an SSM parameter: an ECS `secrets` entry whose parameter is missing stops the task from starting, and the fallback must stay optional ([docs/secrets.md](../secrets.md)).
+   ```sh
+   gh variable set STAGING_GEMINI_FALLBACK_MODEL_ID --body '<fallback model ID from Nidhi>'
+   gh variable set PRODUCTION_GEMINI_FALLBACK_MODEL_ID --body '<fallback model ID from Nidhi>'
+   ```
+   Unset or empty turns the fallback off; no deploy step fails because of that. The next deploy sends it to the API service.
+4. Confirm the AWS budget and its alerts exist (read-only):
+   `aws budgets describe-budgets --account-id "$AWS_ACCOUNT_ID" --query 'Budgets[].{name:BudgetName,limit:BudgetLimit.Amount,unit:BudgetLimit.Unit}' --output table`
+
+**In the window** (after the start order above and a green **Deploy staging** run)
+
+5. `/health` on staging answers `"provider":"GEMINI"`.
+6. Generation with the primary model: generate a plan for a new trip, then read the record, `GET /api/v1/generations/<id>`: `outcome` is `model` or `model_repaired`, and `model_id` is the primary model.
+7. The fallback model. It triggers only when the primary's retries end in a rate limit or an outage (429, 500, 502, 503, connection failure; PD-RUN-100-1). An invalid primary model ID is a bad request and does **not** trigger it, so do not use that method: it only produces a labelled rule-based plan. There is no safe way to force a 429 or 503 on staging without a code change. So:
+   - Check whether any staging generation in the window used it: a record whose `model_id` is the fallback model ID.
+   - If none did, record "fallback not exercised on staging; covered by the provider unit tests" in the gate record. Do not change the primary model ID to force it.
+8. End to end on staging, demo cities Jaipur, Udaipur and Mumbai, plus the small town named for G14 ([any-city-readiness.md](../test-reports/any-city-readiness.md)), using the pre-import of [any-city-staging.md](any-city-staging.md) when `any_city_mode` is on: create the trip, generate, edit once, check the costs and warnings. Record each city's generation ID, `outcome` and `model_id`.
+9. Daily cost look: AWS Billing, Cost Explorer, daily granularity, the last 7 days. Note the day's total in the log's Note column.
+
+**After the window: the course rule**
+
+10. **Production stays up and reachable from IMP-801 until the course evaluation ends.** Do not stop, scale down or delete the production services or the production database after the window. Only staging may be stopped (the stop order above).
+11. Until the evaluation ends, do the daily cost look (step 9) and act on any AWS budget alert e-mail the same day. If cost has to be cut, stop staging first. Production is only scaled down with a team decision.
+12. Teardown: on a date after the course evaluation ends, to be filled in by Kirtan once the evaluation date is known (`YYYY-MM-DD`), run the pause and tear-down steps of [deployment-guide.md](deployment-guide.md) §8 and [aws-setup.md](aws-setup.md) §15, and log it above.
+13. The live production URL goes into the course links file under `docs/course/` that the submission ZIP reads.
+
 ## 9. Rollback alarm (IMD-139)
 
 **Current alarm (as observed on 9 November 2026).** Each Express Mode service has the alarm `default/<service>/RollbackAlarm`. It fires when the share of 4xx and 5xx responses is above 1 % in 2 of 3 minutes, and a firing alarm rolls the deployment back. Because 4xx responses count, ordinary client errors (for example 401 without a token, 404, 422) can roll a healthy deployment back.
