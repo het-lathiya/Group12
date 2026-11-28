@@ -403,15 +403,17 @@ def test_places_query_uses_only_the_fixed_vocabulary_and_characters() -> None:
 def test_city_query_matches_the_fixed_template() -> None:
     query = overpass_city_query(13.0, 77.6, 50, 90)
     assert re.fullmatch(
-        r"\[out:json\]\[timeout:90\];\n"
+        rf"\[out:json\]\[timeout:90\]\[maxsize:{OVERPASS_MAXSIZE_BYTES}\];\n"
         rf'node\["place"="city"\]\["name"\]\(around:50000,{_NUMBER},{_NUMBER}\);\n'
-        r"out tags;",
+        r"out center tags;",
         query,
     )
     assert _words(query) <= {
         "out",
         "json",
         "timeout",
+        "maxsize",
+        "center",
         "node",
         "place",
         "city",

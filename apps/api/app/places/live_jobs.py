@@ -37,7 +37,6 @@ from app.ai.providers.base import ModelProvider
 from app.core.config import Settings, get_settings
 from app.db.models import Destination as DestinationRow
 from app.db.session import transaction
-from app.livedata.countries import capital
 from app.livedata.factory import LiveProviders, get_providers
 from app.livedata.normalise import choose_nearby_city, evaluate_gate, normalise
 from app.livedata.providers.base import (
@@ -234,10 +233,10 @@ async def _import(
 
 
 async def _nearby_city(places: PlacesProvider, claimed: _Claimed) -> str | None:
-    """A2 §6.4: the largest city within 150 km, else the capital; never the settlement itself.
+    """A2 §6.4 / RUN-105B D6: a city within 150 km; never an unbounded capital fallback.
 
-    The extra lookup is best effort: any error there falls back to the capital and never fails
-    the import.
+    The extra lookup is best effort: an error leaves the suggestion empty and never fails the
+    import. The web then says there is no larger city nearby.
     """
     destination = claimed.destination
     found: str | None = None
@@ -245,11 +244,11 @@ async def _nearby_city(places: PlacesProvider, claimed: _Claimed) -> str | None:
         found = await places.largest_city_near(
             destination.center.lat, destination.center.lon, NEARBY_CITY_RADIUS_KM
         )
-    except Exception as exc:  # best effort by A2 §6.4: logged, then the capital is used
+    except Exception as exc:  # best effort by A2 §6.4: no unverified-distance fallback
         logger.warning(
             "live import %s nearby-city lookup failed: %s", destination.id, type(exc).__name__
         )
-    return choose_nearby_city(destination.name, found, capital(claimed.country_code))
+    return choose_nearby_city(destination.name, found, None)
 
 
 async def _embed(

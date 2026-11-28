@@ -126,6 +126,7 @@ class _Guard:
             try:
                 result = await call()
             except LiveDataError as exc:
+                self.throttle.defer_for(exc.retry_after_s)
                 if self.breaker is not None:
                     self.breaker.record_failure(_as_provider_error(exc))
                     if self.breaker.state == "open":

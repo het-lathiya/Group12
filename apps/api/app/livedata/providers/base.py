@@ -46,10 +46,15 @@ OVERPASS_TAGS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 )
 # A2 §6.3: [maxsize:] of the places query, 64 MiB.
 OVERPASS_MAXSIZE_BYTES: Final = 67_108_864
+NEARBY_CITY_MAX_KM: Final = 150.0  # A2 §6.4
 
 
 class LiveDataError(Exception):
     """Base of the live-data errors; the message is safe to log."""
+
+    def __init__(self, message: str, *, retry_after_s: float = 0.0) -> None:
+        super().__init__(message)
+        self.retry_after_s = retry_after_s  # Internal provider hint; no API shape change.
 
 
 class LiveDataUnavailable(LiveDataError):  # noqa: N818  # names fixed by A2 §7.1
@@ -184,9 +189,9 @@ def overpass_city_query(lat: float, lon: float, radius_km: float, timeout_s: flo
     radius_m = round(_seconds(radius_km) * 1000)
     timeout = max(1, math.ceil(_seconds(timeout_s)))
     return (
-        f"[out:json][timeout:{timeout}];\n"
+        f"[out:json][timeout:{timeout}][maxsize:{OVERPASS_MAXSIZE_BYTES}];\n"
         f'node["place"="city"]["name"](around:{radius_m},{_number(lat)},{_number(lon)});\n'
-        "out tags;"
+        "out center tags;"
     )
 
 

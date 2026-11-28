@@ -160,6 +160,17 @@ describe("ImportProgress states (TC-483)", () => {
     expect(onSearchNearby).toHaveBeenCalledWith("Udaipur");
   });
 
+  it("insufficient_data without a bounded suggestion says no larger city nearby", () => {
+    fakeApi([]);
+    renderProgress(live(state("insufficient_data")));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "We could not find enough places for Nathdwara yet. No larger city nearby.",
+    );
+    expect(
+      screen.queryByRole("button", { name: /^Search / }),
+    ).not.toBeInTheDocument();
+  });
+
   it("failed says the map data service could not be reached", () => {
     fakeApi([]);
     renderProgress(

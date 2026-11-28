@@ -21,7 +21,7 @@ export function notEnoughText(name: string, nearbyCity: string | null): string {
   const first = `We could not find enough places for ${name} yet.`;
   return nearbyCity
     ? `${first} Try ${nearbyCity}, a larger city nearby.`
-    : first;
+    : `${first} No larger city nearby.`;
 }
 
 /**

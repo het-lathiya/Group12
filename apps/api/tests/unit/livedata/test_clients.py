@@ -163,7 +163,8 @@ async def test_livedata_overpass_posts_fixed_query_and_parses_elements() -> None
 async def test_livedata_largest_city_near_picks_highest_population() -> None:
     with respx.mock() as router:
         route = router.post(OVERPASS).respond(200, json=load("overpass_cities_tinyham.json"))
-        name = await overpass().largest_city_near(24.9, 79.1, 150)
+        # Both population-bearing cities lie in the 100-150 km band from this test centre.
+        name = await overpass().largest_city_near(26.2, 79.2, 150)
     assert name == "Bigtown (SAMPLE)"
     body = parse_qs(route.calls.last.request.content.decode())["data"][0]
     assert 'node["place"="city"]' in body
@@ -174,8 +175,20 @@ async def test_livedata_largest_city_near_picks_highest_population() -> None:
 async def test_livedata_largest_city_near_without_population_takes_first_by_name() -> None:
     elements = {
         "elements": [
-            {"type": "node", "id": 1, "lat": 1.0, "lon": 1.0, "tags": {"name": "Zed (SAMPLE)"}},
-            {"type": "node", "id": 2, "lat": 1.0, "lon": 1.0, "tags": {"name": "Abe (SAMPLE)"}},
+            {
+                "type": "node",
+                "id": 1,
+                "lat": 1.1,
+                "lon": 1.0,
+                "tags": {"name": "Zed (SAMPLE)", "place": "city"},
+            },
+            {
+                "type": "node",
+                "id": 2,
+                "lat": 1.1,
+                "lon": 1.0,
+                "tags": {"name": "Abe (SAMPLE)", "place": "city"},
+            },
         ]
     }
     with respx.mock() as router:
@@ -185,7 +198,7 @@ async def test_livedata_largest_city_near_without_population_takes_first_by_name
         assert await overpass().largest_city_near(1.0, 1.0, 150) is None
 
 
-# ---------- error mapping, one attempt, no bodies in logs ----------
+# ---------- error mapping, one attempt, only Overpass HTTP failure snippets ----------
 
 
 async def call_search() -> object:
@@ -254,7 +267,10 @@ async def test_livedata_failures_map_to_safe_errors_after_one_attempt(
     assert str(raised.value) == message
     assert raised.value.__cause__ is None
     assert route.call_count == 1
-    assert BODY_MARKER not in caplog.text
+    if method == "POST" and label in ("429", "503"):
+        assert BODY_MARKER in caplog.text
+    else:
+        assert BODY_MARKER not in caplog.text
     assert QUERY not in caplog.text
 
 

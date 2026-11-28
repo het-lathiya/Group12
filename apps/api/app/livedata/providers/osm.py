@@ -4,16 +4,27 @@ The only Nominatim and Overpass HTTP calls. They follow the ORS client conventio
 (``app/routing/client.py``): one attempt and no retry, a timeout from settings, an identifying
 ``User-Agent`` on every request, and every failure raised as a live-data error with a safe message.
 The search text travels only as a URL-encoded query parameter; the Overpass query is built in
-``base`` from numbers and the fixed tag list. Logs hold counts, never a query or a response body.
+``base`` from numbers and the fixed tag list. Overpass HTTP failures log a bounded, redacted body
+snippet and defer later calls; they never retry a query within an import. Nominatim logs counts.
 """
 
 import logging
+import math
 import re
+from collections.abc import Callable
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
+from html import unescape
 from typing import Any, Final
 
 import httpx
 
+from app.ai.breaker import QUOTA_COOL_DOWN_S, TRANSIENT_COOL_DOWN_S
+from app.core.logging import redact_text
+from app.livedata import throttle
+from app.livedata.normalise import haversine_m
 from app.livedata.providers.base import (
+    NEARBY_CITY_MAX_KM,
     BBox,
     GeoCandidate,
     GeoPlace,
@@ -34,6 +45,45 @@ SEARCH_LIMIT: Final = 10
 MAX_CANDIDATES: Final = 8
 # Overpass ends a query at its own [timeout:]; the HTTP timeout leaves room for the answer.
 OVERPASS_HTTP_MARGIN_S: Final = 5.0
+FAILURE_SNIPPET_CHARS: Final = 256
+NEARBY_CITY_RADII_KM: Final = (25.0, 50.0, 100.0, NEARBY_CITY_MAX_KM)
+
+_SENSITIVE_VALUE: Final = re.compile(
+    r"""(?ix)
+    (["']?[\w-]*(?:key|token|secret|password|authorization|cookie)[\w-]*["']?\s*[:=]\s*)
+    (?:"[^"\n]*"|'[^'\n]*'|[^\s,;<>]+)
+    """
+)
+
+
+def _failure_snippet(response: httpx.Response, query: str) -> str:
+    """Diagnostic text only: no echoed query, credentials, contact details, URLs or IPs."""
+    text = unescape(response.text).replace(query, "[query]")[:4096]
+    text = re.sub(r"<[^>]*>", " ", text)
+    text = re.sub(r"(?i)\b(?:bearer|basic)\s+[^\s,;\"'<>]+", "[redacted]", text)
+    text = _SENSITIVE_VALUE.sub(lambda match: match[1] + "[redacted]", text)
+    text = re.sub(r"https?://[^\s<>\"']+", "[url]", text)
+    text = re.sub(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", "[ip]", text)
+    text = re.sub(r"(?i)(?<!\w)(?:[a-f0-9]{0,4}:){2,}[a-f0-9:]+", "[ip]", text)
+    text = re.sub(r"[\w+/=-]{32,}", "[redacted]", text)
+    return " ".join(redact_text(text).split())[:FAILURE_SNIPPET_CHARS] or "[empty]"
+
+
+def _retry_after_s(value: str | None, *, now: datetime | None = None) -> float | None:
+    """Retry-After's delay-seconds or HTTP date; invalid values use the local backoff."""
+    if value is None:
+        return None
+    value = value.strip()
+    if value.isascii() and value.isdigit() and len(value) <= 12:
+        return float(value)
+    try:
+        date = parsedate_to_datetime(value)
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=UTC)
+        return max(0.0, (date - (now or datetime.now(UTC))).total_seconds())
+    except (ValueError, TypeError, OverflowError):
+        return None
+
 
 _SETTLEMENTS: Final[dict[str, SettlementKind]] = {
     "city": "city",
@@ -59,6 +109,7 @@ async def _send(
     user_agent: str,
     params: dict[str, str | int] | None = None,
     data: dict[str, str] | None = None,
+    on_http_failure: Callable[[httpx.Response], float] | None = None,
 ) -> Any:
     """One request; the decoded JSON body, or a live-data error with a safe message."""
     try:
@@ -72,9 +123,10 @@ async def _send(
         raise LiveDataTimeout("timeout") from None
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
+        retry_after_s = on_http_failure(exc.response) if on_http_failure is not None else 0.0
         if status == 429:
-            raise LiveDataRateLimited("http 429") from None
-        raise LiveDataUnavailable(f"http {status}") from None
+            raise LiveDataRateLimited("http 429", retry_after_s=retry_after_s) from None
+        raise LiveDataUnavailable(f"http {status}", retry_after_s=retry_after_s) from None
     except httpx.HTTPError:
         raise LiveDataUnavailable("connection") from None
     except (ValueError, LookupError, TypeError):
@@ -238,6 +290,22 @@ class OverpassPlaces:
         self._base_url = base_url
         self._timeout_s = timeout_s
         self._user_agent = user_agent
+        self._backoff_s = throttle.OVERPASS_SPACING_S
+
+    def _http_failure(self, response: httpx.Response, query: str) -> float:
+        delay = 0.0
+        if response.status_code in (429, 504):
+            minimum = QUOTA_COOL_DOWN_S if response.status_code == 429 else self._backoff_s
+            delay = max(minimum, _retry_after_s(response.headers.get("Retry-After")) or 0.0)
+            if response.status_code == 504:
+                self._backoff_s = min(TRANSIENT_COOL_DOWN_S, self._backoff_s * 2)
+        logger.warning(
+            "overpass http failure status=%d body=%s retry_after_s=%d",
+            response.status_code,
+            _failure_snippet(response, query),
+            math.ceil(delay),
+        )
+        return delay
 
     async def _elements(self, query: str) -> list[OsmElement]:
         body = await _send(
@@ -246,6 +314,7 @@ class OverpassPlaces:
             timeout_s=self._timeout_s + OVERPASS_HTTP_MARGIN_S,
             user_agent=self._user_agent,
             data={"data": query},
+            on_http_failure=lambda response: self._http_failure(response, query),
         )
         try:
             if _has_error_note(body):
@@ -257,6 +326,7 @@ class OverpassPlaces:
         except (ValueError, LookupError, TypeError):
             raise LiveDataUnavailable("malformed response") from None
         logger.info("overpass elements=%d kept=%d", len(raw), len(elements))
+        self._backoff_s = throttle.OVERPASS_SPACING_S
         return elements
 
     async def fetch(self, bbox: BBox) -> list[OsmElement]:
@@ -264,13 +334,23 @@ class OverpassPlaces:
         return await self._elements(overpass_places_query(bbox, self._timeout_s))
 
     async def largest_city_near(self, lat: float, lon: float, radius_km: float) -> str | None:
-        """The most populous ``place=city`` node within ``radius_km``, or None."""
-        query = overpass_city_query(lat, lon, radius_km, self._timeout_s)
-        named = [(e.tags.get("name", ""), _population(e.tags)) for e in await self._elements(query)]
-        named = [(name, pop) for name, pop in named if name.strip()]
-        if not named:
-            return None
-        with_population = [(name, pop) for name, pop in named if pop is not None]
-        if with_population:
-            return min(with_population, key=lambda item: (-(item[1] or 0), item[0]))[0]
-        return min(name for name, _ in named)
+        """Expand through distance bands, using one query capped at A2's 150 km maximum."""
+        maximum = min(radius_km, NEARBY_CITY_MAX_KM)
+        query = overpass_city_query(lat, lon, maximum, self._timeout_s)
+        cities = [
+            (e.tags.get("name", "").strip(), _population(e.tags), distance / 1000)
+            for e in await self._elements(query)
+            if e.osm_type == "n"
+            and e.tags.get("place") == "city"
+            and math.isfinite(e.lat)
+            and math.isfinite(e.lon)
+            and -90 <= e.lat <= 90
+            and -180 <= e.lon <= 180
+            and 1 < (distance := haversine_m(lat, lon, e.lat, e.lon)) <= maximum * 1000
+        ]
+        cities = [(name, pop, distance) for name, pop, distance in cities if name]
+        for radius in (*[r for r in NEARBY_CITY_RADII_KM if r < maximum], maximum):
+            nearby = [(name, pop) for name, pop, distance in cities if distance <= radius]
+            if nearby:
+                return min(nearby, key=lambda item: (-(item[1] or 0), item[0]))[0]
+        return None

@@ -44,7 +44,6 @@ from app.db.models import (
     RagDocument,
 )
 from app.generation import jobs
-from app.livedata.countries import capital
 from app.livedata.factory import LiveProviders, get_geocoder
 from app.livedata.providers.base import (
     BBox,
@@ -371,7 +370,7 @@ async def test_small_gives_insufficient_data_with_the_nearby_city(
     ],
     ids=["none-found", "lookup-failed", "same-settlement"],
 )
-async def test_nearby_city_falls_back_to_the_capital(
+async def test_nearby_city_without_a_bounded_result_has_no_capital_fallback(
     db_session: AsyncSession, sessions: Sessions, stub: StubPlaces
 ) -> None:
     destination_id = await queued(db_session, TINYHAM)
@@ -379,8 +378,7 @@ async def test_nearby_city_falls_back_to_the_capital(
     assert await run(destination_id, sessions, with_places(stub)) == "insufficient_data"
 
     row = await row_of(db_session, destination_id)
-    assert row.nearby_city == capital("IN")
-    assert row.nearby_city
+    assert row.nearby_city is None
 
 
 # TC-475
