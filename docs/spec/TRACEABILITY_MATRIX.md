@@ -1,6 +1,6 @@
 # TRACEABILITY_MATRIX — AI Travel Planner
 
-Feature → Requirement → User story → Task → Module and file → API and database → Test → Sprint, for the 88 MVP and MVP-S functional requirements and the 10 extension (EXT) requirements. Generated from the implementation specification (§2, §10, §15); regenerate it instead of editing it by hand. Test IDs are the blueprint catalogue (TC-nnn) and the extension cases TC-399 to TC-432. Amendment A1 (2 November 2026) adds catalogue item C-13 with FR-136 to FR-140 (rows at the end; test cases TC-433 to TC-459). The extension rows (FR-088, FR-127 to FR-135) belong to cards cut by IMD-65.
+Feature → Requirement → User story → Task → Module and file → API and database → Test → Sprint, for the 88 MVP and MVP-S functional requirements and the 10 extension (EXT) requirements. Generated from the implementation specification (§2, §10, §15); regenerate it instead of editing it by hand. Test IDs are the blueprint catalogue (TC-nnn) and the extension cases TC-399 to TC-432. Amendment A1 (2 November 2026) adds catalogue item C-13 with FR-136 to FR-140 (rows at the end; test cases TC-433 to TC-459). The extension rows (FR-088, FR-127 to FR-135) belong to cards cut by IMD-65. Amendment A2 (catalogue item C-14, FR-141 to FR-145, NFR-051, NFR-052) and the 24 stories that only cards trace are added by hand at the end (RUN-100, IMD-221); a regeneration must keep them.
 | Feature | Requirement | Stories | Tasks | Modules | Main files | API · tables | Tests | Sprint |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | F-01 | FR-001 | US-010 | IMP-109 | MOD-F01 | apps/web/lib/auth/supabase.ts<br>apps/web/lib/auth/useSession.ts | — | TC-051, TC-052, TC-053 (+2) | 1 |
@@ -106,3 +106,48 @@ Feature → Requirement → User story → Task → Module and file → API and 
 | C-13 | FR-138 | US-164 | IMP-316 | MOD-B05, MOD-B06 (+2) | apps/api/app/generation/request_builder.py<br>apps/api/app/validation/output_check.py | API-22, API-23 · ai_generations, itinerary_items | TC-454, TC-455, TC-456 | 3 |
 | C-13 | FR-139 | US-165 | IMP-316, IMP-317 | MOD-B08, MOD-F04 (+1) | apps/api/app/itinerary/schemas.py<br>apps/web/components/itinerary/ItemSources.tsx | API-24 · itinerary_items, rag_chunks, rag_documents (+1) | TC-456, TC-457 | 3 |
 | C-13 | FR-140 | US-167 | IMP-318 | MOD-B15, MOD-B18 | apps/api/app/evaluation/retrieval_metrics.py<br>eval/datasets/retrieval/v1/queries.jsonl | — | TC-458 | 4 |
+
+## Amendment A2 rows (RUN-100)
+
+From A2 §13. A2 names no stories; the cards come from the TC table of A2 §13.2 and the acceptance items of A2 §13.3.
+
+| Feature | Requirement | Stories | Tasks | Tests | Status |
+| --- | --- | --- | --- | --- | --- |
+| C-14 | FR-141 | — | IMP-723, IMP-725, IMP-728 | TC-468, TC-472, TC-483, TC-486, TC-487; ACC-20 | Cards merged (part records); staging ACC pending (Kirtan window, `docs/acceptance/any-city.md`) |
+| C-14 | FR-142 | — | IMP-721, IMP-724, IMP-725, IMP-728 | TC-463, TC-466, TC-467, TC-473, TC-474, TC-475, TC-477, TC-483, TC-486; ACC-20, ACC-21 | Cards merged (part records); staging ACC pending (Kirtan window, `docs/acceptance/any-city.md`) |
+| C-14 | FR-143 | — | IMP-725, IMP-729 | TC-476, TC-484, TC-486; ACC-20, CHK-26 | Cards merged (part records); staging ACC pending (Kirtan window, `docs/acceptance/any-city.md`) |
+| C-14 | FR-144 | — | IMP-724, IMP-727, IMP-729 | TC-465, TC-479, TC-485, TC-488; ACC-20 | Cards merged (part records); staging ACC pending (Kirtan window, `docs/acceptance/any-city.md`) |
+| C-14 | FR-145 | — | IMP-723, IMP-726 | TC-470, TC-478, TC-488 | Cards merged (part records) |
+| C-14 | NFR-051 | — | IMP-725, IMP-733 | TC-491 | Cards merged; the 120 s target is proposed until TC-491 records the measured staging value |
+| C-14 | NFR-052 | — | IMP-723, IMP-725, IMP-731 | TC-468, TC-470, TC-472 | Cards merged (part records) |
+
+## Stories traced only by cards (RUN-100)
+
+No FR row names these stories, so the table above cannot reach them. Requirements and tests are the cards' "Traces to" and "Tests" entries in TASK_REGISTER; status from `docs/progress/parts/` and the sprint index on 28 November 2026.
+
+| Story | Tasks | Requirements | Tests | Status |
+| --- | --- | --- | --- | --- |
+| US-001 | IMP-101, IMP-102 | NFR-013, NFR-018, NFR-031, NFR-032, NFR-033, NFR-034, NFR-048 | TC-002, TC-335, TC-343, TC-354 | Cards merged (part records) |
+| US-002 | IMP-112, IMP-217, IMP-218 | FR-123, NFR-005, NFR-013, NFR-015, NFR-035, NFR-048, NFR-049 | TC-288, TC-338, TC-351, TC-437, TC-438 | Cards merged (part records) |
+| US-004 | IMP-113, IMP-217 | FR-123, NFR-005, NFR-013, NFR-015, NFR-035, NFR-037, NFR-049 | TC-288, TC-351, TC-354 | Cards merged (part records) |
+| US-007 | IMP-214 | NFR-033 | TC-336 | Cards merged (part records) |
+| US-008 | IMP-106 | NFR-012, NFR-034 | TC-337, TC-345 | Cards merged (part records) |
+| US-026 | IMP-206 | NFR-040 | TC-109, TC-113 | Cards merged (part records) |
+| US-027 | IMP-603 | NFR-040 | — | IMP-603 not started (waiting for members' curated data, IMD-201) |
+| US-130 | IMP-514 | FR-120, NFR-041, NFR-042, NFR-046 | TC-287, TC-390, TC-391 | Cards merged (part records) |
+| US-132 | IMP-706 | — | TC-361 | Cards merged (part records) |
+| US-140 | IMP-414 | NFR-048 | TC-369, TC-370 | Cards merged (part records) |
+| US-141 | IMP-701 | NFR-012, NFR-025, NFR-026, NFR-048 | TC-369, TC-371, TC-372, TC-373, TC-374, TC-375, TC-376, TC-432 | Cards merged (part records) |
+| US-142 | IMP-611 | NFR-027 | — | Cards merged (part records) |
+| US-143 | IMP-704 | NFR-027, NFR-028 | TC-369 | IMP-704 not started (needs IMP-611 session 1) |
+| US-144 | IMP-702 | NFR-011, NFR-016, NFR-018, NFR-024 | TC-344, TC-345, TC-346, TC-347, TC-348, TC-349, TC-352, TC-357, TC-431, TC-432 | Cards merged (part records) |
+| US-145 | IMP-707 | NFR-022, NFR-027, NFR-032, NFR-033 | TC-335, TC-336 | Cards merged (part records) |
+| US-146 | IMP-707 | NFR-022, NFR-027, NFR-032, NFR-033 | TC-335, TC-336 | Cards merged (part records) |
+| US-147 | IMP-801 | NFR-005, NFR-009, NFR-021, NFR-035, NFR-037 | E2E-09, TC-377 | Cards merged (part records) |
+| US-148 | IMP-804 | NFR-041 | TC-397 | Cards merged (part records) |
+| US-149 | IMP-803 | NFR-005, NFR-009 | E2E-09 | Cards merged (part records) |
+| US-150 | IMP-802 | NFR-006, NFR-048 | E2E-09, TC-369 | IMP-802 no part record yet |
+| US-151 | IMP-114 | — | — | IMP-114 draft PR #201, pending member |
+| US-152 | IMP-115 | — | — | Cards merged (part records) |
+| US-153 | IMP-210, IMP-211, IMP-213, IMP-216 | FR-024, FR-025, FR-038, FR-059, NFR-004, NFR-008, NFR-012, NFR-048 | TC-012, TC-064, TC-115, TC-151, TC-162, TC-369 | Cards merged (part records) |
+| US-163 | IMP-217, IMP-218, IMP-219 | FR-003, FR-123, NFR-005, NFR-012, NFR-013, NFR-015, NFR-020, NFR-022, NFR-035, NFR-048, NFR-049 | TC-288, TC-338, TC-351, TC-437, TC-438, TC-439, TC-440 | Cards merged (part records) |
