@@ -5,7 +5,16 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, SmallInteger, Text, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    SmallInteger,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -14,6 +23,12 @@ from app.db.models.base import Base
 
 class AiGeneration(Base):
     __tablename__ = "ai_generations"
+    __table_args__ = (
+        CheckConstraint(
+            "provider in ('GEMINI','GROQ','MOCK','FINETUNED_MODEL')",
+            name="ai_generations_provider_check",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")

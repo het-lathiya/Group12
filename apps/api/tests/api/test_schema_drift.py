@@ -7,7 +7,7 @@ key (within schema public) is compared with ``app.db.models.metadata``; any diff
 
 import re
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 from sqlalchemy import Column, Engine, Inspector, create_engine, inspect
@@ -15,6 +15,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.pool import NullPool
 
 from app.db.models import metadata
+from app.schemas.ai import ProviderName
 
 # The 15 MVP tables of §5.2 (migrations 0002 to 0004).
 MVP_TABLES = {
@@ -87,6 +88,18 @@ def test_schema_drift_tables(inspector: Inspector) -> None:
     migrated = set(inspector.get_table_names(schema="public")) - {"alembic_version"}
     assert set(metadata.tables) == SCHEMA_TABLES
     assert migrated == SCHEMA_TABLES
+
+
+def test_generation_provider_constraint_matches_the_contract(inspector: Inspector) -> None:
+    checks = inspector.get_check_constraints("ai_generations", schema="public")
+    check = next(c for c in checks if c["name"] == "ai_generations_provider_check")
+    assert set(re.findall(r"'([^']+)'", check["sqltext"])) == set(get_args(ProviderName))
+    orm = next(
+        c
+        for c in metadata.tables["ai_generations"].constraints
+        if c.name == "ai_generations_provider_check"
+    )
+    assert set(re.findall(r"'([^']+)'", str(orm.sqltext))) == set(get_args(ProviderName))
 
 
 @pytest.mark.parametrize("table_name", sorted(SCHEMA_TABLES))
