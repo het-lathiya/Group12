@@ -7,9 +7,11 @@ reject them. The Sampleton fixture stands for the existing curated rows.
 
 import uuid
 from decimal import Decimal
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
+from alembic.script import ScriptDirectory
 from fixtures.db import insert_auth_user
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
@@ -217,7 +219,23 @@ async def test_live_destinations_schema_indexes_exist(db_session: AsyncSession) 
     assert "import_requested_by" in indexes["ix_destinations_import_requester"]
 
 
-def test_live_destinations_schema_migration_head_is_0008() -> None:
-    revisions = sorted(path.name for path in MIGRATIONS.glob("[0-9][0-9][0-9][0-9]_*.py"))
-    assert revisions[-1] == "0008_live_destinations.py"
-    assert health.MIGRATION_HEAD == "0008"
+def test_live_destinations_schema_migration_0008_present_and_chain_linear() -> None:
+    files = sorted(path.name for path in MIGRATIONS.glob("[0-9][0-9][0-9][0-9]_*.py"))
+    scripts = ScriptDirectory(str(MIGRATIONS.parent))
+    assert len(scripts.get_heads()) == 1
+    revisions = list(reversed(list(scripts.walk_revisions())))
+    assert {Path(revision.path).name for revision in revisions} == set(files)
+    assert revisions[0].down_revision is None
+    for previous, current in pairwise(revisions):
+        assert current.down_revision == previous.revision
+
+    migration_0008 = scripts.get_revision("0008")
+    assert migration_0008 is not None
+    assert Path(migration_0008.path).name == "0008_live_destinations.py"
+    migration_0009 = scripts.get_revision("0009")
+    assert migration_0009 is not None
+    assert migration_0009.down_revision == "0008"
+
+    assert Path(revisions[-1].path).name == files[-1]
+    assert revisions[-1].revision == scripts.get_current_head()
+    assert scripts.get_current_head() == health.MIGRATION_HEAD

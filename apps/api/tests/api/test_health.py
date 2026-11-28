@@ -177,12 +177,13 @@ def test_health_ready_with_a_migrated_database(
     response = client.get("/health/ready")
     assert response.status_code == 200
     model_id = get_provider(client.app.state.settings).get_model_metadata().model_id
+    head = ScriptDirectory(str(MIGRATIONS)).get_current_head()
     assert response.json() == {
         "status": "ready",
         "version": "test-build",
         "checks": {
             "database": "ok",
-            "migration": health.MIGRATION_HEAD,
+            "migration": head,
             "provider": {"name": "MOCK", "model_id": model_id, "status": "ok"},
         },
     }

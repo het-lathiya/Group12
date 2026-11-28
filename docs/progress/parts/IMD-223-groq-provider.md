@@ -54,3 +54,29 @@ deploy (Kirtan's operational step), a live provider call (no Groq key). Producti
 are still pending IMP-801, as in RUN-103; Kirtan's runbook records the required settings.
 
 Blockers: none. Proposed decisions: none; IMD-223 was explicitly authorized by RUN-108.
+
+## RUN-108b · migration-head test follows the chain
+
+- Owner: Nidhi Chauhan · Points: 0 · Base commit: `23390e18f80e963d39270a16db83f3cdcec3330a`
+- The previous API CI run failed only the test that still required 0008 to be the head.
+- `apps/api/tests/api/test_live_destinations_schema.py`: renamed the test to
+  `test_live_destinations_schema_migration_0008_present_and_chain_linear`. It requires the 0008
+  file in Alembic's chain, 0009's `down_revision == "0008"`, one head, all revision files in the
+  chain and consecutive links from the base to the newest revision. The newest file and readiness
+  must agree with Alembic's current head. All destination schema assertions are preserved.
+- `apps/api/tests/api/test_health.py`: the migrated-database response expectation derives its head
+  from Alembic, independently of the production readiness constant.
+- Audit: no other 0008-as-current-head pins in `apps/api/tests`, `apps/api/app`, `scripts` or
+  `.github`. Remaining matches describe the historical migration, validate its link or are UUIDs.
+- Changed documentation: this part record. No schema, migration, contract or application change.
+
+| Command (from `apps/api`) | Result line |
+| --- | --- |
+| `.venv/bin/pytest -q tests/unit` | `1989 passed, 1 warning in 30.23s` |
+| `.venv/bin/pytest -q tests/api/test_live_destinations_schema.py tests/api/test_schema_drift.py tests/api/test_health.py` | `90 passed, 1 warning in 6.76s` |
+| Ruff check and format check on both changed test files | `All checks passed!`; `2 files already formatted` |
+
+Docker was reachable; API tests used a dedicated disposable database on port 55408. The warning
+is the existing TestClient deprecation. Local acceptance is verified. PR #311 checks are monitored
+after push and their terminal results are reported at run completion. Blockers: none. Proposed
+decisions: none.
