@@ -8,10 +8,11 @@ The search text travels only as a URL-encoded query parameter; the Overpass quer
 snippet and defer later calls; they never retry a query within an import. Nominatim logs counts.
 """
 
+import asyncio
 import logging
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from html import unescape
@@ -283,17 +284,33 @@ def _population(tags: dict[str, str]) -> int | None:
         return None
 
 
+# N1: a 502 or 503 means the instance is busy; the query is retried after these waits.
+OVERPASS_BUSY_STATUSES: Final = (502, 503)
+OVERPASS_BUSY_WAITS_S: Final = (5.0, 15.0)
+OVERPASS_BUSY_MAX_WAIT_S: Final = 30.0  # caps a server Retry-After, so the import stays bounded
+
+
 class OverpassPlaces:
     """``PlacesProvider`` over the Overpass API interpreter endpoint."""
 
-    def __init__(self, base_url: str, timeout_s: float, user_agent: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        timeout_s: float,
+        user_agent: str,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
         self._base_url = base_url
         self._timeout_s = timeout_s
         self._user_agent = user_agent
         self._backoff_s = throttle.OVERPASS_SPACING_S
+        self._sleep = sleep
+        self._busy_retry_after_s: float | None = None
 
     def _http_failure(self, response: httpx.Response, query: str) -> float:
         delay = 0.0
+        if response.status_code in OVERPASS_BUSY_STATUSES:
+            self._busy_retry_after_s = _retry_after_s(response.headers.get("Retry-After"))
         if response.status_code in (429, 504):
             minimum = QUOTA_COOL_DOWN_S if response.status_code == 429 else self._backoff_s
             delay = max(minimum, _retry_after_s(response.headers.get("Retry-After")) or 0.0)
@@ -308,14 +325,24 @@ class OverpassPlaces:
         return delay
 
     async def _elements(self, query: str) -> list[OsmElement]:
-        body = await _send(
-            "POST",
-            self._base_url,
-            timeout_s=self._timeout_s + OVERPASS_HTTP_MARGIN_S,
-            user_agent=self._user_agent,
-            data={"data": query},
-            on_http_failure=lambda response: self._http_failure(response, query),
-        )
+        busy = {f"http {status}" for status in OVERPASS_BUSY_STATUSES}
+        for wait_s in (*OVERPASS_BUSY_WAITS_S, None):
+            self._busy_retry_after_s = None
+            try:
+                body = await _send(
+                    "POST",
+                    self._base_url,
+                    timeout_s=self._timeout_s + OVERPASS_HTTP_MARGIN_S,
+                    user_agent=self._user_agent,
+                    data={"data": query},
+                    on_http_failure=lambda response: self._http_failure(response, query),
+                )
+                break
+            except LiveDataUnavailable as exc:
+                if wait_s is None or str(exc) not in busy:
+                    raise
+                hint = self._busy_retry_after_s
+                await self._sleep(min(OVERPASS_BUSY_MAX_WAIT_S, wait_s if hint is None else hint))
         try:
             if _has_error_note(body):
                 raise LiveDataUnavailable("error note")

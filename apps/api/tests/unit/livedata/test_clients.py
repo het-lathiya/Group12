@@ -47,8 +47,12 @@ def geocoder() -> NominatimGeocoder:
     return NominatimGeocoder(NOMINATIM, 10, USER_AGENT)
 
 
+async def no_wait(_: float) -> None:
+    return None
+
+
 def overpass() -> OverpassPlaces:
-    return OverpassPlaces(OVERPASS, 90, USER_AGENT)
+    return OverpassPlaces(OVERPASS, 90, USER_AGENT, sleep=no_wait)
 
 
 def guides() -> MediaWikiGuides:
@@ -266,7 +270,8 @@ async def test_livedata_failures_map_to_safe_errors_after_one_attempt(
     assert type(raised.value) is error
     assert str(raised.value) == message
     assert raised.value.__cause__ is None
-    assert route.call_count == 1
+    # N1: a busy Overpass (503) is retried twice; every other failure is one attempt.
+    assert route.call_count == (3 if method == "POST" and label == "503" else 1)
     if method == "POST" and label in ("429", "503"):
         assert BODY_MARKER in caplog.text
     else:
