@@ -1,0 +1,3790 @@
+{
+  "source_main": "57b620901ff610900ce46c004a27bcae68cc695e",
+  "captured_at": "2026-11-28T14:39:32.097626+05:30",
+  "roles": {
+    "Manal": "Backend Engineer (Core API and Budget)",
+    "Het": "Backend Engineer (Auth, Generation Jobs and Itinerary Editing)",
+    "Junaid": "Backend and QA Engineer (Routing, Validation and Security Testing)",
+    "Malhar": "Database Engineer (Migrations, Places Data and Fallback Planner)",
+    "Jeel": "Database and Data Engineer (ORM, Places API and Ranking)",
+    "Kirtan": "DevOps Engineer and Integration Lead",
+    "Nidhi": "AI Engineer (Provider Layer and Generation Pipeline)",
+    "Manya": "AI/ML Engineer (Prompt Engineering, Validation and Evaluation)",
+    "Manasvi": "Frontend Engineer (Web App Lead)",
+    "Krrish": "Frontend and QA Engineer (Accessibility and End-to-End Testing)"
+  },
+  "plan": {
+    "Manal": 40,
+    "Het": 40,
+    "Junaid": 41,
+    "Malhar": 41,
+    "Jeel": 40,
+    "Kirtan": 41,
+    "Nidhi": 40,
+    "Manya": 40,
+    "Manasvi": 41,
+    "Krrish": 39
+  },
+  "ownership": {
+    "Kirtan": [
+      {
+        "card": "IMP-101",
+        "part": "Repo tree, Makefile, toolchain pins, repository guidance, progress folders",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-102",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-112",
+        "part": "whole task",
+        "points": 5,
+        "cut": false
+      },
+      {
+        "card": "IMP-113",
+        "part": "GitHub, AWS account (Free plan, MFA, budget owner) and auth-only Supabase project, secrets register",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-199",
+        "part": "whole task",
+        "points": 0,
+        "cut": false
+      },
+      {
+        "card": "IMP-201",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-214",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-216",
+        "part": "whole task",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-217",
+        "part": "whole task",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-299",
+        "part": "whole task",
+        "points": 0,
+        "cut": false
+      },
+      {
+        "card": "IMP-302",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-499",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-511",
+        "part": "whole task",
+        "points": 5,
+        "cut": false
+      },
+      {
+        "card": "IMP-599",
+        "part": "whole task",
+        "points": 0,
+        "cut": false
+      },
+      {
+        "card": "IMP-603",
+        "part": "Load destination 2 into staging and production; run the quality report",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-613",
+        "part": "Packing rules, checklist and assist-log tables, packing endpoints (API-43, API-75) and packing page",
+        "points": 5,
+        "cut": true
+      },
+      {
+        "card": "IMP-699",
+        "part": "whole task",
+        "points": 0,
+        "cut": false
+      },
+      {
+        "card": "IMP-702",
+        "part": "Security headers and secret-scan review",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-707",
+        "part": "Deployment guide",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-713",
+        "part": "Refresh job schedule, User-Agent and call budget",
+        "points": 1,
+        "cut": true
+      },
+      {
+        "card": "IMP-799",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-801",
+        "part": "Production deployment, smoke tests, RC tag",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-802",
+        "part": "Deployment and configuration fixes",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-899",
+        "part": "whole task",
+        "points": 1,
+        "cut": false
+      }
+    ],
+    "Het": [
+      {
+        "card": "IMP-101",
+        "part": "API pyproject (ruff, mypy, pytest) and test socket guard",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-108",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-210",
+        "part": "whole task",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-211",
+        "part": "whole task",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-219",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-305",
+        "part": "Job progress states, generation router, privacy-notice flag (API-04)",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-308",
+        "part": "Schedule recalculation of times and durations",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-309",
+        "part": "Itinerary read schema and service fields",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-316",
+        "part": "Save validated citations on items and return `sources[]` in API-24",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-407",
+        "part": "whole task",
+        "points": 5,
+        "cut": false
+      },
+      {
+        "card": "IMP-408",
+        "part": "Remove and retime edit operations",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-409",
+        "part": "Move/reorder edit operation",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-504",
+        "part": "Add-place edit and stale-edit rejection",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-505",
+        "part": "Replace edit with ranked alternatives",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-506",
+        "part": "Lock/unlock and locks respected by repair",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-601",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-607",
+        "part": "Merge regenerated day and whole-itinerary regeneration API",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-609",
+        "part": "Summary API",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-612",
+        "part": "Preview and apply endpoints (API-66, API-67) as one edit",
+        "points": 3,
+        "cut": true
+      },
+      {
+        "card": "IMP-702",
+        "part": "Auth and ownership fixes found by the pass",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-709",
+        "part": "Explanation storage, endpoint (API-65) and AI-labelled display",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-711",
+        "part": "Today endpoint (API-70)",
+        "points": 1,
+        "cut": true
+      }
+    ],
+    "Manal": [
+      {
+        "card": "IMP-103",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-203",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-204",
+        "part": "whole task",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-308",
+        "part": "Budget engine and costs API (money in minor units)",
+        "points": 5,
+        "cut": false
+      },
+      {
+        "card": "IMP-313",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-404",
+        "part": "Validator rules: overlaps, travel gaps",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-410",
+        "part": "Draft trips and latest-itinerary reopening API",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-411",
+        "part": "Transport allowance, stay budget, price source labels API",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-501",
+        "part": "Budget conflict check",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-507",
+        "part": "Daily and category cost breakdown API",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-510",
+        "part": "Edit trip settings and stale-plan flag",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-602",
+        "part": "Rename, duplicate, archive, delete trip API; TripActionsMenu wired to the new endpoints",
+        "points": 6,
+        "cut": false
+      },
+      {
+        "card": "IMP-608",
+        "part": "Budget alerts and contingency buffer",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-707",
+        "part": "Architecture and API documentation",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-708",
+        "part": "Intake endpoint (API-64) with TripIn/PreferencesIn validation",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-710",
+        "part": "Rain flags, swap suggestion (API-68) and swap edit (API-69)",
+        "points": 3,
+        "cut": true
+      }
+    ],
+    "Manasvi": [
+      {
+        "card": "IMP-104",
+        "part": "whole task",
+        "points": 5,
+        "cut": false
+      },
+      {
+        "card": "IMP-212",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-218",
+        "part": "Web production image: standalone Next.js Dockerfile and local compose service",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-309",
+        "part": "Day-wise itinerary view, SourceBadge and AiBadge labels",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-317",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-405",
+        "part": "WarningsPanel",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-408",
+        "part": "ItemEditor",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-409",
+        "part": "Drag-and-drop and keyboard MoveControls (dnd-kit)",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-412",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-503",
+        "part": "Pace control in the preference form",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-507",
+        "part": "Costs page and CostBreakdown",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-508",
+        "part": "whole task",
+        "points": 5,
+        "cut": false
+      },
+      {
+        "card": "IMP-602",
+        "part": "Dashboard and TripCard",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-604",
+        "part": "PlaceFilterBar",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-612",
+        "part": "Optimise button and before/after preview dialog",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-704",
+        "part": "Usability session 2 and top-issue fixes",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-708",
+        "part": "Describe-your-trip screen and confirmation step",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-711",
+        "part": "Today view",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-802",
+        "part": "Frontend defect fixes",
+        "points": 1,
+        "cut": false
+      }
+    ],
+    "Malhar": [
+      {
+        "card": "IMP-105",
+        "part": "whole task",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-106",
+        "part": "SQL migrations 0001-0006 through Alembic, constraints and indexes",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-115",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-205",
+        "part": "Place import pipeline with provenance and quality gate, category vocabulary",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-206",
+        "part": "Opening hours and prices with sources",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-311",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-304",
+        "part": "Candidate retrieval query and hard-constraint filters",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-314",
+        "part": "Source and licence review, strict quality-gate run and quality report",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-402",
+        "part": "Rule-based fallback planner",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-504",
+        "part": "PlacePicker (uses the place search API)",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-604",
+        "part": "Search and filter queries, place detail API, indexes",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-606",
+        "part": "Food places data and meal-slot retrieval; meal-slot display on item cards",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-610",
+        "part": "Restore transaction and retention",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-707",
+        "part": "SRS and data model section",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-710",
+        "part": "Open-Meteo client and weather cache",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-713",
+        "part": "MediaWiki client, attribution and context cache",
+        "points": 3,
+        "cut": true
+      },
+      {
+        "card": "IMP-803",
+        "part": "Pre-demo checklist: database reset and fallback drill",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-804",
+        "part": "Final report: data and architecture chapters",
+        "points": 1,
+        "cut": false
+      }
+    ],
+    "Jeel": [
+      {
+        "card": "IMP-106",
+        "part": "ORM models, schema-drift test, test database fixture",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-107",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-202",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-205",
+        "part": "Places repository, destinations/categories API, basic place search (API-16)",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-206",
+        "part": "Lead curation of destination 1, load and quality report",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-304",
+        "part": "Scoring and ranking of the shortlist (preference weights)",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-315",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-402",
+        "part": "Saved sample itineraries (data)",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-405",
+        "part": "Persist structured warnings and suggested fixes with the plan",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-509",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-515",
+        "part": "Ranking components API (API-63) from the ranking domain function",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-604",
+        "part": "PlaceDetailDrawer with labelled facts",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-605",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-610",
+        "part": "Version snapshots (snap-1): save, list, restore; versions page and VersionList",
+        "points": 6,
+        "cut": false
+      },
+      {
+        "card": "IMP-707",
+        "part": "User guide",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-712",
+        "part": "Budget-fit endpoint (API-71) and apply flow",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-713",
+        "part": "Context endpoints (API-72, API-73) and ContextCard in the drawer",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-803",
+        "part": "Pre-demo checklist: data, accounts, sample itineraries",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-804",
+        "part": "Presentation slides",
+        "points": 1,
+        "cut": false
+      }
+    ],
+    "Krrish": [
+      {
+        "card": "IMP-109",
+        "part": "whole task",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-114",
+        "part": "Interview guide and recorded findings",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-213",
+        "part": "whole task",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-305",
+        "part": "Privacy notice and live progress on the generate page",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-314",
+        "part": "Research and write the destination 1 guide documents with sources",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-403",
+        "part": "FallbackNotice on the generate page",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-406",
+        "part": "AI-written text labels on item cards",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-410",
+        "part": "Draft resume in wizard and dashboard",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-411",
+        "part": "BudgetSettingsForm and SourceBadge variants",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-414",
+        "part": "E2E journey test on staging",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-505",
+        "part": "AlternativesDialog",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-506",
+        "part": "Lock toggle on item cards",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-510",
+        "part": "Trip edit page and StalePlanBanner",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-513",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-515",
+        "part": "\"Why this place?\" panel",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-607",
+        "part": "Regenerate controls in DayColumn",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-608",
+        "part": "BudgetAlert component",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-609",
+        "part": "Summary page and print layout",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-611",
+        "part": "Record findings",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-701",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-703",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-710",
+        "part": "Forecast banner and swap action",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-712",
+        "part": "Budget-fit panel",
+        "points": 2,
+        "cut": true
+      }
+    ],
+    "Nidhi": [
+      {
+        "card": "IMP-110",
+        "part": "whole task",
+        "points": 5,
+        "cut": false
+      },
+      {
+        "card": "IMP-113",
+        "part": "Gemini API key, generation model ID, embedding model ID and data-use terms",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-208",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-301",
+        "part": "Gemini adapter: structured output, error mapping",
+        "points": 5,
+        "cut": false
+      },
+      {
+        "card": "IMP-305",
+        "part": "Full generation pipeline through the active provider",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-312",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-399",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-401",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-403",
+        "part": "Failure, timeout and quota outcomes end to end",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-502",
+        "part": "whole task",
+        "points": 5,
+        "cut": false
+      },
+      {
+        "card": "IMP-514",
+        "part": "First Gemini baseline report",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-607",
+        "part": "Regenerate one day around locks (request scope, pipeline)",
+        "points": 4,
+        "cut": false
+      },
+      {
+        "card": "IMP-613",
+        "part": "suggest_packing_items operation and refine endpoint (API-74)",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-705",
+        "part": "whole task",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-708",
+        "part": "extract_trip_request operation (GEMINI, MOCK)",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-709",
+        "part": "explain_day operation and text checks",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-801",
+        "part": "Demo script and backup video",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-802",
+        "part": "AI pipeline defect fixes",
+        "points": 1,
+        "cut": false
+      }
+    ],
+    "Manya": [
+      {
+        "card": "IMP-111",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-207",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-301",
+        "part": "API-style spike (OD-14) and recorded-response tests",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-303",
+        "part": "whole task",
+        "points": 5,
+        "cut": false
+      },
+      {
+        "card": "IMP-306",
+        "part": "Output validation: io-1 schema and place-ID check",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-316",
+        "part": "gr-2 and io-2 schemas, template v2, passage size control, citation check, retrieval fields on the generation record, MOCK citations",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-406",
+        "part": "Keep must-visit places and explicit constraints in the pipeline",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-413",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-503",
+        "part": "Pace presets and grouping nearby places into days",
+        "points": 6,
+        "cut": false
+      },
+      {
+        "card": "IMP-514",
+        "part": "Evaluation run records",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-603",
+        "part": "Curate a share of destination 2 places and verify sources",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-606",
+        "part": "Meal slots in the request builder and fallback planner",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-613",
+        "part": "Item vocabulary, ps-1 validation and evaluation cases",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-706",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-708",
+        "part": "trip_intake prompt, ti-1 schema and evaluation cases",
+        "points": 2,
+        "cut": true
+      },
+      {
+        "card": "IMP-709",
+        "part": "day_explanation prompt and evaluation cases",
+        "points": 1,
+        "cut": true
+      },
+      {
+        "card": "IMP-804",
+        "part": "Final report: AI chapter",
+        "points": 1,
+        "cut": false
+      }
+    ],
+    "Junaid": [
+      {
+        "card": "IMP-113",
+        "part": "OpenRouteService key and email sender",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-114",
+        "part": "Run stakeholder interviews round 1",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-209",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-215",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-218",
+        "part": "AWS deploy workflows, release task and deployed smoke checks",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-306",
+        "part": "Prompt-injection test cases",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-307",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-310",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-404",
+        "part": "Validator rules: missing constraints, invalid references",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-318",
+        "part": "whole task",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-414",
+        "part": "Journey test fixtures, test report",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-501",
+        "part": "Opening-hours and overpacked-day checks",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-512",
+        "part": "whole task",
+        "points": 3,
+        "cut": false
+      },
+      {
+        "card": "IMP-603",
+        "part": "Opening hours and prices for destination 2, with sources",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-611",
+        "part": "Run usability session 1",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-612",
+        "part": "Ordering heuristic (nearest neighbour + 2-opt) over the travel-time matrix",
+        "points": 3,
+        "cut": true
+      },
+      {
+        "card": "IMP-702",
+        "part": "Authorization suite re-run and injection corpus",
+        "points": 2,
+        "cut": false
+      },
+      {
+        "card": "IMP-704",
+        "part": "Session notes and retest",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-707",
+        "part": "Test plan",
+        "points": 1,
+        "cut": false
+      },
+      {
+        "card": "IMP-712",
+        "part": "Budget-fit search",
+        "points": 3,
+        "cut": true
+      },
+      {
+        "card": "IMP-802",
+        "part": "Triage rehearsal defects and add regression tests",
+        "points": 2,
+        "cut": false
+      }
+    ]
+  },
+  "merged_ledger_parts": [
+    {
+      "owner": "Kirtan",
+      "card": "IMP-101",
+      "part": "Repo tree, Makefile, toolchain pins, repository guidance, progress folders (repo-tree-makefile)",
+      "points": 2,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-101-repo-tree-makefile.md"
+      ],
+      "prs": [
+        1
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-101",
+      "part": "API pyproject (ruff, mypy, pytest) and test socket guard (api-pyproject-guard)",
+      "points": 1,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-101-api-pyproject-guard.md"
+      ],
+      "prs": [
+        2
+      ]
+    },
+    {
+      "owner": "Kirtan",
+      "card": "IMP-102",
+      "part": "Whole task",
+      "points": 2,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-102-whole-task.md"
+      ],
+      "prs": [
+        3
+      ]
+    },
+    {
+      "owner": "Manal",
+      "card": "IMP-103",
+      "part": "Whole task",
+      "points": 2,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-103-whole-task.md"
+      ],
+      "prs": [
+        190
+      ]
+    },
+    {
+      "owner": "Manasvi",
+      "card": "IMP-104",
+      "part": "Whole task",
+      "points": 5,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-104-whole-task.md"
+      ],
+      "prs": [
+        192
+      ]
+    },
+    {
+      "owner": "Malhar",
+      "card": "IMP-105",
+      "part": "Whole task",
+      "points": 1,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-105-whole-task.md"
+      ],
+      "prs": [
+        191
+      ]
+    },
+    {
+      "owner": "Malhar",
+      "card": "IMP-106",
+      "part": "SQL migrations 0001-0006 through Alembic, constraints and indexes (sql-migrations)",
+      "points": 3,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-106-sql-migrations.md"
+      ],
+      "prs": [
+        193
+      ]
+    },
+    {
+      "owner": "Jeel",
+      "card": "IMP-106",
+      "part": "ORM models, schema-drift test, test database fixture (orm-drift-fixture)",
+      "points": 2,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-106-orm-drift-fixture.md"
+      ],
+      "prs": [
+        193
+      ]
+    },
+    {
+      "owner": "Jeel",
+      "card": "IMP-107",
+      "part": "Whole task",
+      "points": 2,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-107-whole-task.md"
+      ],
+      "prs": [
+        197
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-108",
+      "part": "Whole task",
+      "points": 2,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-108-whole-task.md"
+      ],
+      "prs": [
+        196
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-109",
+      "part": "Whole task",
+      "points": 4,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-109-whole-task.md"
+      ],
+      "prs": [
+        194
+      ]
+    },
+    {
+      "owner": "Nidhi",
+      "card": "IMP-110",
+      "part": "Whole task",
+      "points": 5,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-110-whole-task.md"
+      ],
+      "prs": [
+        195
+      ]
+    },
+    {
+      "owner": "Manya",
+      "card": "IMP-111",
+      "part": "Whole task",
+      "points": 2,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-111-whole-task.md"
+      ],
+      "prs": [
+        198
+      ]
+    },
+    {
+      "owner": "Kirtan",
+      "card": "IMP-112",
+      "part": "Whole task",
+      "points": 5,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-112-whole-task.md"
+      ],
+      "prs": [
+        202
+      ]
+    },
+    {
+      "owner": "Kirtan",
+      "card": "IMP-113",
+      "part": "GitHub, Vercel, Render, Supabase accounts and secrets register (accounts-secrets-register)",
+      "points": 1,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-113-accounts-secrets-register.md"
+      ],
+      "prs": [
+        200
+      ]
+    },
+    {
+      "owner": "Junaid",
+      "card": "IMP-113",
+      "part": "OpenRouteService key and email sender (ors-email-sender)",
+      "points": 1,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-113-ors-email-sender.md"
+      ],
+      "prs": [
+        200
+      ]
+    },
+    {
+      "owner": "Nidhi",
+      "card": "IMP-113",
+      "part": "Gemini API key, model ID and data-use terms (gemini-key-terms)",
+      "points": 1,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [
+        "parts/IMP-113-gemini-key-terms.md"
+      ],
+      "prs": [
+        200
+      ]
+    },
+    {
+      "owner": "Malhar",
+      "card": "IMP-115",
+      "part": "Whole task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-1.md",
+      "records": [],
+      "prs": [
+        199
+      ]
+    },
+    {
+      "owner": "Kirtan",
+      "card": "IMP-201",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-201-whole-task.md"
+      ],
+      "prs": [
+        231
+      ]
+    },
+    {
+      "owner": "Jeel",
+      "card": "IMP-202",
+      "part": "whole-task",
+      "points": 2,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-202-whole-task.md"
+      ],
+      "prs": [
+        209
+      ]
+    },
+    {
+      "owner": "Manal",
+      "card": "IMP-203",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-203-whole-task.md"
+      ],
+      "prs": [
+        204
+      ]
+    },
+    {
+      "owner": "Manal",
+      "card": "IMP-204",
+      "part": "whole-task",
+      "points": 4,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-204-whole-task.md"
+      ],
+      "prs": [
+        207
+      ]
+    },
+    {
+      "owner": "Malhar",
+      "card": "IMP-205",
+      "part": "import-quality-gate",
+      "points": 4,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-205-import-quality-gate.md"
+      ],
+      "prs": [
+        205
+      ]
+    },
+    {
+      "owner": "Jeel",
+      "card": "IMP-205",
+      "part": "places-api-search",
+      "points": 3,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-205-places-api-search.md"
+      ],
+      "prs": [
+        205,
+        206
+      ]
+    },
+    {
+      "owner": "Jeel",
+      "card": "IMP-206",
+      "part": "lead-curation",
+      "points": 4,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-206-lead-curation.md"
+      ],
+      "prs": [
+        242
+      ]
+    },
+    {
+      "owner": "Malhar",
+      "card": "IMP-206",
+      "part": "hours-prices",
+      "points": 4,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-206-hours-prices.md"
+      ],
+      "prs": [
+        242
+      ]
+    },
+    {
+      "owner": "Manya",
+      "card": "IMP-207",
+      "part": "whole-task",
+      "points": 2,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-207-whole-task.md"
+      ],
+      "prs": [
+        208
+      ]
+    },
+    {
+      "owner": "Nidhi",
+      "card": "IMP-208",
+      "part": "whole-task",
+      "points": 2,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-208-whole-task.md"
+      ],
+      "prs": [
+        210
+      ]
+    },
+    {
+      "owner": "Junaid",
+      "card": "IMP-209",
+      "part": "whole-task",
+      "points": 2,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-209-whole-task.md"
+      ],
+      "prs": [
+        211
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-210",
+      "part": "whole-task",
+      "points": 1,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-210-whole-task.md"
+      ],
+      "prs": [
+        232
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-211",
+      "part": "whole-task",
+      "points": 1,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-211-whole-task.md"
+      ],
+      "prs": [
+        236
+      ]
+    },
+    {
+      "owner": "Manasvi",
+      "card": "IMP-212",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-212-whole-task.md"
+      ],
+      "prs": [
+        235
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-213",
+      "part": "whole-task",
+      "points": 1,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-213-whole-task.md"
+      ],
+      "prs": [
+        239
+      ]
+    },
+    {
+      "owner": "Kirtan",
+      "card": "IMP-214",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-214-whole-task.md"
+      ],
+      "prs": [
+        227
+      ]
+    },
+    {
+      "owner": "Junaid",
+      "card": "IMP-215",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-215-whole-task.md"
+      ],
+      "prs": [
+        233
+      ]
+    },
+    {
+      "owner": "Kirtan",
+      "card": "IMP-216",
+      "part": "whole-task",
+      "points": 1,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-216-whole-task.md"
+      ],
+      "prs": [
+        246
+      ]
+    },
+    {
+      "owner": "Kirtan",
+      "card": "IMP-217",
+      "part": "whole-task",
+      "points": 4,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-217-whole-task.md"
+      ],
+      "prs": [
+        243
+      ]
+    },
+    {
+      "owner": "Junaid",
+      "card": "IMP-218",
+      "part": "deploy-workflows",
+      "points": 2,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-218-deploy-workflows.md"
+      ],
+      "prs": [
+        245
+      ]
+    },
+    {
+      "owner": "Manasvi",
+      "card": "IMP-218",
+      "part": "web-image",
+      "points": 2,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-218-web-image.md"
+      ],
+      "prs": [
+        245
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-219",
+      "part": "whole-task",
+      "points": 2,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-219-whole-task.md"
+      ],
+      "prs": [
+        229
+      ]
+    },
+    {
+      "owner": "Malhar",
+      "card": "IMP-311",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-2.md",
+      "records": [
+        "parts/IMP-311-whole-task.md"
+      ],
+      "prs": [
+        228
+      ]
+    },
+    {
+      "owner": "Nidhi",
+      "card": "IMP-301",
+      "part": "gemini-adapter",
+      "points": 5,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-301-gemini-adapter.md"
+      ],
+      "prs": [
+        249
+      ]
+    },
+    {
+      "owner": "Manya",
+      "card": "IMP-301",
+      "part": "spike-recordings",
+      "points": 3,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-301-spike-recordings.md"
+      ],
+      "prs": [
+        249
+      ]
+    },
+    {
+      "owner": "Kirtan",
+      "card": "IMP-302",
+      "part": "whole-task",
+      "points": 2,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-302-whole-task.md"
+      ],
+      "prs": [
+        250
+      ]
+    },
+    {
+      "owner": "Manya",
+      "card": "IMP-303",
+      "part": "whole-task",
+      "points": 5,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-303-whole-task.md"
+      ],
+      "prs": [
+        249
+      ]
+    },
+    {
+      "owner": "Malhar",
+      "card": "IMP-304",
+      "part": "candidate-filters",
+      "points": 4,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-304-candidate-filters.md"
+      ],
+      "prs": [
+        248
+      ]
+    },
+    {
+      "owner": "Jeel",
+      "card": "IMP-304",
+      "part": "ranking",
+      "points": 4,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-304-ranking.md"
+      ],
+      "prs": [
+        248
+      ]
+    },
+    {
+      "owner": "Nidhi",
+      "card": "IMP-305",
+      "part": "pipeline",
+      "points": 4,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-305-pipeline.md"
+      ],
+      "prs": [
+        250
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-305",
+      "part": "job-progress",
+      "points": 2,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-305-job-progress.md"
+      ],
+      "prs": [
+        250
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-305",
+      "part": "privacy-progress",
+      "points": 2,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-305-privacy-progress.md"
+      ],
+      "prs": [
+        250
+      ]
+    },
+    {
+      "owner": "Manya",
+      "card": "IMP-306",
+      "part": "output-validation",
+      "points": 3,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-306-output-validation.md"
+      ],
+      "prs": [
+        251
+      ]
+    },
+    {
+      "owner": "Junaid",
+      "card": "IMP-306",
+      "part": "injection-cases",
+      "points": 2,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-306-injection-cases.md"
+      ],
+      "prs": [
+        251
+      ]
+    },
+    {
+      "owner": "Junaid",
+      "card": "IMP-307",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-307-whole-task.md"
+      ],
+      "prs": [
+        248
+      ]
+    },
+    {
+      "owner": "Manal",
+      "card": "IMP-308",
+      "part": "budget-costs",
+      "points": 5,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-308-budget-costs.md"
+      ],
+      "prs": [
+        252
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-308",
+      "part": "schedule",
+      "points": 3,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-308-schedule.md"
+      ],
+      "prs": [
+        252
+      ]
+    },
+    {
+      "owner": "Manasvi",
+      "card": "IMP-309",
+      "part": "day-view",
+      "points": 4,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-309-day-view.md"
+      ],
+      "prs": [
+        253
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-309",
+      "part": "read-fields",
+      "points": 1,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-309-read-fields.md"
+      ],
+      "prs": [
+        253
+      ]
+    },
+    {
+      "owner": "Junaid",
+      "card": "IMP-310",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-310-whole-task.md"
+      ],
+      "prs": [
+        248
+      ]
+    },
+    {
+      "owner": "Nidhi",
+      "card": "IMP-312",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-312-whole-task.md"
+      ],
+      "prs": [
+        250
+      ]
+    },
+    {
+      "owner": "Manal",
+      "card": "IMP-313",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-313-whole-task.md"
+      ],
+      "prs": [
+        251
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-314",
+      "part": "guides",
+      "points": 2,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-314-guides.md"
+      ],
+      "prs": [
+        253
+      ]
+    },
+    {
+      "owner": "Malhar",
+      "card": "IMP-314",
+      "part": "review",
+      "points": 1,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-314-review.md"
+      ],
+      "prs": [
+        253
+      ]
+    },
+    {
+      "owner": "Jeel",
+      "card": "IMP-315",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-315-whole-task.md"
+      ],
+      "prs": [
+        252
+      ]
+    },
+    {
+      "owner": "Manya",
+      "card": "IMP-316",
+      "part": "grounding",
+      "points": 3,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-316-grounding.md"
+      ],
+      "prs": [
+        254
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-316",
+      "part": "saved-sources",
+      "points": 1,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-316-saved-sources.md"
+      ],
+      "prs": [
+        254
+      ]
+    },
+    {
+      "owner": "Manasvi",
+      "card": "IMP-317",
+      "part": "whole-task",
+      "points": 2,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [
+        "parts/IMP-317-whole-task.md"
+      ],
+      "prs": [
+        255
+      ]
+    },
+    {
+      "owner": "Nidhi",
+      "card": "IMP-401",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-401-whole-task.md"
+      ],
+      "prs": [
+        261
+      ]
+    },
+    {
+      "owner": "Malhar",
+      "card": "IMP-402",
+      "part": "fallback-planner",
+      "points": 3,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-402-fallback-planner.md"
+      ],
+      "prs": [
+        261
+      ]
+    },
+    {
+      "owner": "Jeel",
+      "card": "IMP-402",
+      "part": "sample-itineraries",
+      "points": 2,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-402-sample-itineraries.md"
+      ],
+      "prs": [
+        270
+      ]
+    },
+    {
+      "owner": "Nidhi",
+      "card": "IMP-403",
+      "part": "failure-outcomes",
+      "points": 2,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-403-failure-outcomes.md"
+      ],
+      "prs": [
+        267
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-403",
+      "part": "fallback-notice",
+      "points": 1,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-403-fallback-notice.md"
+      ],
+      "prs": [
+        267
+      ]
+    },
+    {
+      "owner": "Manal",
+      "card": "IMP-404",
+      "part": "schedule-rules",
+      "points": 4,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-404-schedule-rules.md"
+      ],
+      "prs": [
+        259
+      ]
+    },
+    {
+      "owner": "Junaid",
+      "card": "IMP-404",
+      "part": "reference-rules",
+      "points": 3,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-404-reference-rules.md"
+      ],
+      "prs": [
+        259
+      ]
+    },
+    {
+      "owner": "Jeel",
+      "card": "IMP-405",
+      "part": "persist-warnings",
+      "points": 2,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-405-persist-warnings.md"
+      ],
+      "prs": [
+        267
+      ]
+    },
+    {
+      "owner": "Manasvi",
+      "card": "IMP-405",
+      "part": "warnings-panel",
+      "points": 2,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-405-warnings-panel.md"
+      ],
+      "prs": [
+        267
+      ]
+    },
+    {
+      "owner": "Manya",
+      "card": "IMP-406",
+      "part": "must-visit-constraints",
+      "points": 3,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-406-must-visit-constraints.md"
+      ],
+      "prs": [
+        261
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-406",
+      "part": "ai-text-labels",
+      "points": 1,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-406-ai-text-labels.md"
+      ],
+      "prs": [
+        261
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-407",
+      "part": "whole-task",
+      "points": 5,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-407-whole-task.md"
+      ],
+      "prs": [
+        267
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-408",
+      "part": "remove-retime-ops",
+      "points": 2,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-408-remove-retime-ops.md"
+      ],
+      "prs": [
+        268
+      ]
+    },
+    {
+      "owner": "Manasvi",
+      "card": "IMP-408",
+      "part": "item-editor",
+      "points": 2,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-408-item-editor.md"
+      ],
+      "prs": [
+        268,
+        272
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-409",
+      "part": "move-op",
+      "points": 2,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-409-move-op.md"
+      ],
+      "prs": [
+        268
+      ]
+    },
+    {
+      "owner": "Manasvi",
+      "card": "IMP-409",
+      "part": "move-controls",
+      "points": 3,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-409-move-controls.md"
+      ],
+      "prs": [
+        268
+      ]
+    },
+    {
+      "owner": "Manal",
+      "card": "IMP-410",
+      "part": "draft-latest-api",
+      "points": 2,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-410-draft-latest-api.md"
+      ],
+      "prs": [
+        260
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-410",
+      "part": "draft-resume-ui",
+      "points": 2,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-410-draft-resume-ui.md"
+      ],
+      "prs": [
+        260,
+        273
+      ]
+    },
+    {
+      "owner": "Manal",
+      "card": "IMP-411",
+      "part": "budget-labels-api",
+      "points": 2,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-411-budget-labels-api.md"
+      ],
+      "prs": [
+        260
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-411",
+      "part": "budget-form-badges",
+      "points": 2,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-411-budget-form-badges.md"
+      ],
+      "prs": [
+        260
+      ]
+    },
+    {
+      "owner": "Manasvi",
+      "card": "IMP-412",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-412-whole-task.md"
+      ],
+      "prs": [
+        260
+      ]
+    },
+    {
+      "owner": "Manya",
+      "card": "IMP-413",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-413-whole-task.md"
+      ],
+      "prs": [
+        259
+      ]
+    },
+    {
+      "owner": "Junaid",
+      "card": "IMP-318",
+      "part": "whole-task",
+      "points": 2,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-318-whole-task.md"
+      ],
+      "prs": [
+        271
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-414",
+      "part": "journey-staging",
+      "points": 3,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-414-journey-staging.md"
+      ],
+      "prs": [
+        272
+      ]
+    },
+    {
+      "owner": "Junaid",
+      "card": "IMP-414",
+      "part": "journey-fixtures-report",
+      "points": 2,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [
+        "parts/IMP-414-journey-fixtures-report.md"
+      ],
+      "prs": [
+        272
+      ]
+    },
+    {
+      "owner": "Junaid",
+      "card": "IMP-501",
+      "part": "hours-checks",
+      "points": 3,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-501-hours-checks.md"
+      ],
+      "prs": [
+        276
+      ]
+    },
+    {
+      "owner": "Manal",
+      "card": "IMP-501",
+      "part": "budget-conflict",
+      "points": 2,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-501-budget-conflict.md"
+      ],
+      "prs": [
+        276
+      ]
+    },
+    {
+      "owner": "Nidhi",
+      "card": "IMP-502",
+      "part": "whole-task",
+      "points": 5,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-502-whole-task.md"
+      ],
+      "prs": [
+        275
+      ]
+    },
+    {
+      "owner": "Manya",
+      "card": "IMP-503",
+      "part": "pace-grouping",
+      "points": 6,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-503-pace-grouping.md"
+      ],
+      "prs": [
+        275
+      ]
+    },
+    {
+      "owner": "Manasvi",
+      "card": "IMP-503",
+      "part": "pace-control",
+      "points": 1,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-503-pace-control.md"
+      ],
+      "prs": [
+        276
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-504",
+      "part": "add-place-api",
+      "points": 3,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-504-add-place-api.md"
+      ],
+      "prs": [
+        275
+      ]
+    },
+    {
+      "owner": "Malhar",
+      "card": "IMP-504",
+      "part": "place-picker",
+      "points": 2,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-504-place-picker.md"
+      ],
+      "prs": [
+        276
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-505",
+      "part": "replace-api",
+      "points": 3,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-505-replace-api.md"
+      ],
+      "prs": [
+        275
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-505",
+      "part": "alternatives-dialog",
+      "points": 2,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-505-alternatives-dialog.md"
+      ],
+      "prs": [
+        276
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-506",
+      "part": "lock-api",
+      "points": 2,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-506-lock-api.md"
+      ],
+      "prs": [
+        276
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-506",
+      "part": "lock-toggle",
+      "points": 1,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-506-lock-toggle.md"
+      ],
+      "prs": [
+        276
+      ]
+    },
+    {
+      "owner": "Manal",
+      "card": "IMP-507",
+      "part": "breakdown-api",
+      "points": 3,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-507-breakdown-api.md"
+      ],
+      "prs": [
+        275
+      ]
+    },
+    {
+      "owner": "Manasvi",
+      "card": "IMP-507",
+      "part": "costs-page",
+      "points": 2,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-507-costs-page.md"
+      ],
+      "prs": [
+        276
+      ]
+    },
+    {
+      "owner": "Manasvi",
+      "card": "IMP-508",
+      "part": "whole-task",
+      "points": 5,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-508-whole-task.md"
+      ],
+      "prs": [
+        275,
+        277,
+        278
+      ]
+    },
+    {
+      "owner": "Jeel",
+      "card": "IMP-509",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-509-whole-task.md"
+      ],
+      "prs": [
+        275
+      ]
+    },
+    {
+      "owner": "Manal",
+      "card": "IMP-510",
+      "part": "settings-api",
+      "points": 1,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-510-settings-api.md"
+      ],
+      "prs": [
+        275
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-510",
+      "part": "edit-page",
+      "points": 1,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-510-edit-page.md"
+      ],
+      "prs": [
+        276
+      ]
+    },
+    {
+      "owner": "Kirtan",
+      "card": "IMP-511",
+      "part": "whole-task",
+      "points": 5,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-511-whole-task.md"
+      ],
+      "prs": [
+        276
+      ]
+    },
+    {
+      "owner": "Junaid",
+      "card": "IMP-512",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-512-whole-task.md"
+      ],
+      "prs": [
+        275
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-513",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-513-whole-task.md"
+      ],
+      "prs": [
+        277,
+        278
+      ]
+    },
+    {
+      "owner": "Manya",
+      "card": "IMP-514",
+      "part": "run-records",
+      "points": 2,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-514-run-records.md"
+      ],
+      "prs": [
+        275,
+        276
+      ]
+    },
+    {
+      "owner": "Nidhi",
+      "card": "IMP-514",
+      "part": "gemini-baseline",
+      "points": 1,
+      "ledger": "docs/progress/sprint-5.md",
+      "records": [
+        "parts/IMP-514-gemini-baseline.md"
+      ],
+      "prs": [
+        277
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-601",
+      "part": "whole-task",
+      "points": 2,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-601-whole-task.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Manal",
+      "card": "IMP-602",
+      "part": "trip-actions-api",
+      "points": 6,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-602-trip-actions-api.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Manasvi",
+      "card": "IMP-602",
+      "part": "dashboard",
+      "points": 2,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-602-dashboard.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Malhar",
+      "card": "IMP-604",
+      "part": "search-api",
+      "points": 4,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-604-search-api.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Manasvi",
+      "card": "IMP-604",
+      "part": "filter-bar",
+      "points": 2,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-604-filter-bar.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Jeel",
+      "card": "IMP-604",
+      "part": "detail-drawer",
+      "points": 1,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-604-detail-drawer.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Jeel",
+      "card": "IMP-605",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-605-whole-task.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Malhar",
+      "card": "IMP-606",
+      "part": "meal-retrieval",
+      "points": 3,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-606-meal-retrieval.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Manya",
+      "card": "IMP-606",
+      "part": "meal-builder",
+      "points": 2,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-606-meal-builder.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-607",
+      "part": "regen-api",
+      "points": 4,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-607-regen-api.md"
+      ],
+      "prs": [
+        282
+      ]
+    },
+    {
+      "owner": "Nidhi",
+      "card": "IMP-607",
+      "part": "day-scope",
+      "points": 4,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-607-day-scope.md"
+      ],
+      "prs": [
+        282
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-607",
+      "part": "regen-controls",
+      "points": 2,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-607-regen-controls.md"
+      ],
+      "prs": [
+        282
+      ]
+    },
+    {
+      "owner": "Manal",
+      "card": "IMP-608",
+      "part": "alerts-contingency",
+      "points": 2,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-608-alerts-contingency.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-608",
+      "part": "budget-alert",
+      "points": 2,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-608-budget-alert.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-609",
+      "part": "summary-api",
+      "points": 1,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-609-summary-api.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-609",
+      "part": "summary-page",
+      "points": 2,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-609-summary-page.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Jeel",
+      "card": "IMP-610",
+      "part": "version-snapshots",
+      "points": 6,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-610-version-snapshots.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Malhar",
+      "card": "IMP-610",
+      "part": "restore-retention",
+      "points": 2,
+      "ledger": "docs/progress/sprint-6.md",
+      "records": [
+        "parts/IMP-610-restore-retention.md"
+      ],
+      "prs": [
+        281
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-701",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-7.md",
+      "records": [
+        "parts/IMP-701-whole-task.md"
+      ],
+      "prs": [
+        287
+      ]
+    },
+    {
+      "owner": "Junaid",
+      "card": "IMP-702",
+      "part": "authz-injection",
+      "points": 2,
+      "ledger": "docs/progress/sprint-7.md",
+      "records": [
+        "parts/IMP-702-authz-injection.md"
+      ],
+      "prs": [
+        287
+      ]
+    },
+    {
+      "owner": "Het",
+      "card": "IMP-702",
+      "part": "auth-fixes",
+      "points": 2,
+      "ledger": "docs/progress/sprint-7.md",
+      "records": [
+        "parts/IMP-702-auth-fixes.md"
+      ],
+      "prs": [
+        287
+      ]
+    },
+    {
+      "owner": "Kirtan",
+      "card": "IMP-702",
+      "part": "headers-secret-scan",
+      "points": 1,
+      "ledger": "docs/progress/sprint-7.md",
+      "records": [
+        "parts/IMP-702-headers-secret-scan.md"
+      ],
+      "prs": [
+        287
+      ]
+    },
+    {
+      "owner": "Krrish",
+      "card": "IMP-703",
+      "part": "prepare",
+      "points": 0,
+      "ledger": "docs/progress/sprint-7.md",
+      "records": [
+        "parts/IMP-703-prepare.md"
+      ],
+      "prs": [
+        289,
+        291
+      ]
+    },
+    {
+      "owner": "Nidhi",
+      "card": "IMP-705",
+      "part": "whole-task",
+      "points": 1,
+      "ledger": "docs/progress/sprint-7.md",
+      "records": [
+        "parts/IMP-705-whole-task.md"
+      ],
+      "prs": [
+        289,
+        291
+      ]
+    },
+    {
+      "owner": "Manya",
+      "card": "IMP-706",
+      "part": "whole-task",
+      "points": 3,
+      "ledger": "docs/progress/sprint-7.md",
+      "records": [
+        "parts/IMP-706-whole-task.md"
+      ],
+      "prs": [
+        289
+      ]
+    },
+    {
+      "owner": "Malhar",
+      "card": "IMP-707",
+      "part": "srs",
+      "points": 2,
+      "ledger": "docs/progress/sprint-7.md",
+      "records": [
+        "parts/IMP-707-srs.md"
+      ],
+      "prs": [
+        289
+      ]
+    },
+    {
+      "owner": "Manal",
+      "card": "IMP-707",
+      "part": "architecture-api",
+      "points": 1,
+      "ledger": "docs/progress/sprint-7.md",
+      "records": [
+        "parts/IMP-707-architecture-api.md"
+      ],
+      "prs": [
+        289
+      ]
+    },
+    {
+      "owner": "Junaid",
+      "card": "IMP-707",
+      "part": "test-plan",
+      "points": 1,
+      "ledger": "docs/progress/sprint-7.md",
+      "records": [
+        "parts/IMP-707-test-plan.md"
+      ],
+      "prs": [
+        289
+      ]
+    },
+    {
+      "owner": "Jeel",
+      "card": "IMP-707",
+      "part": "user-guide",
+      "points": 1,
+      "ledger": "docs/progress/sprint-7.md",
+      "records": [
+        "parts/IMP-707-user-guide.md"
+      ],
+      "prs": [
+        289
+      ]
+    },
+    {
+      "owner": "Kirtan",
+      "card": "IMP-707",
+      "part": "deployment-guide",
+      "points": 1,
+      "ledger": "docs/progress/sprint-7.md",
+      "records": [
+        "parts/IMP-707-deployment-guide.md"
+      ],
+      "prs": [
+        289
+      ]
+    },
+    {
+      "owner": "Nidhi",
+      "card": "IMP-399",
+      "part": "gate record/index",
+      "points": 2,
+      "ledger": "docs/progress/sprint-3.md",
+      "records": [],
+      "prs": []
+    },
+    {
+      "owner": "Kirtan",
+      "card": "IMP-499",
+      "part": "gate record/index",
+      "points": 2,
+      "ledger": "docs/progress/sprint-4.md",
+      "records": [],
+      "prs": []
+    }
+  ],
+  "s1_credited": {
+    "Kirtan": 9,
+    "Het": 3,
+    "Manal": 2,
+    "Manasvi": 5,
+    "Malhar": 4,
+    "Jeel": 4,
+    "Krrish": 4,
+    "Nidhi": 5,
+    "Manya": 2,
+    "Junaid": 0
+  },
+  "authors": {
+    "Kirtan": {
+      "count": 81,
+      "name": "chaudhari kirtan sandipbhai",
+      "email": "chaudharikirtan03@gmail.com"
+    },
+    "Nidhi": {
+      "count": 69,
+      "name": "Nidhi Chauhan",
+      "email": "202401128@dau.ac.in"
+    },
+    "Het": {
+      "count": 60,
+      "name": "Het Lathiya",
+      "email": "lathiyahet3942@gmail.com"
+    },
+    "Krrish": {
+      "count": 57,
+      "name": "Krrish Kamani",
+      "email": "krrishkamani51@gmail.com"
+    },
+    "Malhar": {
+      "count": 49,
+      "name": "Malhar Mer",
+      "email": "mermalhar32@gmail.com"
+    },
+    "Manasvi": {
+      "count": 47,
+      "name": "Manasvi Rathore",
+      "email": "202301108@dau.ac.in"
+    },
+    "Jeel": {
+      "count": 42,
+      "name": "Jeel Fefar",
+      "email": "jeelfefar487@gmail.com"
+    },
+    "Manal": {
+      "count": 37,
+      "name": "Manal Patel",
+      "email": "manalvg2557@gmail.com"
+    },
+    "Junaid": {
+      "count": 36,
+      "name": "Mohammad Junaid Kureshi",
+      "email": "junaid29707@gmail.com"
+    },
+    "Manya": {
+      "count": 34,
+      "name": "Manya Rana",
+      "email": "manyarana06@gmail.com"
+    }
+  },
+  "shortlog": "    81\tchaudhari kirtan sandipbhai <chaudharikirtan03@gmail.com>\n    69\tNidhi Chauhan <202401128@dau.ac.in>\n    60\tHet Lathiya <lathiyahet3942@gmail.com>\n    57\tKrrish Kamani <krrishkamani51@gmail.com>\n    49\tMalhar Mer <mermalhar32@gmail.com>\n    47\tManasvi Rathore <202301108@dau.ac.in>\n    42\tJeel Fefar <jeelfefar487@gmail.com>\n    37\tManal Patel <manalvg2557@gmail.com>\n    36\tMohammad Junaid Kureshi <junaid29707@gmail.com>\n    34\tManya Rana <manyarana06@gmail.com>\n",
+  "merged_pr_query": [
+    {
+      "number": 304,
+      "url": "https://github.com/het-lathiya/Group12/pull/304",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 303,
+      "url": "https://github.com/het-lathiya/Group12/pull/303",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 302,
+      "url": "https://github.com/het-lathiya/Group12/pull/302",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 301,
+      "url": "https://github.com/het-lathiya/Group12/pull/301",
+      "author": "Nidhi9864",
+      "reviews": []
+    },
+    {
+      "number": 300,
+      "url": "https://github.com/het-lathiya/Group12/pull/300",
+      "author": "Nidhi9864",
+      "reviews": []
+    },
+    {
+      "number": 299,
+      "url": "https://github.com/het-lathiya/Group12/pull/299",
+      "author": "Nidhi9864",
+      "reviews": []
+    },
+    {
+      "number": 298,
+      "url": "https://github.com/het-lathiya/Group12/pull/298",
+      "author": "Nidhi9864",
+      "reviews": []
+    },
+    {
+      "number": 297,
+      "url": "https://github.com/het-lathiya/Group12/pull/297",
+      "author": "Nidhi9864",
+      "reviews": []
+    },
+    {
+      "number": 296,
+      "url": "https://github.com/het-lathiya/Group12/pull/296",
+      "author": "Nidhi9864",
+      "reviews": []
+    },
+    {
+      "number": 295,
+      "url": "https://github.com/het-lathiya/Group12/pull/295",
+      "author": "Nidhi9864",
+      "reviews": []
+    },
+    {
+      "number": 294,
+      "url": "https://github.com/het-lathiya/Group12/pull/294",
+      "author": "Nidhi9864",
+      "reviews": []
+    },
+    {
+      "number": 293,
+      "url": "https://github.com/het-lathiya/Group12/pull/293",
+      "author": "Nidhi9864",
+      "reviews": []
+    },
+    {
+      "number": 292,
+      "url": "https://github.com/het-lathiya/Group12/pull/292",
+      "author": "Nidhi9864",
+      "reviews": []
+    },
+    {
+      "number": 291,
+      "url": "https://github.com/het-lathiya/Group12/pull/291",
+      "author": "Nidhi9864",
+      "reviews": []
+    },
+    {
+      "number": 290,
+      "url": "https://github.com/het-lathiya/Group12/pull/290",
+      "author": "Nidhi9864",
+      "reviews": []
+    },
+    {
+      "number": 289,
+      "url": "https://github.com/het-lathiya/Group12/pull/289",
+      "author": "Nidhi9864",
+      "reviews": []
+    },
+    {
+      "number": 287,
+      "url": "https://github.com/het-lathiya/Group12/pull/287",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 286,
+      "url": "https://github.com/het-lathiya/Group12/pull/286",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 285,
+      "url": "https://github.com/het-lathiya/Group12/pull/285",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 284,
+      "url": "https://github.com/het-lathiya/Group12/pull/284",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 283,
+      "url": "https://github.com/het-lathiya/Group12/pull/283",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 282,
+      "url": "https://github.com/het-lathiya/Group12/pull/282",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 281,
+      "url": "https://github.com/het-lathiya/Group12/pull/281",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 280,
+      "url": "https://github.com/het-lathiya/Group12/pull/280",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 279,
+      "url": "https://github.com/het-lathiya/Group12/pull/279",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 278,
+      "url": "https://github.com/het-lathiya/Group12/pull/278",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 277,
+      "url": "https://github.com/het-lathiya/Group12/pull/277",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 276,
+      "url": "https://github.com/het-lathiya/Group12/pull/276",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 275,
+      "url": "https://github.com/het-lathiya/Group12/pull/275",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 274,
+      "url": "https://github.com/het-lathiya/Group12/pull/274",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 273,
+      "url": "https://github.com/het-lathiya/Group12/pull/273",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 272,
+      "url": "https://github.com/het-lathiya/Group12/pull/272",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 271,
+      "url": "https://github.com/het-lathiya/Group12/pull/271",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 270,
+      "url": "https://github.com/het-lathiya/Group12/pull/270",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 269,
+      "url": "https://github.com/het-lathiya/Group12/pull/269",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 268,
+      "url": "https://github.com/het-lathiya/Group12/pull/268",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 267,
+      "url": "https://github.com/het-lathiya/Group12/pull/267",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 263,
+      "url": "https://github.com/het-lathiya/Group12/pull/263",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 262,
+      "url": "https://github.com/het-lathiya/Group12/pull/262",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 261,
+      "url": "https://github.com/het-lathiya/Group12/pull/261",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 260,
+      "url": "https://github.com/het-lathiya/Group12/pull/260",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 259,
+      "url": "https://github.com/het-lathiya/Group12/pull/259",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 258,
+      "url": "https://github.com/het-lathiya/Group12/pull/258",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 257,
+      "url": "https://github.com/het-lathiya/Group12/pull/257",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 256,
+      "url": "https://github.com/het-lathiya/Group12/pull/256",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 255,
+      "url": "https://github.com/het-lathiya/Group12/pull/255",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 254,
+      "url": "https://github.com/het-lathiya/Group12/pull/254",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 253,
+      "url": "https://github.com/het-lathiya/Group12/pull/253",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 252,
+      "url": "https://github.com/het-lathiya/Group12/pull/252",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 251,
+      "url": "https://github.com/het-lathiya/Group12/pull/251",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 250,
+      "url": "https://github.com/het-lathiya/Group12/pull/250",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 249,
+      "url": "https://github.com/het-lathiya/Group12/pull/249",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 248,
+      "url": "https://github.com/het-lathiya/Group12/pull/248",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 247,
+      "url": "https://github.com/het-lathiya/Group12/pull/247",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 246,
+      "url": "https://github.com/het-lathiya/Group12/pull/246",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 245,
+      "url": "https://github.com/het-lathiya/Group12/pull/245",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 244,
+      "url": "https://github.com/het-lathiya/Group12/pull/244",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 243,
+      "url": "https://github.com/het-lathiya/Group12/pull/243",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 242,
+      "url": "https://github.com/het-lathiya/Group12/pull/242",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 241,
+      "url": "https://github.com/het-lathiya/Group12/pull/241",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 240,
+      "url": "https://github.com/het-lathiya/Group12/pull/240",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 239,
+      "url": "https://github.com/het-lathiya/Group12/pull/239",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 238,
+      "url": "https://github.com/het-lathiya/Group12/pull/238",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 237,
+      "url": "https://github.com/het-lathiya/Group12/pull/237",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 236,
+      "url": "https://github.com/het-lathiya/Group12/pull/236",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 235,
+      "url": "https://github.com/het-lathiya/Group12/pull/235",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 234,
+      "url": "https://github.com/het-lathiya/Group12/pull/234",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 233,
+      "url": "https://github.com/het-lathiya/Group12/pull/233",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 232,
+      "url": "https://github.com/het-lathiya/Group12/pull/232",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 231,
+      "url": "https://github.com/het-lathiya/Group12/pull/231",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 229,
+      "url": "https://github.com/het-lathiya/Group12/pull/229",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 228,
+      "url": "https://github.com/het-lathiya/Group12/pull/228",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 227,
+      "url": "https://github.com/het-lathiya/Group12/pull/227",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 226,
+      "url": "https://github.com/het-lathiya/Group12/pull/226",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 211,
+      "url": "https://github.com/het-lathiya/Group12/pull/211",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 210,
+      "url": "https://github.com/het-lathiya/Group12/pull/210",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 209,
+      "url": "https://github.com/het-lathiya/Group12/pull/209",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 208,
+      "url": "https://github.com/het-lathiya/Group12/pull/208",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 207,
+      "url": "https://github.com/het-lathiya/Group12/pull/207",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 206,
+      "url": "https://github.com/het-lathiya/Group12/pull/206",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 205,
+      "url": "https://github.com/het-lathiya/Group12/pull/205",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 204,
+      "url": "https://github.com/het-lathiya/Group12/pull/204",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 203,
+      "url": "https://github.com/het-lathiya/Group12/pull/203",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 202,
+      "url": "https://github.com/het-lathiya/Group12/pull/202",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 200,
+      "url": "https://github.com/het-lathiya/Group12/pull/200",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 199,
+      "url": "https://github.com/het-lathiya/Group12/pull/199",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 198,
+      "url": "https://github.com/het-lathiya/Group12/pull/198",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 197,
+      "url": "https://github.com/het-lathiya/Group12/pull/197",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 196,
+      "url": "https://github.com/het-lathiya/Group12/pull/196",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 195,
+      "url": "https://github.com/het-lathiya/Group12/pull/195",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 194,
+      "url": "https://github.com/het-lathiya/Group12/pull/194",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 193,
+      "url": "https://github.com/het-lathiya/Group12/pull/193",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 192,
+      "url": "https://github.com/het-lathiya/Group12/pull/192",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 191,
+      "url": "https://github.com/het-lathiya/Group12/pull/191",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 190,
+      "url": "https://github.com/het-lathiya/Group12/pull/190",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 3,
+      "url": "https://github.com/het-lathiya/Group12/pull/3",
+      "author": "het-lathiya",
+      "reviews": []
+    },
+    {
+      "number": 2,
+      "url": "https://github.com/het-lathiya/Group12/pull/2",
+      "author": "het-lathiya",
+      "reviews": [
+        {
+          "author": "kirtan-S111",
+          "state": "APPROVED"
+        }
+      ]
+    },
+    {
+      "number": 1,
+      "url": "https://github.com/het-lathiya/Group12/pull/1",
+      "author": "het-lathiya",
+      "reviews": []
+    }
+  ],
+  "course": {
+    "Nidhi": "01-requirements.md (main); 15-contribution.md/PDF (RUN-102 draft)",
+    "Kirtan": "Coverage workflow (PR #302); submission ZIP builder (RUN-102); no authored numbered course prose at the snapshot",
+    "Manal": "04-object-design.md; 11-design-diagrams.md (main)",
+    "Het": "Course index; 03-system-design.md (main)",
+    "Junaid": "05-unit-testing.md; 06-system-testing.md (main; PR #302)",
+    "Malhar": "02-sprints/sprint-1.md through sprint-4.md (main)",
+    "Jeel": "02-sprints/sprint-5.md through sprint-8.md; 12-not-implemented.md (main); slides S1–S5 (RUN-102 draft)",
+    "Manya": "08-mutation-testing.md (main; PR #302); slides S6–S10 (RUN-102 draft)",
+    "Manasvi": "13-ui-ux.md (main)",
+    "Krrish": "07-gui-testing.md; 09-non-functional-testing.md (main; PR #302)"
+  }
+}
