@@ -13,13 +13,14 @@ This module does no I/O of its own.
 """
 
 import asyncio
+import math
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Final, TypeVar
 
-from app.ai.breaker import CircuitBreaker
+from app.ai.breaker import QUOTA_COOL_DOWN_S, TRANSIENT_COOL_DOWN_S, CircuitBreaker
 from app.ai.errors import (
     ProviderError,
     ProviderQuotaExhausted,
@@ -63,8 +64,18 @@ class Throttle:
         self._clock = clock
         self._sleep = sleep
         self._last_end: float | None = None
+        self._retry_at = 0.0
         self._lock: asyncio.Lock | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+
+    @property
+    def retry_after_s(self) -> int:
+        """Seconds until this host's cooldown ends, rounded up for the error envelope."""
+        return max(0, math.ceil(self._retry_at - self._clock()))
+
+    def defer_for(self, seconds: float) -> None:
+        """Extend a host cooldown without sleeping in an import or shortening an earlier one."""
+        self._retry_at = max(self._retry_at, self._clock() + seconds)
 
     def _current_lock(self) -> asyncio.Lock:
         # An asyncio.Lock belongs to one event loop; a new loop (a new test) gets a new lock.
@@ -105,6 +116,8 @@ class _Guard:
     def _refuse_if_open(self) -> None:
         if self.breaker is not None and self.breaker.state == "open":
             raise LiveDataRateLimited("circuit breaker open")
+        if self.throttle.retry_after_s:
+            raise LiveDataRateLimited("provider cooldown")
 
     async def run(self, call: Callable[[], Awaitable[T]]) -> T:
         self._refuse_if_open()
@@ -115,6 +128,12 @@ class _Guard:
             except LiveDataError as exc:
                 if self.breaker is not None:
                     self.breaker.record_failure(_as_provider_error(exc))
+                    if self.breaker.state == "open":
+                        self.throttle.defer_for(
+                            QUOTA_COOL_DOWN_S
+                            if isinstance(exc, LiveDataRateLimited)
+                            else TRANSIENT_COOL_DOWN_S
+                        )
                 raise
         if self.breaker is not None:
             self.breaker.record_success()
@@ -186,6 +205,11 @@ def nominatim_breaker() -> CircuitBreaker:
 @lru_cache(maxsize=1)
 def overpass_breaker() -> CircuitBreaker:
     return CircuitBreaker()
+
+
+def overpass_retry_after_s() -> int:
+    """Read the shared Overpass cooldown before queuing another import; no provider call."""
+    return overpass_throttle().retry_after_s
 
 
 def guard_geocoder(inner: GeocodingProvider) -> GuardedGeocoder:

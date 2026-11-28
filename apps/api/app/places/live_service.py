@@ -36,6 +36,7 @@ from app.livedata.providers.base import (
     GeocodingProvider,
     LiveDataError,
 )
+from app.livedata.throttle import overpass_retry_after_s
 from app.places import repository
 from app.places.live_schemas import (
     Attribution,
@@ -250,12 +251,20 @@ async def _existing(
 ) -> ResolveResult:
     expired = row.expires_at is not None and row.expires_at <= now
     if row.import_status == "failed" or (row.import_status == "completed" and expired):
+        if retry_after_s := overpass_retry_after_s():
+            raise RateLimited(
+                "The map data service is busy. Try again after the cooldown.",
+                retry_after_s=retry_after_s,
+            )
         await repository.requeue_live_import(session, row.id)
-        await session.commit()
+        # Load the response while the request's transaction is still open. Committing inside
+        # session.begin() closes it, so a refresh after commit raises InvalidRequestError.
         await session.refresh(row)
+        result = live_destination_out(row)
+        await session.commit()
         submit(row.id)
         logger.info("live destination %s queued again", row.id)
-        return ResolveResult(live_destination_out(row), queued=True)
+        return ResolveResult(result, queued=True)
     return ResolveResult(live_destination_out(row), queued=False)
 
 
