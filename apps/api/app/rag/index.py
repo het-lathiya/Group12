@@ -28,6 +28,8 @@ def report_lines(report: IndexReport) -> list[str]:
     )
     if report.provider_failed:
         lines.append("rag-index: embedding provider unavailable; a re-run resumes from here")
+    elif report.queued:
+        lines.append(f"rag-index: embedding budget spent, queued={report.queued}; a re-run resumes")
     return lines
 
 

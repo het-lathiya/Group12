@@ -183,7 +183,9 @@ async def import_destination(
             [prepared.destination_id], provider=embedder, sessions=sessions, missing_only=True
         )
         return replace(
-            prepared, embedded=report.embedded, embeddings_incomplete=report.provider_failed
+            prepared,
+            embedded=report.embedded,
+            embeddings_incomplete=report.provider_failed or bool(report.queued),
         )
     await live_jobs.run_import(
         prepared.destination_id, providers=providers, sessions=sessions, embedder=embedder

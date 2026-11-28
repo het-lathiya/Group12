@@ -7,6 +7,7 @@ never raises for a retrieval failure: it answers ``lexical_fallback`` (§6.11, I
 ``resolve_sources`` turns saved citations into their provenance on read.
 """
 
+import asyncio
 import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -21,7 +22,7 @@ from sqlalchemy import Row
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.errors import ProviderError
+from app.ai.errors import ProviderError, ProviderRateLimited
 from app.ai.factory import get_provider
 from app.ai.providers.base import ModelProvider
 from app.core.config import get_settings
@@ -32,7 +33,13 @@ from app.places.schemas import Destination
 from app.rag import documents as corpus
 from app.rag import guides as guide_gate
 from app.rag import live_guides, mmr, repository
-from app.rag.constants import RAG_EMBED_BATCH, RAG_GUIDE_CANDIDATES
+from app.rag.constants import (
+    RAG_EMBED_BACKOFF_S,
+    RAG_EMBED_BATCH,
+    RAG_EMBED_BUDGET_S,
+    RAG_EMBED_PACE_S,
+    RAG_GUIDE_CANDIDATES,
+)
 from app.rag.documents import CorpusDocument
 from app.rag.guides import Guide, GuideFinding
 from app.rag.mmr import RetrievedChunk
@@ -78,6 +85,7 @@ class IndexReport:
     documents: int = 0
     chunks: int = 0
     embedded: int = 0
+    queued: int = 0  # chunks left without a vector for a later run (budget spent or provider down)
     inactive: int = 0
     findings: list[GuideFinding] = field(default_factory=list)
     provider_failed: bool = False
@@ -94,7 +102,7 @@ class IndexReport:
     def exit_code(self) -> int:
         if self.strict and self.errors:
             return EXIT_GATE
-        return EXIT_PROVIDER if self.provider_failed else EXIT_OK
+        return EXIT_PROVIDER if self.provider_failed or self.queued else EXIT_OK
 
 
 @dataclass(frozen=True)
@@ -219,23 +227,47 @@ async def _embed(
     report: IndexReport,
     *,
     missing_only: bool = False,
+    budget_s: float = RAG_EMBED_BUDGET_S,
 ) -> None:
+    """Paced batches (D3): a 429 is waited out and the batch retried while the budget lasts.
+
+    What is not embedded when the budget runs out stays without a vector (``report.queued``); a
+    later run (``embed_queued``, the import CLI, ``make rag-index``) picks it up.
+    """
     async with sessions() as session:
         pending = await repository.pending_chunks(
             session, provider.embedding_model_id, destination_ids, missing_only=missing_only
         )
-    for start in range(0, len(pending), RAG_EMBED_BATCH):
+    deadline = time.monotonic() + budget_s
+    start = limited = 0
+    while start < len(pending):
+        report.queued = len(pending) - start
+        if time.monotonic() >= deadline:
+            return
         batch = pending[start : start + RAG_EMBED_BATCH]
-        result = await provider.embed_texts(
-            [content for _, content, _ in batch],
-            "document",
-            titles=[title for _, _, title in batch],
-        )
+        try:
+            result = await provider.embed_texts(
+                [content for _, content, _ in batch],
+                "document",
+                titles=[title for _, _, title in batch],
+            )
+        except ProviderRateLimited as exc:
+            wait = max(RAG_EMBED_BACKOFF_S * 2**limited, exc.retry_after_s or 0.0)
+            limited += 1
+            if time.monotonic() + wait > deadline:
+                raise
+            await asyncio.sleep(wait)
+            continue
         async with sessions() as session:
             await repository.store_embeddings(
                 session, [chunk_id for chunk_id, _, _ in batch], result.vectors, result.model_id
             )
         report.embedded += len(batch)
+        start += len(batch)
+        limited = 0
+        if start < len(pending):
+            await asyncio.sleep(RAG_EMBED_PACE_S)
+    report.queued = 0
 
 
 @dataclass(frozen=True)
@@ -362,6 +394,7 @@ async def embed_destinations(
     provider: ModelProvider | None = None,
     sessions: Sessions = transaction,
     missing_only: bool = False,
+    budget_s: float = RAG_EMBED_BUDGET_S,
 ) -> IndexReport:
     """Embed the destinations' active chunks that have no vector from the active model.
 
@@ -378,13 +411,41 @@ async def embed_destinations(
             destination_ids,
             report,
             missing_only=missing_only,
+            budget_s=budget_s,
         )
     except ProviderError as exc:
         report.provider_failed = True
         logger.warning(
-            "embeddings incomplete (%s): embedded=%d", exc.failure_reason, report.embedded
+            "embeddings incomplete (%s): embedded=%d queued=%d",
+            exc.failure_reason,
+            report.embedded,
+            report.queued,
         )
+    else:
+        if report.queued:
+            logger.warning(
+                "embeddings incomplete (budget): embedded=%d queued=%d",
+                report.embedded,
+                report.queued,
+            )
     return report
+
+
+async def embed_queued(
+    *, provider: ModelProvider | None = None, sessions: Sessions = transaction
+) -> IndexReport:
+    """The re-embed step (D3): fill the active chunks of any destination that have no vector.
+
+    ``missing_only``, so a model change is left to ``make rag-index``. One budgeted run; the
+    scheduler calls it again until nothing is queued. Never raises for a provider failure.
+    """
+    async with sessions() as session:
+        destination_ids = await repository.destinations_with_unembedded_chunks(session)
+    if not destination_ids:
+        return IndexReport()
+    return await embed_destinations(
+        destination_ids, provider=provider, sessions=sessions, missing_only=True
+    )
 
 
 async def index(
@@ -459,6 +520,13 @@ async def retrieve(
         )
 
     try:
+        # A partly embedded corpus would rank the embedded half above the rest (D3, IMD-112).
+        async with sessions() as session:
+            partial = await repository.has_unembedded_chunks(
+                session, ctx.destination_id, active.embedding_model_id
+            )
+        if partial:
+            return fallback("partial_index")
         embedded = await active.embed_texts([ctx.query_text], "query")
         query_vector = embedded.vectors[0]
         async with sessions() as session:

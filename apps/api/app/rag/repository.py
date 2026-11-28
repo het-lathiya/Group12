@@ -167,6 +167,37 @@ async def pending_chunks(
     return [(row[0], row[1], row[2]) for row in await session.execute(query)]
 
 
+async def destinations_with_unembedded_chunks(session: AsyncSession) -> list[UUID]:
+    """Destinations with an active chunk that has no vector at all (the re-embed queue, D3)."""
+    query = (
+        select(RagDocument.destination_id)
+        .join(RagChunk, RagChunk.document_id == RagDocument.id)
+        .where(
+            RagDocument.is_active.is_(True),
+            RagChunk.is_active.is_(True),
+            RagChunk.embedding.is_(None),
+        )
+        .distinct()
+    )
+    return list((await session.scalars(query)).all())
+
+
+async def has_unembedded_chunks(session: AsyncSession, destination_id: UUID, model_id: str) -> bool:
+    """True while an active chunk of the destination has no vector from ``model_id``."""
+    query = (
+        select(RagChunk.id)
+        .join(RagDocument, RagDocument.id == RagChunk.document_id)
+        .where(
+            RagDocument.destination_id == destination_id,
+            RagDocument.is_active.is_(True),
+            RagChunk.is_active.is_(True),
+            or_(RagChunk.embedding.is_(None), RagChunk.embedding_model_id != model_id),
+        )
+        .limit(1)
+    )
+    return (await session.scalar(query)) is not None
+
+
 async def store_embeddings(
     session: AsyncSession,
     chunk_ids: Sequence[UUID],
