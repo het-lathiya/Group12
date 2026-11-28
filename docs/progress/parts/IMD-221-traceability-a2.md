@@ -27,13 +27,10 @@
 
 - The A2 rows and the 24 card-only stories are in the matrix, each with its cards, tests and status: verified (row counts above).
 - Only existing IDs are used: verified (ID check, 0 missing).
-- `docs/course/01-requirements.md` §6 says "resolved by RUN-100": **not verified, not done**. The file is not on `main`; it is only on the unmerged branch `chore/course-docs-a`. Editing it here would add the whole file and conflict with that branch.
+- `docs/course/01-requirements.md` §6 says "resolved by RUN-100", with the counts: verified (RUN-101, after #303 merged; the matrix has 125 unique story IDs, `grep -oE '\bUS-[0-9]+\b' docs/spec/TRACEABILITY_MATRIX.md | sort -u | wc -l`).
 
 ## Open issues
 
-- On `chore/course-docs-a`, replace the two mismatch bullets of `docs/course/01-requirements.md` §6 with this text:
-  - **Mismatch 1, resolved by RUN-100.** The matrix now has 7 Amendment A2 rows (FR-141 to FR-145, NFR-051, NFR-052, catalogue item C-14).
-  - **Mismatch 2, resolved by RUN-100.** The 24 card-only stories have their own matrix section. Story IDs in the matrix: 125, matching the 125 on cards.
 - The matrix says it is regenerated, not edited by hand. A regeneration must keep these two sections.
 
 ## Proposed decisions

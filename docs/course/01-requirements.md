@@ -577,6 +577,6 @@ Cards IMP-721 to IMP-733 (any-city mode, A2) trace to FR-141 to FR-145 and NFR-0
 
 - Requirements in the specification (88 MVP, 10 EXT, 5 RAG): 103. Rows in the matrix: 103. Missing from the matrix: none. In the matrix but not in the specification: none.
 - Sprint column differences between §2.2 and the matrix: none.
-- **Mismatch 1.** The A2 requirements FR-141, FR-142, FR-143, FR-144, FR-145 (and C-14, NFR-051, NFR-052) are not in the matrix. The matrix was generated before Amendment A2 and says it is regenerated, not edited by hand.
-- **Mismatch 2.** Stories traced by cards but absent from the matrix: US-001, US-002, US-004, US-007, US-008, US-026, US-027, US-130, US-132, US-140, US-141, US-142, US-143, US-144, US-145, US-146, US-147, US-148, US-149, US-150, US-151, US-152, US-153, US-163 (24 IDs). The matrix reaches stories only through its FR rows, so a story that no FR row names is missing from it. Stories in the matrix but on no card: none.
-- Story IDs on cards: 125. Story IDs in the matrix: 101.
+- **Mismatch 1, resolved by RUN-100.** The matrix now has 7 Amendment A2 rows (FR-141 to FR-145, NFR-051, NFR-052, catalogue item C-14).
+- **Mismatch 2, resolved by RUN-100.** The 24 card-only stories (US-001, US-002, US-004, US-007, US-008, US-026, US-027, US-130, US-132, US-140 to US-153, US-163) have their own matrix section. Stories in the matrix but on no card: none.
+- Story IDs on cards: 125. Story IDs in the matrix: 125.
