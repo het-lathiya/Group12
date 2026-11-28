@@ -1,0 +1,92 @@
+RUN-099: local API mutation experiment; no mutation CI run.
+Application baseline: 77e52ba; final tests/configuration: this part of PR #302.
+Review/evidence link: https://github.com/het-lathiya/Group12/pull/302
+Pinned tool: mutmut, version 3.8.1
+Scope: app/trips/domain.py, app/budget/engine.py, app/routing/estimate.py.
+Tests: tests/unit/trips, tests/unit/budget, tests/unit/routing; no DB suites.
+Initial corrected command: scripts/run_course_mutation.sh
+Final command: scripts/run_course_mutation.sh '*'
+Wrapper: timeout --signal=INT --kill-after=20s 15m .venv/bin/mutmut run --max-children 4
+
+Rejected setup attempts: fixture paths did not account for the sandbox level; an external-test selection produced unresolved selected node IDs. No score is claimed for those attempts.
+
+Initial corrected tool summary:
+⠦ 617/617  🎉 565 🫥 20  ⏰ 0  🤔 0  🙁 32  🔇 0  🧙 0
+37.14 mutations/second
+RUN_EXIT=0
+
+Final official export: cd apps/api && .venv/bin/mutmut export-cicd-stats
+{
+    "killed": 569,
+    "survived": 28,
+    "total": 617,
+    "no_tests": 20,
+    "skipped": 0,
+    "suspicious": 0,
+    "timeout": 0,
+    "check_was_interrupted_by_user": 0,
+    "segfault": 0
+}
+
+Per-module summary command: python3 scripts/course_mutation_summary.py api apps/api/mutants/app
+| Module | Killed | Survived | Timeout | No coverage | Error | Not run | Score |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| budget/engine.py | 364 | 5 | 0 | 0 | 0 | 0 | 98.64% |
+| routing/estimate.py | 58 | 1 | 0 | 0 | 0 | 0 | 98.31% |
+| trips/domain.py | 147 | 22 | 0 | 20 | 0 | 0 | 77.78% |
+| TOTAL | 569 | 28 | 0 | 20 | 0 | 0 | 92.22% |
+API_TOTAL killed=569 survived=28 timeout=0 no_coverage=20 error=0 not_run=0 score=92.22%
+
+
+Final tool exit:
+RUN_EXIT=0
+
+Remaining final survivors / no-test mutants:
+    app.trips.domain.x_validate_travellers__mutmut_7: survived
+    app.trips.domain.x_validate_travellers__mutmut_17: survived
+    app.trips.domain.x_validate_group_needs__mutmut_4: survived
+    app.trips.domain.x_validate_group_needs__mutmut_6: survived
+    app.trips.domain.x_validate_group_needs__mutmut_8: survived
+    app.trips.domain.x_validate_group_needs__mutmut_15: survived
+    app.trips.domain.x_validate_group_needs__mutmut_20: survived
+    app.trips.domain.x_validate_group_needs__mutmut_21: survived
+    app.trips.domain.x_validate_group_needs__mutmut_22: survived
+    app.trips.domain.x_validate_budget__mutmut_8: survived
+    app.trips.domain.x_validate_budget__mutmut_13: survived
+    app.trips.domain.x_validate_budget__mutmut_14: survived
+    app.trips.domain.x_validate_budget__mutmut_15: survived
+    app.trips.domain.x_validate_budget__mutmut_17: survived
+    app.trips.domain.x_validate_budget__mutmut_34: survived
+    app.trips.domain.x_validate_budget__mutmut_39: survived
+    app.trips.domain.x_validate_budget__mutmut_40: survived
+    app.trips.domain.x_validate_budget__mutmut_41: survived
+    app.trips.domain.x_validate_trip__mutmut_7: survived
+    app.trips.domain.x__plan_values__mutmut_1: no tests
+    app.trips.domain.x__plan_values__mutmut_2: no tests
+    app.trips.domain.x__plan_values__mutmut_3: no tests
+    app.trips.domain.x__plan_values__mutmut_4: no tests
+    app.trips.domain.x__plan_values__mutmut_5: no tests
+    app.trips.domain.x__plan_values__mutmut_6: no tests
+    app.trips.domain.x__plan_values__mutmut_7: no tests
+    app.trips.domain.x__plan_values__mutmut_8: no tests
+    app.trips.domain.x__plan_values__mutmut_9: no tests
+    app.trips.domain.x__plan_values__mutmut_10: no tests
+    app.trips.domain.x__plan_values__mutmut_11: no tests
+    app.trips.domain.x__plan_values__mutmut_12: no tests
+    app.trips.domain.x__plan_values__mutmut_13: no tests
+    app.trips.domain.x__plan_values__mutmut_14: no tests
+    app.trips.domain.x__plan_values__mutmut_15: no tests
+    app.trips.domain.x_plan_affected__mutmut_1: no tests
+    app.trips.domain.x_plan_affected__mutmut_2: no tests
+    app.trips.domain.x_plan_affected__mutmut_3: no tests
+    app.trips.domain.x_plan_affected__mutmut_4: no tests
+    app.trips.domain.x_plan_affected__mutmut_5: no tests
+    app.trips.domain.x_validate_destination__mutmut_10: survived
+    app.trips.domain.x_validate_destination__mutmut_11: survived
+    app.trips.domain.x_validate_destination__mutmut_12: survived
+    app.budget.engine.x_compute_costs__mutmut_62: survived
+    app.budget.engine.x_compute_costs__mutmut_65: survived
+    app.budget.engine.x_compute_costs__mutmut_70: survived
+    app.budget.engine.x_compute_costs__mutmut_74: survived
+    app.budget.engine.x_compute_costs__mutmut_111: survived
+    app.routing.estimate.x_haversine_m__mutmut_33: survived

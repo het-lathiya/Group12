@@ -26,7 +26,7 @@ PYTEST_EXIT := rc=$$?; if [ $$rc -eq 5 ]; then echo "pytest: no tests collected 
 .PHONY: help setup stack-up stack-down db-up db-down db-migrate db-bootstrap db-reset seed rag-index \
 	api web \
 	lint typecheck imports test-unit test-contract test-api test-authz test-web test e2e \
-	openapi openapi-check eval check smoke live-smoke
+	openapi openapi-check eval check smoke live-smoke mutation mutation-api mutation-web
 
 help:
 	@echo "Targets (specification §4.7):"
@@ -42,6 +42,7 @@ help:
 	@echo "  e2e                           Playwright journeys (BASE_URL=... runs against a deployment)"
 	@echo "  openapi | openapi-check       export or verify the API contract and AI schemas"
 	@echo "  eval PROVIDER=MOCK DATASET=trips/v1"
+	@echo "  mutation                      optional pure API/web mutation runs, 15 minutes each"
 	@echo "  check                         everything a pull request needs"
 	@echo "  smoke URL=<base url> | live-smoke"
 
@@ -190,3 +191,13 @@ smoke:
 live-smoke:
 	@if $(API_READY); then cd $(API_DIR) && .venv/bin/pytest tests/contract -m live $(ARGS); $(PYTEST_EXIT); \
 	else echo "live-smoke: $(API_PENDING)"; fi
+
+# Optional course experiment (IMD-221); no database or required CI check.
+mutation: mutation-api mutation-web
+
+mutation-api:
+	cd $(API_DIR) && uv sync --locked --extra dev
+	bash scripts/run_course_mutation.sh $(ARGS)
+
+mutation-web:
+	cd $(WEB_DIR) && timeout --signal=INT --kill-after=20s 15m npm run mutation -- $(ARGS)

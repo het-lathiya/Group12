@@ -98,3 +98,19 @@ markers = [
     "any_city: builds the app with any_city_mode ON through a settings override and fake live-data providers (Amendment A2 §3.4)",
 ]
 asyncio_default_fixture_loop_scope = "function"
+
+[dependency-groups]
+dev = [
+    "mutmut==3.8.1",
+]
+
+# Trip validation lives in trips/domain.py; only these pure rules are mutated.
+[tool.mutmut]
+source_paths = ["app"]
+only_mutate = ["app/trips/domain.py", "app/budget/engine.py", "app/routing/estimate.py"]
+# Keep collection inside the sandbox so selected mutant node IDs retain their paths.
+pytest_add_cli_args_test_selection = ["tests/unit/trips", "tests/unit/budget", "tests/unit/routing"]
+# Generated trampolines add tool imports; verify that source-architecture test separately.
+pytest_add_cli_args = ["-q", "-k", "not test_the_estimate_module_imports_only_the_standard_library"]
+timeout_multiplier = 10.0
+timeout_constant = 2.0

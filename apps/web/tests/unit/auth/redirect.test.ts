@@ -8,6 +8,7 @@ describe("safeNextPath", () => {
     ["/dashboard", "/dashboard"],
     ["/trips/abc/itinerary?day=2", "/trips/abc/itinerary?day=2"],
     ["/trips/abc#costs", "/trips/abc#costs"],
+    ["/trips/abc//", "/trips/abc//"],
     ["/trips/../dashboard", "/dashboard"],
   ])("keeps the same-site path %s", (next, expected) => {
     expect(safeNextPath(next)).toBe(expected);
@@ -18,6 +19,8 @@ describe("safeNextPath", () => {
     undefined,
     "",
     "dashboard",
+    "trips/abc",
+    "//same-site.invalid/trips",
     "//evil.example/path",
     "/\\evil.example",
     "/\\/evil.example",

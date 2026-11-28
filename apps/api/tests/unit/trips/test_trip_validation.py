@@ -109,7 +109,13 @@ def test_traveller_counts(adults: int, children: int, expected: list[str]) -> No
 
 @pytest.mark.parametrize("title", ["", "   ", "x" * 121])
 def test_title_is_1_to_120_characters_after_trimming(title: str) -> None:
-    assert fields(domain.validate_trip(valid_draft(title=title))) == ["title"]
+    errors = domain.validate_trip(valid_draft(title=title))
+    assert fields(errors) == ["title"]
+    assert all(isinstance(error.message, str) and error.message.strip() for error in errors)
+
+
+def test_one_character_title_after_trimming_is_allowed() -> None:
+    assert domain.validate_trip(valid_draft(title=" x ")) == []
 
 
 def test_a_title_of_120_characters_passes() -> None:

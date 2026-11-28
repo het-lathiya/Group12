@@ -41,3 +41,10 @@ supabase/.branches/
 
 # AWS set-up values, copied from infra/aws/env.sh.example (IMP-217)
 infra/aws/env.sh
+
+# Optional course coverage and mutation experiments.
+apps/api/course-coverage/
+apps/api/mutants/
+apps/web/course-coverage/
+apps/web/.stryker-tmp/
+apps/web/reports/mutation/

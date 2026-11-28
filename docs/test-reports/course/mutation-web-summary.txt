@@ -1,0 +1,30 @@
+RUN-099: local Stryker experiment; no mutation CI run.
+Application baseline: 77e52ba; final tests/configuration: this part of PR #302.
+Review/evidence link: https://github.com/het-lathiya/Group12/pull/302
+Pinned tools: @stryker-mutator/core 10.1.1; @stryker-mutator/vitest-runner 10.1.1; Vitest 5.0.5.
+Command (initial): cd apps/web && timeout --signal=INT --kill-after=20s 15m npm run mutation
+Command (final): timeout --signal=INT --kill-after=20s 15m npm run mutation --prefix apps/web
+
+mutation-web.txt
+File          |  total | covered | # killed | # timeout | # survived | # no cov | # errors |
+All files     |  88.64 |   92.86 |       39 |         0 |          3 |        2 |        0 |
+ auth         |  80.77 |   87.50 |       21 |         0 |          3 |        2 |        0 |
+  redirect.ts |  80.77 |   87.50 |       21 |         0 |          3 |        2 |        0 |
+ format.ts    | 100.00 |  100.00 |       18 |         0 |          0 |        0 |        0 |
+08:12:22 (15486) INFO MutationTestExecutor Done in 1 minute and 27 seconds.
+RUN_EXIT=0
+
+mutation-web-final.txt
+File          |  total | covered | # killed | # timeout | # survived | # no cov | # errors |
+All files     |  93.18 |   97.62 |       41 |         0 |          1 |        2 |        0 |
+ auth         |  88.46 |   95.83 |       23 |         0 |          1 |        2 |        0 |
+  redirect.ts |  88.46 |   95.83 |       23 |         0 |          1 |        2 |        0 |
+ format.ts    | 100.00 |  100.00 |       18 |         0 |          0 |        0 |        0 |
+08:16:06 (18626) INFO MutationTestExecutor Done in 1 minute and 52 seconds.
+RUN_EXIT=0
+| Module | Killed | Survived | Timeout | No coverage | Error | Not run | Score |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| lib/auth/redirect.ts | 23 | 1 | 0 | 2 | 0 | 0 | 88.46% |
+| lib/format.ts | 18 | 0 | 0 | 0 | 0 | 0 | 100.00% |
+| TOTAL | 41 | 1 | 0 | 2 | 0 | 0 | 93.18% |
+WEB_TOTAL killed=41 survived=1 timeout=0 no_coverage=2 error=0 not_run=0 score=93.18%

@@ -94,6 +94,7 @@ def test_child_free_and_child_half_factors() -> None:
 def test_tc_297_a_group_price_is_counted_once() -> None:
     summary = cost(place("50.00", "60.00", tags=["price_per_group"]), adults=3, children=1)
     assert (summary.lo, summary.hi) == (5000, 6000)
+    assert summary.label == "curated"
 
 
 def test_tc_221_tc_296_tc_297_known_costs_for_four_travellers_to_the_cent() -> None:

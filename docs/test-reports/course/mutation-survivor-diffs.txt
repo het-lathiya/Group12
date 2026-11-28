@@ -1,0 +1,77 @@
+RUN-099 inspected mutants. Initial status lines are from the first corrected experiments.
+API initial results:
+app.trips.domain.x_validate_title__mutmut_3: survived
+app.trips.domain.x_validate_title__mutmut_4: survived
+app.trips.domain.x_validate_title__mutmut_7: survived
+app.budget.engine.x_item_cost__mutmut_16: survived
+
+# app.trips.domain.x_validate_title__mutmut_3: killed
+--- app/trips/domain.py
++++ app/trips/domain.py
+@@ -1,5 +1,5 @@
+ def validate_title(title: str) -> list[FieldError]:
+     length = len(title.strip())
+-    if length < 1 or length > TITLE_MAX_CHARS:
++    if length <= 1 or length > TITLE_MAX_CHARS:
+         return [FieldError("title", f"Enter a trip name of 1 to {TITLE_MAX_CHARS} characters.")]
+     return []
+
+
+# app.trips.domain.x_validate_title__mutmut_4: killed
+--- app/trips/domain.py
++++ app/trips/domain.py
+@@ -1,5 +1,5 @@
+ def validate_title(title: str) -> list[FieldError]:
+     length = len(title.strip())
+-    if length < 1 or length > TITLE_MAX_CHARS:
++    if length < 2 or length > TITLE_MAX_CHARS:
+         return [FieldError("title", f"Enter a trip name of 1 to {TITLE_MAX_CHARS} characters.")]
+     return []
+
+
+# app.trips.domain.x_validate_title__mutmut_7: killed
+--- app/trips/domain.py
++++ app/trips/domain.py
+@@ -1,5 +1,5 @@
+ def validate_title(title: str) -> list[FieldError]:
+     length = len(title.strip())
+     if length < 1 or length > TITLE_MAX_CHARS:
+-        return [FieldError("title", f"Enter a trip name of 1 to {TITLE_MAX_CHARS} characters.")]
++        return [FieldError("title", None)]
+     return []
+
+
+# app.budget.engine.x_item_cost__mutmut_16: killed
+--- app/budget/engine.py
++++ app/budget/engine.py
+@@ -9,7 +9,7 @@
+     a_lo = to_minor(place.price_min)
+     a_hi = a_lo if place.price_max is None else to_minor(place.price_max)
+     if TAG_PER_GROUP in place.tags:
+-        return ItemCost(a_lo, a_hi, place.price_label)
++        return ItemCost(a_lo, a_hi, None)
+     # f in halves: 0, 0.5 or 1, so round(K·f·a) stays in integers.
+     halves = 0 if TAG_CHILD_FREE in place.tags else 1 if TAG_CHILD_HALF in place.tags else 2
+
+
+
+# app.routing.estimate.x_haversine_m__mutmut_33: survived
+--- app/routing/estimate.py
++++ app/routing/estimate.py
+@@ -4,4 +4,4 @@
+     d_phi = phi2 - phi1
+     d_lambda = math.radians(to_lon - from_lon)
+     a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+-    return 2 * EARTH_RADIUS_M * math.asin(min(1.0, math.sqrt(a)))
++    return 2 * EARTH_RADIUS_M * math.asin(min(2.0, math.sqrt(a)))
+
+
+WEB INITIAL
+{"coveredBy": ["170", "171", "172", "173", "177", "178", "179", "180", "181", "182", "183", "184"], "duration": 4.891148999988218, "file": "lib/auth/redirect.ts", "id": "11", "location": {"end": {"column": 36, "line": 13}, "start": {"column": 33, "line": 13}}, "mutatorName": "StringLiteral", "replacement": "\"\"", "static": false, "status": "Survived", "testsCompleted": 12}
+{"coveredBy": ["170", "171", "172", "173", "178", "179", "180", "183"], "duration": 3.578004000017245, "file": "lib/auth/redirect.ts", "id": "12", "location": {"end": {"column": 62, "line": 13}, "start": {"column": 41, "line": 13}}, "mutatorName": "MethodExpression", "replacement": "next.endsWith(\"//\")", "static": false, "status": "Survived", "testsCompleted": 8}
+{"coveredBy": ["170", "171", "172", "173"], "duration": 2.7310169999982463, "file": "lib/auth/redirect.ts", "id": "22", "location": {"end": {"column": 26, "line": 26}, "start": {"column": 7, "line": 26}}, "mutatorName": "ConditionalExpression", "replacement": "false", "static": false, "status": "Survived", "testsCompleted": 4}
+
+WEB FINAL
+{"coveredBy": ["172", "173", "174", "175", "176", "180", "181", "182", "183", "184", "185", "186", "187", "188", "189"], "duration": 7.201939999984461, "file": "lib/auth/redirect.ts", "id": "11", "killedBy": ["181"], "location": {"end": {"column": 36, "line": 13}, "start": {"column": 33, "line": 13}}, "mutatorName": "StringLiteral", "replacement": "\"\"", "static": false, "status": "Killed", "statusReason": "expected '/trips/abc' to be '/dashboard' // Object.is equality", "testsCompleted": 7}
+{"coveredBy": ["172", "173", "174", "175", "176", "182", "183", "184", "185", "188"], "duration": 7.02498000000196, "file": "lib/auth/redirect.ts", "id": "12", "killedBy": ["175"], "location": {"end": {"column": 62, "line": 13}, "start": {"column": 41, "line": 13}}, "mutatorName": "MethodExpression", "replacement": "next.endsWith(\"//\")", "static": false, "status": "Killed", "statusReason": "expected '/dashboard' to be '/trips/abc//' // Object.is equality", "testsCompleted": 4}
+{"coveredBy": ["172", "173", "174", "175", "176"], "duration": 3.3542640000086976, "file": "lib/auth/redirect.ts", "id": "22", "location": {"end": {"column": 26, "line": 26}, "start": {"column": 7, "line": 26}}, "mutatorName": "ConditionalExpression", "replacement": "false", "static": false, "status": "Survived", "testsCompleted": 5}
