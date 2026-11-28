@@ -1,0 +1,53 @@
+RUN-099: downloaded baseline logs; commit 77e52bac363b91b578e7636bcf6833b2e90fb5e4.
+Download command: gh api repos/het-lathiya/Group12/actions/jobs/<job-id>/logs
+Extraction: strip ANSI/timestamp prefixes; retain executed summary lines, not echoed commands.
+
+Source: https://github.com/het-lathiya/Group12/actions/runs/45678355628/job/139431892916
+11 moderate severity vulnerabilities
+======================= 1879 passed, 1 warning in 15.74s =======================
+================= 99 passed, 2 deselected, 1 warning in 20.52s =================
+Test Files  51 passed (51)
+Tests  372 passed (372)
+
+Source: https://github.com/het-lathiya/Group12/actions/runs/45678355628/job/139431892524
+11 moderate severity vulnerabilities
+================== 688 passed, 1 warning in 244.65s (0:04:04) ==================
+================== 91 passed, 14 skipped, 1 warning in 48.61s ==================
+======================= 1879 passed, 1 warning in 26.73s =======================
+
+Source: https://github.com/het-lathiya/Group12/actions/runs/45678353192/job/139431886144
+11 moderate severity vulnerabilities
+axe scan 5 on /trips/new: []
+axe scan 5 on /trips/new: []
+axe scan 6 on /trips/new: []
+axe scan 6 on /trips/new: []
+axe scan 5 on /trips/new: []
+axe scan 6 on /trips/new: []
+axe scan 5 on /trips/new: []
+axe scan 6 on /trips/new: []
+4 passed (42.0s)
+8 passed (21.3s)
+8 passed (52.0s)
+9 skipped
+12 passed (24.4s)
+axe scan 5 on /trips/new: []
+axe scan 6 on /trips/new: []
+1 passed (15.0s)
+1 skipped
+1 passed (6.7s)
+1 skipped
+1 passed (7.6s)
+
+Source: https://github.com/het-lathiya/Group12/actions/runs/45678353192/job/139431885847
+11 moderate severity vulnerabilities
+4 passed (14.4s)
+
+Source: https://github.com/het-lathiya/Group12/actions/runs/45678355628/job/139431892917
+11 moderate severity vulnerabilities
+No known vulnerabilities found
+Found 12 known vulnerabilities in 1 package
+11 moderate severity vulnerabilities
+
+Source: https://github.com/het-lathiya/Group12/actions/runs/45678355628/job/139431893199
+6:45PM INF 496 commits scanned.
+6:45PM INF no leaks found
