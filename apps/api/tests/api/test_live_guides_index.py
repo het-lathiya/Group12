@@ -25,7 +25,7 @@ import respx
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.errors import ProviderUnavailable
+from app.ai.errors import ProviderRateLimited, ProviderUnavailable
 from app.ai.providers.mock import EMBED_MODEL_ID, MockProvider
 from app.core.config import Settings
 from app.db.models import DataSource, Destination, RagChunk, RagDocument
@@ -432,3 +432,61 @@ async def test_live_guides_per_destination_cap_is_400_chunks(
     stored = [c for c in await chunks(db_session, destination_id) if c.is_active]
     assert LIVETON_USABLE < len(stored) <= live_guides.LIVE_MAX_CHUNKS_PER_DESTINATION
     assert len(await documents(db_session, destination_id, "place")) == LIVETON_USABLE
+
+
+# D3 and D7 (live-local 2026-11-28): completed only after embedding; queued chunks re-embedded
+
+
+async def test_d7_import_completes_only_after_its_embedding(
+    db_session: AsyncSession, sessions: Sessions
+) -> None:
+    destination_id = await queued(db_session)
+    seen: list[str | None] = []
+
+    class Watching(MockProvider):
+        async def embed_texts(self, texts: Any, purpose: Any, titles: Any = None) -> Any:
+            row = await db_session.get(Destination, destination_id, populate_existing=True)
+            seen.append(row.import_status if row else None)
+            return await super().embed_texts(texts, purpose, titles)
+
+    watching = Watching("ok", app_env="test")
+    assert await run(destination_id, sessions, StubGuides(RICH), embedder=watching) == "completed"
+
+    assert seen
+    assert set(seen) == {"running"}
+    row = await db_session.get(Destination, destination_id, populate_existing=True)
+    assert row is not None
+    assert row.import_status == "completed"
+    assert all(c.embedding is not None for c in await chunks(db_session, destination_id))
+
+
+async def test_d3_queued_chunks_give_lexical_until_the_re_embed_round_fills_them(
+    db_session: AsyncSession, sessions: Sessions, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination_id = await queued(db_session)
+    monkeypatch.setattr(rag_service, "RAG_EMBED_PACE_S", 0.0)
+    monkeypatch.setattr(rag_service, "RAG_EMBED_BACKOFF_S", 3600.0)  # past the budget: queue
+
+    class LimitedAfterFirst(MockProvider):
+        calls = 0
+
+        async def embed_texts(self, texts: Any, purpose: Any, titles: Any = None) -> Any:
+            self.calls += 1
+            if self.calls > 1:
+                raise ProviderRateLimited("mock 429", retry_after_s=None)
+            return await super().embed_texts(texts, purpose, titles)
+
+    limited = LimitedAfterFirst("ok", app_env="test")
+    assert await run(destination_id, sessions, StubGuides(RICH), embedder=limited) == "completed"
+    stored = await chunks(db_session, destination_id)
+    assert 0 < sum(c.embedding is None for c in stored) < len(stored)
+
+    place_ids = [d.place_id for d in await documents(db_session, destination_id, "place")]
+    context = rag_service.RetrievalContext(destination_id, "fort and old quarter", place_ids)
+    partial = await rag_service.retrieve(context, provider=embedder(), sessions=sessions)
+    assert partial.mode == "lexical_fallback"
+
+    assert await live_jobs.reembed_queued(sessions=sessions, embedder=embedder()) == 0
+    assert all(c.embedding is not None for c in await chunks(db_session, destination_id))
+    full = await rag_service.retrieve(context, provider=embedder(), sessions=sessions)
+    assert full.mode == "vector"

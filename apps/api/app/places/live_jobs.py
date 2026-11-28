@@ -11,10 +11,13 @@ and cap; apply the minimum-places gate; then, in one transaction through the pla
 the OpenStreetMap source, the places (upserted, missing ones deactivated, never deleted) and the
 counts, write the place and guide documents of the RAG corpus in one load
 (``rag.service.index_live_destination``; the guide sections are fetched before that transaction,
-best effort) and complete the row. Embeddings are computed
-after that commit (no transaction stays open across a provider call); an embedding failure leaves
-the chunks without vectors, so generation uses ``lexical_fallback`` (IMD-112), and never fails the
-import. A failed import leaves the destination's earlier places as they were.
+best effort). Embeddings are computed after that commit (no transaction stays open across a
+provider call), paced and within a budget; only then is the row completed (A2 §6.2 steps 5 and 6,
+D7). Chunks the budget or a provider failure left without vectors stay queued: generation uses
+``lexical_fallback`` for the destination until they are embedded (IMD-112), the reaper loop's
+re-embed round fills them, and the completion log line says how many are queued. An embedding
+failure never fails the import. A failed import leaves the destination's earlier places as they
+were.
 
 Logs carry counts and destination ids only, never a place name, a city name or query text.
 """
@@ -49,6 +52,7 @@ from app.places import service as places_service
 from app.places.schemas import Destination
 from app.rag import live_guides
 from app.rag import service as rag_service
+from app.rag.constants import RAG_EMBED_BUDGET_S
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +63,7 @@ IMPORT_TIMEOUT_S: Final = 300
 IMPORT_STALE_AFTER_S: Final = 360
 IMPORT_QUEUED_STALE_AFTER_S: Final = 600  # A2 §6.2: queued rows older than 10 minutes
 REAPER_INTERVAL_S: Final = 60
+EMBED_CALL_MARGIN_S: Final = 75  # one Gemini call's 70 s allowance and the completion write
 NEARBY_CITY_RADIUS_KM: Final = 150
 
 ImportOutcome = str  # completed, insufficient_data or failed
@@ -117,10 +122,11 @@ async def run_import(
             return None
         reason: str
         try:
-            async with asyncio.timeout(IMPORT_TIMEOUT_S):
+            async with asyncio.timeout(IMPORT_TIMEOUT_S) as scope:
                 live = providers or get_providers()
                 return await _import(
                     claimed,
+                    deadline=scope.when() or 0.0,
                     places=live.places,
                     guides=live.guides,
                     sessions=sessions,
@@ -154,6 +160,7 @@ async def _import(
     sessions: Sessions,
     settings: Settings,
     embedder: ModelProvider | None,
+    deadline: float,
 ) -> ImportOutcome:
     destination = claimed.destination
     elements = await places.fetch(claimed.bbox)
@@ -199,13 +206,19 @@ async def _import(
         indexed = await rag_service.index_live_destination(
             session, destination, sections, retrieved_on=now.date(), now=now
         )
+        if not await places_service.touch_live_import(session, destination.id):
+            raise _NoLongerRunningError
+    # The embedding budget ends before the import's timeout, so a stored import is never failed.
+    left = deadline - asyncio.get_running_loop().time() - EMBED_CALL_MARGIN_S
+    queued = await _embed(destination.id, sessions, embedder, min(RAG_EMBED_BUDGET_S, left))
+    async with sessions() as session:
         if not await places_service.complete_live_import(
             session, destination.id, now=now, expires_at=expires_at
         ):
             raise _NoLongerRunningError
     logger.info(
         "live import %s completed found=%d usable=%d stored=%d deactivated=%d documents=%d "
-        "guides=%d dropped_paragraphs=%d guides_capped=%d",
+        "guides=%d dropped_paragraphs=%d guides_capped=%d embeddings_queued=%d",
         destination.id,
         result.found,
         len(result.places),
@@ -215,8 +228,8 @@ async def _import(
         indexed.guide_documents,
         indexed.dropped_paragraphs,
         indexed.guides_capped,
+        queued,
     )
-    await _embed(destination.id, sessions, embedder)
     return "completed"
 
 
@@ -239,15 +252,33 @@ async def _nearby_city(places: PlacesProvider, claimed: _Claimed) -> str | None:
     return choose_nearby_city(destination.name, found, capital(claimed.country_code))
 
 
-async def _embed(destination_id: UUID, sessions: Sessions, embedder: ModelProvider | None) -> None:
-    """Embed the destination's chunks that have no vector; a provider failure is logged only."""
+async def _embed(
+    destination_id: UUID, sessions: Sessions, embedder: ModelProvider | None, budget_s: float
+) -> int:
+    """Embed the destination's chunks that have no vector; returns how many stay queued."""
     report = await rag_service.embed_destinations(
-        [destination_id], provider=embedder, sessions=sessions
+        [destination_id], provider=embedder, sessions=sessions, budget_s=budget_s
     )
-    if report.provider_failed:
+    if report.queued:
         logger.warning(
-            "live import %s embeddings incomplete: embedded=%d", destination_id, report.embedded
+            "live import %s embeddings incomplete: embedded=%d queued=%d",
+            destination_id,
+            report.embedded,
+            report.queued,
         )
+    return report.queued
+
+
+async def reembed_queued(
+    *, sessions: Sessions = transaction, embedder: ModelProvider | None = None
+) -> int:
+    """One re-embed round (D3) under the import slot, so it never races an import's own
+    embedding; returns how many chunks stay queued."""
+    async with _slots:
+        report = await rag_service.embed_queued(provider=embedder, sessions=sessions)
+    if report.embedded or report.queued:
+        logger.info("re-embed round embedded=%d queued=%d", report.embedded, report.queued)
+    return report.queued
 
 
 def submit(destination_id: UUID) -> None:
@@ -271,13 +302,15 @@ async def reap_stale_imports(session: AsyncSession, now: datetime) -> int:
 
 
 async def reap_imports_forever() -> None:
-    """Lifespan task, started only with ``any_city_mode`` ON: reap stale imports every 60 s."""
+    """Lifespan task, started only with ``any_city_mode`` ON: every 60 s reap stale imports, then
+    run one re-embed round for the chunks still queued (D3)."""
     while True:
         try:
             async with transaction() as session:
                 count = await reap_stale_imports(session, datetime.now(UTC))
             if count:
                 logger.warning("live import reaper failed %d stale imports", count)
+            await reembed_queued()
         except Exception:  # the loop must survive a database outage; the next round retries
             logger.exception("live import reaper round failed")
         await asyncio.sleep(REAPER_INTERVAL_S)

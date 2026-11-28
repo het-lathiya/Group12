@@ -317,6 +317,11 @@ async def complete_live_import(
     )
 
 
+async def touch_live_import(session: AsyncSession, destination_id: UUID) -> bool:
+    """True when the import is still running (the row is only touched); False when it was reaped."""
+    return await repository.finish_live_import(session, destination_id)
+
+
 async def fail_live_import(session: AsyncSession, destination_id: UUID, reason: str) -> bool:
     """A failed import keeps the destination's earlier places and activity as they were."""
     return await repository.finish_live_import(
