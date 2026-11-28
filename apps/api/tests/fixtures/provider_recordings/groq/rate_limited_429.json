@@ -1,0 +1,12 @@
+{
+  "http_status": 429,
+  "headers": {
+    "retry-after": "1"
+  },
+  "body": {
+    "error": {
+      "code": "rate_limited_429",
+      "message": "synthetic vendor text"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "http_status": 200,
+  "headers": {},
+  "body": {
+    "id": "sample-completion",
+    "model": "openai/gpt-oss-20b",
+    "choices": [
+      {
+        "message": {
+          "role": "assistant",
+          "content": "{"
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 120,
+      "completion_tokens": 40,
+      "completion_tokens_details": {
+        "reasoning_tokens": 10
+      },
+      "total_tokens": 160
+    }
+  }
+}

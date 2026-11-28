@@ -6,6 +6,7 @@ Stage 2 FINETUNED_MODEL) joins the suite by adding one entry here (docs/guides/a
 
 ``gemini_recorded`` is the real Gemini adapter replaying provider_recordings/gemini/ through respx
 over a fake HTTP transport: no key, no network. Only tests marked ``live`` reach Gemini.
+``groq_recorded`` replays synthetic chat-completion recordings through the real Groq httpx adapter.
 """
 
 import json
@@ -17,6 +18,7 @@ import httpx
 import pytest
 import respx
 from fixtures.ai import DoubleProvider
+from fixtures.groq import Calls
 
 from app.ai.errors import (
     ProviderAuthError,
@@ -30,6 +32,7 @@ from app.ai.errors import (
 )
 from app.ai.providers.base import ModelProvider
 from app.ai.providers.gemini import GeminiProvider
+from app.ai.providers.groq import GroqProvider
 from app.ai.providers.mock import MockProvider
 from app.core.config import Settings
 
@@ -70,6 +73,27 @@ GEMINI_FAILURES: dict[type[ProviderError], Callable[[], GeminiAnswer]] = {
 }
 
 
+def groq_recording(name: str) -> httpx.Response:
+    data = json.loads((RECORDINGS.parent / "groq" / f"{name}.json").read_text(encoding="utf-8"))
+    return httpx.Response(data["http_status"], json=data["body"], headers=data["headers"])
+
+
+def groq_replay(answer: GeminiAnswer | None = None) -> GroqProvider:
+    """Recorded Groq answers through its real httpx adapter, with no network or real waits."""
+    return Calls(answer if answer is not None else groq_recording("ok")).provider()
+
+
+GROQ_FAILURES: dict[type[ProviderError], Callable[[], GeminiAnswer]] = {
+    ProviderTimeout: lambda: httpx.ReadTimeout("slow"),
+    ProviderRateLimited: lambda: groq_recording("rate_limited_429"),
+    ProviderUnavailable: lambda: groq_recording("unavailable_503"),
+    ProviderQuotaExhausted: lambda: groq_recording("quota_402"),
+    ProviderInvalidOutput: lambda: groq_recording("malformed"),
+    ProviderAuthError: lambda: groq_recording("permission_denied_403"),
+    ProviderBadRequest: lambda: groq_recording("model_not_found_404"),
+}
+
+
 @dataclass(frozen=True)
 class Adapter:
     build: Callable[[], ModelProvider]
@@ -86,6 +110,10 @@ ADAPTERS: dict[str, Adapter] = {
     "gemini_recorded": Adapter(
         build=gemini_replay,
         failing=lambda error: gemini_replay(GEMINI_FAILURES[type(error)]()),
+    ),
+    "groq_recorded": Adapter(
+        build=groq_replay,
+        failing=lambda error: groq_replay(GROQ_FAILURES[type(error)]()),
     ),
 }
 

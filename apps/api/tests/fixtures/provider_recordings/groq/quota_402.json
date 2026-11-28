@@ -1,0 +1,10 @@
+{
+  "http_status": 402,
+  "headers": {},
+  "body": {
+    "error": {
+      "code": "quota_402",
+      "message": "synthetic vendor text"
+    }
+  }
+}

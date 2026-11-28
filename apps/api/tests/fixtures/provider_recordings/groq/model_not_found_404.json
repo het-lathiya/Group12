@@ -1,0 +1,10 @@
+{
+  "http_status": 404,
+  "headers": {},
+  "body": {
+    "error": {
+      "code": "model_not_found_404",
+      "message": "synthetic vendor text"
+    }
+  }
+}

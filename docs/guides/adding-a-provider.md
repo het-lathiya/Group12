@@ -19,6 +19,10 @@ How a new adapter, for example the Stage 2 `FINETUNED_MODEL`, joins the applicat
 
 The shared suite is `apps/api/tests/contract/test_provider_contract.py`. Its `adapter` fixture runs every shared test once per entry of `ADAPTERS` in `apps/api/tests/contract/conftest.py`. Adding an adapter means adding one entry:
 
+IMD-223 registers `groq_recorded` alongside `gemini_recorded`, `mock` and the test double.
+Groq uses `httpx.MockTransport` and synthetic chat-completion recordings. Its prompt compatibility
+tests cover v1 through v4 without changing the published prompt or io-1/io-2 schemas.
+
 ```python
 ADAPTERS: dict[str, Adapter] = {
     ...

@@ -1,8 +1,8 @@
 """Provider contract suite (§8.19; IMP-110, IMP-207, IMP-301, IMP-512; FR-040 AC1-AC3, NFR-043).
 
 Every adapter must pass the same tests: the ``adapter`` fixture of conftest.py runs each shared test
-for ``double``, ``mock`` and ``gemini_recorded`` (the Gemini adapter replaying
-provider_recordings/gemini/ with respx). No key and no network: only tests marked ``live`` reach
+for ``double``, ``mock``, ``gemini_recorded`` and ``groq_recorded`` (real adapters replaying
+provider_recordings/ through fake HTTP transports). No key and no network: tests marked ``live`` reach
 Gemini, through make live-smoke. A new adapter joins by adding one entry to conftest.ADAPTERS
 (docs/guides/adding-a-provider.md).
 """
@@ -84,7 +84,7 @@ Gemini = Callable[..., GeminiProvider]
 def test_tc_001_adapter_implements_the_model_provider_interface(adapter: Adapter) -> None:
     provider = adapter.build()
     assert isinstance(provider, ModelProvider)
-    assert provider.name in ("GEMINI", "MOCK", "FINETUNED_MODEL")
+    assert provider.name in ("GEMINI", "GROQ", "MOCK", "FINETUNED_MODEL")
     for name in OPERATIONS:
         operation = getattr(provider, name)
         expected = getattr(ModelProvider, name)
@@ -204,6 +204,7 @@ def test_tc_157_tc_008_the_same_caller_runs_unchanged_on_every_adapter(adapter: 
 APP = Path(__file__).resolve().parents[2] / "app"
 CONCRETE_ADAPTERS = (
     "app.ai.providers.gemini",
+    "app.ai.providers.groq",
     "app.ai.providers.mock",
     "app.ai.providers.finetuned",
 )

@@ -1,0 +1,25 @@
+{
+  "http_status": 200,
+  "headers": {},
+  "body": {
+    "id": "sample-completion",
+    "model": "openai/gpt-oss-20b",
+    "choices": [
+      {
+        "message": {
+          "role": "assistant",
+          "content": "{\"days\": [{\"day_number\": 1, \"theme\": \"Old city, fort and market\", \"items\": [{\"place_id\": \"00000000-0000-4000-8000-000000000001\", \"start_time\": \"09:30\", \"duration_min\": 120, \"slot_type\": \"activity\", \"note\": \"Start at the fort while it is cool.\"}, {\"place_id\": \"00000000-0000-4000-8000-000000000005\", \"start_time\": \"12:00\", \"duration_min\": 60, \"slot_type\": \"meal\", \"note\": \"Local thali for lunch.\"}]}], \"summary\": \"A relaxed day mixing history and food.\", \"assumptions\": [\"Travel times are calculated by the application.\"]}"
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 120,
+      "completion_tokens": 40,
+      "completion_tokens_details": {
+        "reasoning_tokens": 10
+      },
+      "total_tokens": 160
+    }
+  }
+}

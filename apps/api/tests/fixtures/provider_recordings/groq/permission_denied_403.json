@@ -1,0 +1,10 @@
+{
+  "http_status": 403,
+  "headers": {},
+  "body": {
+    "error": {
+      "code": "permission_denied_403",
+      "message": "synthetic vendor text"
+    }
+  }
+}
