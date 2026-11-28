@@ -42,7 +42,7 @@ Not run: `make openapi-check` web-type half (no `node_modules` in the worktree; 
 
 ## Proposed decisions
 
-- PD-RUN-100-1: the fallback triggers on the error kinds, so 500, 502 and connection failures (all `ProviderUnavailable`) trigger it as well as 503. Narrowing it to 503 alone would need a status on the error.
+- PD-RUN-100-1: **accepted** (RUN-101). The fallback triggers on the error kinds `ProviderRateLimited` and `ProviderUnavailable`: 503, 429 (not the daily-quota `quota_exceeded`), 500, 502 and connection failures. Timeouts, quota, auth and bad requests never trigger it.
 
 ## Open issues
 
