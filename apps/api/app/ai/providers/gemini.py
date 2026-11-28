@@ -20,10 +20,12 @@ an embedding failure says nothing about generation (IMD-112). Texts and vectors 
 
 import asyncio
 import json
+import math
 import random
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any, Final, Literal, cast
 
 import httpx
@@ -211,11 +213,19 @@ def _error_code(body: object) -> str:
     return code.lower() if isinstance(code, str) else ""
 
 
-def _retry_after_s(headers: httpx.Headers) -> float | None:
+def _retry_after_s(headers: httpx.Headers, *, now: datetime | None = None) -> float | None:
     try:
-        return float(headers["retry-after"])
-    except (KeyError, ValueError):
+        value = headers["retry-after"]
+    except KeyError:
         return None
+    try:
+        delay = float(value)
+    except ValueError:
+        try:
+            delay = (parsedate_to_datetime(value) - (now or datetime.now(UTC))).total_seconds()
+        except (TypeError, ValueError, OverflowError):
+            return None
+    return delay if math.isfinite(delay) and delay >= 0 else None
 
 
 def map_status_error(status: int, code: str, headers: httpx.Headers) -> ProviderError:
@@ -223,7 +233,9 @@ def map_status_error(status: int, code: str, headers: httpx.Headers) -> Provider
     if code in BLOCKED_CODES:
         return ProviderInvalidOutput("blocked")
     if status == 402 or code == "quota_exceeded":
-        return ProviderQuotaExhausted("Gemini quota exhausted")
+        return ProviderQuotaExhausted(
+            "Gemini quota exhausted", retry_after_s=_retry_after_s(headers)
+        )
     if status == 429:
         return ProviderRateLimited("Gemini rate limit", retry_after_s=_retry_after_s(headers))
     if status in (401, 403):

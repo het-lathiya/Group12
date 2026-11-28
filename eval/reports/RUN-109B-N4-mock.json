@@ -1,0 +1,438 @@
+{
+  "retrieval/v1": {
+    "dataset_sha256": "696b02f9310b30148edb611743cc416a4e8db100e9283e2f43ffc45e6f2ff589",
+    "dataset_version": "retrieval/v1",
+    "embedding_model_id": "mock-embed-v1",
+    "ended_at": "2026-11-28T18:30:02.385078+00:00",
+    "git_commit": "0346ee8957ca10924bf3e9669b6e054a4d222b22",
+    "k": {
+      "guide_recall": 6,
+      "place_top": 12
+    },
+    "metrics": {
+      "by_destination": {
+        "ahmedabad": {
+          "citation_validity": 1.0,
+          "citations_saved": 29,
+          "grounding_rate": 0.7083,
+          "place_hit_rate_lexical": 0.4167,
+          "place_hit_rate_vector": 0.3333,
+          "queries": 6,
+          "recall_at_6": 0.4167,
+          "vector_mode_queries": 6
+        },
+        "sampleton": {
+          "citation_validity": 1.0,
+          "citations_saved": 18,
+          "grounding_rate": 0.5701,
+          "place_hit_rate_lexical": 1.0,
+          "place_hit_rate_vector": 1.0,
+          "queries": 6,
+          "recall_at_6": 1.0,
+          "vector_mode_queries": 6
+        }
+      },
+      "overall": {
+        "citation_validity": 1.0,
+        "citations_saved": 47,
+        "grounding_rate": 0.6392,
+        "place_hit_rate_lexical": 0.7083,
+        "place_hit_rate_vector": 0.6667,
+        "queries": 12,
+        "recall_at_6": 0.7083,
+        "vector_mode_queries": 12
+      },
+      "per_query": [
+        {
+          "citation_validity": null,
+          "citations_saved": 0,
+          "destination": "sampleton",
+          "grounding_rate": 0.0,
+          "notes": 7,
+          "place_hit_rate_lexical": 1.0,
+          "place_hit_rate_vector": 1.0,
+          "query": 1,
+          "recall_at_6": 1.0,
+          "retrieval_mode": "vector"
+        },
+        {
+          "citation_validity": 1.0,
+          "citations_saved": 5,
+          "destination": "sampleton",
+          "grounding_rate": 0.8333,
+          "notes": 6,
+          "place_hit_rate_lexical": 1.0,
+          "place_hit_rate_vector": 1.0,
+          "query": 2,
+          "recall_at_6": 1.0,
+          "retrieval_mode": "vector"
+        },
+        {
+          "citation_validity": 1.0,
+          "citations_saved": 2,
+          "destination": "sampleton",
+          "grounding_rate": 1.0,
+          "notes": 2,
+          "place_hit_rate_lexical": 1.0,
+          "place_hit_rate_vector": 1.0,
+          "query": 3,
+          "recall_at_6": 1.0,
+          "retrieval_mode": "vector"
+        },
+        {
+          "citation_validity": 1.0,
+          "citations_saved": 1,
+          "destination": "sampleton",
+          "grounding_rate": 0.1429,
+          "notes": 7,
+          "place_hit_rate_lexical": 1.0,
+          "place_hit_rate_vector": 1.0,
+          "query": 4,
+          "recall_at_6": 1.0,
+          "retrieval_mode": "vector"
+        },
+        {
+          "citation_validity": 1.0,
+          "citations_saved": 6,
+          "destination": "sampleton",
+          "grounding_rate": 1.0,
+          "notes": 6,
+          "place_hit_rate_lexical": 1.0,
+          "place_hit_rate_vector": 1.0,
+          "query": 5,
+          "recall_at_6": 1.0,
+          "retrieval_mode": "vector"
+        },
+        {
+          "citation_validity": 1.0,
+          "citations_saved": 4,
+          "destination": "sampleton",
+          "grounding_rate": 0.4444,
+          "notes": 9,
+          "place_hit_rate_lexical": 1.0,
+          "place_hit_rate_vector": 1.0,
+          "query": 6,
+          "recall_at_6": 1.0,
+          "retrieval_mode": "vector"
+        },
+        {
+          "citation_validity": 1.0,
+          "citations_saved": 4,
+          "destination": "ahmedabad",
+          "grounding_rate": 0.4,
+          "notes": 10,
+          "place_hit_rate_lexical": 0.5,
+          "place_hit_rate_vector": 0.5,
+          "query": 7,
+          "recall_at_6": 0.0,
+          "retrieval_mode": "vector"
+        },
+        {
+          "citation_validity": 1.0,
+          "citations_saved": 6,
+          "destination": "ahmedabad",
+          "grounding_rate": 1.0,
+          "notes": 6,
+          "place_hit_rate_lexical": 0.5,
+          "place_hit_rate_vector": 0.5,
+          "query": 8,
+          "recall_at_6": 0.5,
+          "retrieval_mode": "vector"
+        },
+        {
+          "citation_validity": 1.0,
+          "citations_saved": 1,
+          "destination": "ahmedabad",
+          "grounding_rate": 0.25,
+          "notes": 4,
+          "place_hit_rate_lexical": 1.0,
+          "place_hit_rate_vector": 1.0,
+          "query": 9,
+          "recall_at_6": 0.5,
+          "retrieval_mode": "vector"
+        },
+        {
+          "citation_validity": 1.0,
+          "citations_saved": 6,
+          "destination": "ahmedabad",
+          "grounding_rate": 0.6,
+          "notes": 10,
+          "place_hit_rate_lexical": 0.0,
+          "place_hit_rate_vector": 0.0,
+          "query": 10,
+          "recall_at_6": 0.0,
+          "retrieval_mode": "vector"
+        },
+        {
+          "citation_validity": 1.0,
+          "citations_saved": 6,
+          "destination": "ahmedabad",
+          "grounding_rate": 1.0,
+          "notes": 6,
+          "place_hit_rate_lexical": 0.5,
+          "place_hit_rate_vector": 0.0,
+          "query": 11,
+          "recall_at_6": 0.5,
+          "retrieval_mode": "vector"
+        },
+        {
+          "citation_validity": 1.0,
+          "citations_saved": 6,
+          "destination": "ahmedabad",
+          "grounding_rate": 1.0,
+          "notes": 6,
+          "place_hit_rate_lexical": 0.0,
+          "place_hit_rate_vector": 0.0,
+          "query": 12,
+          "recall_at_6": 1.0,
+          "retrieval_mode": "vector"
+        }
+      ]
+    },
+    "model_id": "mock-v1",
+    "prompt_template_id": "itinerary_generate",
+    "prompt_version": "v2",
+    "provider": "MOCK",
+    "run_id": "20261128T183001Z-retrieval-mock",
+    "started_at": "2026-11-28T18:30:01.241753+00:00",
+    "suite": "retrieval",
+    "trip_frame": {
+      "adults": 2,
+      "budget": null,
+      "children": 0,
+      "contingency_pct": 10.0,
+      "num_days": 2,
+      "start_date": "2027-03-01"
+    }
+  },
+  "trips/live-v1": {
+    "adapter_version": "mock-1",
+    "case_count": 8,
+    "citation_check": {
+      "citation_validity": null,
+      "citations_saved": 0,
+      "grounded_notes": 0,
+      "grounding_rate": 0.0,
+      "notes": 219,
+      "scope": "Frozen generation cases carry no context_passages; raw source_ids are empty. No retrieval is performed by this suite."
+    },
+    "dataset_id": "trips",
+    "dataset_sha256": "29244d01cd536f2f9f674448769165c7c2cd54fb928b6f35f24225483d620077",
+    "dataset_version": "live-v1",
+    "ended_at": "2026-11-28T18:29:06.738312+00:00",
+    "failures": [],
+    "generation_settings": {},
+    "git_commit": "0346ee8957ca10924bf3e9669b6e054a4d222b22",
+    "input_schema_version": "gr-2",
+    "metrics": {
+      "attempts": 24,
+      "avg_daily_travel_min": 126.4,
+      "counts": {
+        "no_duplicate_places": {
+          "k": 24,
+          "n": 24
+        },
+        "place_ids_valid": {
+          "k": 24,
+          "n": 24
+        },
+        "schema_valid": {
+          "k": 24,
+          "n": 24
+        },
+        "usable": {
+          "k": 24,
+          "n": 24
+        }
+      },
+      "metrics_version": "v2",
+      "numbered": {
+        "1": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "10": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "11": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "12": {
+          "status": "null: no dated price table exists (\u00a78.16)",
+          "value": null
+        },
+        "13": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "2": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "3": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "4": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "5": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "6": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "7": {
+          "status": "not computed in v1 (IMP-413 card)",
+          "value": null
+        },
+        "8": {
+          "status": "Release 2 (\u00a78.17)",
+          "value": null
+        },
+        "9": {
+          "status": "not computed in v1 (IMP-413 card)",
+          "value": null
+        }
+      }
+    },
+    "metrics_definition_sha256": "a1be38b0e89ddd06c345c8de23efd5075e234565d27fa25c3790ab178bceb34f",
+    "metrics_version": "v2",
+    "model_id": "mock-v1",
+    "model_version": null,
+    "output_schema_version": "io-2",
+    "prompt_sha256": {
+      "meta.json": "cf5f10eb230dfa8af0bc614d6266e20cbc27b446cef7a47efc7d3ab532084c08",
+      "repair.txt": "b40eed616f76fe1022953f2a31b52db332f34eea06060dfddfc1da2935c12254",
+      "system.txt": "1fb5143528b65d45fa4200d0b9791e4b0f6e7f670cac767d82161bd513ac76d9",
+      "user.txt": "45a99b08a285b25be3affe04f41c3929f6f8fde55e27e72c25b15eadeddc8730"
+    },
+    "prompt_template_id": "itinerary_generate",
+    "prompt_version": "v2",
+    "prompt_version_overridden": true,
+    "provider": "MOCK",
+    "repeats": 3,
+    "run_id": "20261128T182906Z-mock",
+    "started_at": "2026-11-28T18:29:06.685345+00:00"
+  },
+  "trips/v1": {
+    "adapter_version": "mock-1",
+    "case_count": 15,
+    "citation_check": {
+      "citation_validity": null,
+      "citations_saved": 0,
+      "grounded_notes": 0,
+      "grounding_rate": 0.0,
+      "notes": 507,
+      "scope": "Frozen generation cases carry no context_passages; raw source_ids are empty. No retrieval is performed by this suite."
+    },
+    "dataset_id": "trips",
+    "dataset_sha256": "8e0bde49e0bd37e0d42a1f558baa2a287a69a0c53d53b8801288ff8c9439b450",
+    "dataset_version": "v1",
+    "ended_at": "2026-11-28T18:29:06.774194+00:00",
+    "failures": [],
+    "generation_settings": {},
+    "git_commit": "0346ee8957ca10924bf3e9669b6e054a4d222b22",
+    "input_schema_version": "gr-2",
+    "metrics": {
+      "attempts": 45,
+      "avg_daily_travel_min": 126.7,
+      "counts": {
+        "no_duplicate_places": {
+          "k": 45,
+          "n": 45
+        },
+        "place_ids_valid": {
+          "k": 45,
+          "n": 45
+        },
+        "schema_valid": {
+          "k": 45,
+          "n": 45
+        },
+        "usable": {
+          "k": 45,
+          "n": 45
+        }
+      },
+      "metrics_version": "v2",
+      "numbered": {
+        "1": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "10": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "11": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "12": {
+          "status": "null: no dated price table exists (\u00a78.16)",
+          "value": null
+        },
+        "13": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "2": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "3": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "4": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "5": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "6": {
+          "status": "not computed in v1: blueprint \u00a721.4 is not in the repository",
+          "value": null
+        },
+        "7": {
+          "status": "not computed in v1 (IMP-413 card)",
+          "value": null
+        },
+        "8": {
+          "status": "Release 2 (\u00a78.17)",
+          "value": null
+        },
+        "9": {
+          "status": "not computed in v1 (IMP-413 card)",
+          "value": null
+        }
+      }
+    },
+    "metrics_definition_sha256": "a1be38b0e89ddd06c345c8de23efd5075e234565d27fa25c3790ab178bceb34f",
+    "metrics_version": "v2",
+    "model_id": "mock-v1",
+    "model_version": null,
+    "output_schema_version": "io-2",
+    "prompt_sha256": {
+      "meta.json": "cf5f10eb230dfa8af0bc614d6266e20cbc27b446cef7a47efc7d3ab532084c08",
+      "repair.txt": "b40eed616f76fe1022953f2a31b52db332f34eea06060dfddfc1da2935c12254",
+      "system.txt": "1fb5143528b65d45fa4200d0b9791e4b0f6e7f670cac767d82161bd513ac76d9",
+      "user.txt": "45a99b08a285b25be3affe04f41c3929f6f8fde55e27e72c25b15eadeddc8730"
+    },
+    "prompt_template_id": "itinerary_generate",
+    "prompt_version": "v2",
+    "prompt_version_overridden": true,
+    "provider": "MOCK",
+    "repeats": 3,
+    "run_id": "20261128T182906Z-mock",
+    "started_at": "2026-11-28T18:29:06.683642+00:00"
+  }
+}

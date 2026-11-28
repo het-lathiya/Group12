@@ -22,6 +22,7 @@ from pydantic import SecretStr
 
 from app.core import config
 from app.core.config import Settings, get_settings
+from app.rag import service as rag_service
 from app.routing import client as routing_client
 
 # Provider API hosts the guard refuses. A pattern "*.example.org" matches example.org and every
@@ -38,6 +39,15 @@ PROVIDER_HOSTS: tuple[str, ...] = (
     "*.wikivoyage.org",  # MediaWiki API, Wikivoyage
     "*.wikipedia.org",  # MediaWiki API, Wikipedia
 )
+
+
+@pytest.fixture(autouse=True)
+def isolate_embedding_pauses() -> Iterator[None]:
+    """A quota pause belongs to one application process, never to another test's process."""
+    # A private context keeps the shared monkeypatch fixture's socket restoration order intact.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(rag_service, "_embedding_pauses", {})
+        yield
 
 
 class ProviderNetworkBlockedError(RuntimeError):

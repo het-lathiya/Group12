@@ -70,6 +70,10 @@ class ProviderQuotaExhausted(ProviderError):
 
     failure_reason = "provider_quota_exhausted"
 
+    def __init__(self, message: str = "", *, retry_after_s: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_s = retry_after_s
+
 
 class ProviderInvalidOutput(ProviderError):
     """The answer is unusable; step 10 decides between one repair call and the fallback."""

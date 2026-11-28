@@ -5,6 +5,7 @@ A's plan is made through API-07, API-14 and API-22 with the MOCK provider; the s
 the test's rolled-back session, as in test_generations.py. No provider host is reached.
 """
 
+import json
 import uuid
 from collections import Counter
 from collections.abc import AsyncIterator, Callable
@@ -20,6 +21,7 @@ import pytest_asyncio
 from fastapi import FastAPI
 from fixtures.auth import AuthUser
 from fixtures.db import insert_auth_user
+from fixtures.guide_citations import GuideCitationMock
 from sqlalchemy import event, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
@@ -796,6 +798,44 @@ async def test_tc_456_saved_ids_are_a_subset_of_the_passages_supplied(
     saved = {str(chunk_id) for row in rows for chunk_id in row.source_chunk_ids}
     assert saved
     assert saved <= request.passage_ids()
+
+
+@pytest.mark.asyncio
+async def test_n4_curated_v2_guide_uuid_reaches_the_prompt_saved_plan_and_api(
+    api_app: FastAPI,
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    indexed: Destination,
+    jobs_queue: list[tuple[uuid.UUID, ModelProvider]],
+) -> None:
+    provider = GuideCitationMock()
+    api_app.dependency_overrides[get_model_provider] = lambda: provider
+    trip_id, _, plan = await grounded_plan(api_client, db_session, jobs_queue, auth_user, indexed)
+
+    [request] = provider.requests
+    guide = next(p for p in request.context_passages if p.kind == "guide")
+    system, user = provider.prompts[0]
+    prompt = json.loads(user.split("<request_json>\n", 1)[1].split("\n</request_json>", 1)[0])
+    assert guide.place_id is None
+    assert any(p["passage_id"] == str(guide.passage_id) for p in prompt["context_passages"])
+    assert "passage_id in source_ids" in system
+    assert provider.outputs[0].days[0].items[0].source_ids[0] == str(guide.passage_id)
+    first = plan["days"][0]["items"][0]
+    [source] = first["sources"]
+    assert (source["chunk_id"], source["kind"]) == (str(guide.passage_id), "guide")
+    assert source["title"] == guide.title
+    assert source["source_name"]
+    assert source["licence"]
+    assert source["retrieved_on"]
+    stored = await db_session.get(ItineraryItem, uuid.UUID(first["id"]), populate_existing=True)
+    assert stored is not None
+    assert stored.source_chunk_ids == [guide.passage_id]
+    version = await db_session.scalar(
+        select(ItineraryVersion).where(ItineraryVersion.trip_id == uuid.UUID(trip_id))
+    )
+    assert version is not None
+    assert version.snapshot["days"][0]["items"][0]["source_chunk_ids"] == [str(guide.passage_id)]
 
 
 @pytest.mark.asyncio
