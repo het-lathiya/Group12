@@ -275,7 +275,7 @@ async def reembed_queued(
     embedding; returns how many chunks stay queued."""
     async with _slots:
         report = await rag_service.embed_queued(provider=embedder, sessions=sessions)
-    if report.embedded or report.queued:
+    if (report.embedded or report.queued) and report.paused_until is None:
         logger.info("re-embed round embedded=%d queued=%d", report.embedded, report.queued)
     return report.queued
 

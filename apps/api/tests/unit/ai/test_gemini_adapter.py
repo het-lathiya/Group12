@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -278,6 +279,23 @@ def test_gemini_tc_160_a_429_is_a_rate_limit_with_retry_after() -> None:
 
 def test_gemini_a_429_of_daily_quota_is_quota_exhausted() -> None:
     assert isinstance(failure("quota_429"), ProviderQuotaExhausted)
+
+
+def test_quota_errors_keep_retry_after_for_the_embedding_pause() -> None:
+    error = adapter.map_status_error(429, "quota_exceeded", httpx.Headers({"Retry-After": "3600"}))
+    assert isinstance(error, ProviderQuotaExhausted)
+    assert error.retry_after_s == 3600
+
+
+def test_embedding_retry_after_accepts_an_http_date_with_a_fake_utc_clock() -> None:
+    now = datetime(2026, 11, 28, 23, 50, tzinfo=UTC)
+    headers = httpx.Headers({"Retry-After": "Sun, 29 Nov 2026 00:10:00 GMT"})
+    assert adapter._retry_after_s(headers, now=now) == 1200
+
+
+@pytest.mark.parametrize("value", ["", "invalid", "-1", "nan", "inf"])
+def test_invalid_retry_after_leaves_the_daily_pause_default(value: str) -> None:
+    assert adapter._retry_after_s(httpx.Headers({"Retry-After": value})) is None
 
 
 def test_gemini_tc_161_a_blocked_or_empty_answer_names_its_reason() -> None:

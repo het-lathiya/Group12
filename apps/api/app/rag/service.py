@@ -9,11 +9,12 @@ never raises for a retrieval failure: it answers ``lexical_fallback`` (§6.11, I
 
 import asyncio
 import logging
+import math
 import time
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final, Literal
 from uuid import UUID
@@ -22,7 +23,7 @@ from sqlalchemy import Row
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.errors import ProviderError, ProviderRateLimited
+from app.ai.errors import ProviderError, ProviderQuotaExhausted, ProviderRateLimited
 from app.ai.factory import get_provider
 from app.ai.providers.base import ModelProvider
 from app.core.config import get_settings
@@ -89,6 +90,7 @@ class IndexReport:
     inactive: int = 0
     findings: list[GuideFinding] = field(default_factory=list)
     provider_failed: bool = False
+    paused_until: datetime | None = None  # internal round state; not an API or schema field
 
     @property
     def warnings(self) -> int:
@@ -103,6 +105,55 @@ class IndexReport:
         if self.strict and self.errors:
             return EXIT_GATE
         return EXIT_PROVIDER if self.provider_failed or self.queued else EXIT_OK
+
+
+@dataclass(frozen=True)
+class _EmbeddingPause:
+    until: datetime
+    queued: int
+
+
+# One process, as the import scheduler (IMD-12). Shared across imports and re-embed rounds,
+# scoped to the embedding provider/model so another provider can still make progress.
+_embedding_pauses: dict[tuple[str, str], _EmbeddingPause] = {}
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _embedding_pause(provider: ModelProvider) -> _EmbeddingPause | None:
+    key = (provider.name, provider.embedding_model_id)
+    pause = _embedding_pauses.get(key)
+    if pause is not None and _utc_now() >= pause.until:
+        del _embedding_pauses[key]
+        return None
+    return pause
+
+
+def _pause_embeddings(
+    provider: ModelProvider,
+    error: ProviderQuotaExhausted | ProviderRateLimited,
+    report: IndexReport,
+) -> None:
+    now = _utc_now().astimezone(UTC)
+    delay = error.retry_after_s
+    until = (
+        now + timedelta(seconds=delay)
+        if delay is not None and math.isfinite(delay) and delay > 0
+        else (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    )
+    _embedding_pauses[(provider.name, provider.embedding_model_id)] = _EmbeddingPause(
+        until, report.queued
+    )
+    report.paused_until = until
+    logger.warning(
+        "embeddings incomplete (%s): embedded=%d queued=%d; re-embedding paused until %s",
+        error.failure_reason,
+        report.embedded,
+        report.queued,
+        until.isoformat(),
+    )
 
 
 @dataclass(frozen=True)
@@ -238,11 +289,20 @@ async def _embed(
         pending = await repository.pending_chunks(
             session, provider.embedding_model_id, destination_ids, missing_only=missing_only
         )
+    if pause := _embedding_pause(provider):
+        report.queued = len(pending)
+        report.provider_failed = True
+        report.paused_until = pause.until
+        return
     deadline = time.monotonic() + budget_s
     start = limited = 0
+    last_limited: ProviderRateLimited | None = None
     while start < len(pending):
         report.queued = len(pending) - start
         if time.monotonic() >= deadline:
+            if limited >= 2 and last_limited is not None:
+                _pause_embeddings(provider, last_limited, report)
+                report.provider_failed = True
             return
         batch = pending[start : start + RAG_EMBED_BATCH]
         try:
@@ -254,10 +314,16 @@ async def _embed(
         except ProviderRateLimited as exc:
             wait = max(RAG_EMBED_BACKOFF_S * 2**limited, exc.retry_after_s or 0.0)
             limited += 1
-            if time.monotonic() + wait > deadline:
+            last_limited = exc
+            if time.monotonic() + wait >= deadline:
+                if limited >= 2 or exc.retry_after_s:
+                    _pause_embeddings(provider, exc, report)
                 raise
             await asyncio.sleep(wait)
             continue
+        except ProviderQuotaExhausted as exc:
+            _pause_embeddings(provider, exc, report)
+            raise
         async with sessions() as session:
             await repository.store_embeddings(
                 session, [chunk_id for chunk_id, _, _ in batch], result.vectors, result.model_id
@@ -265,6 +331,7 @@ async def _embed(
         report.embedded += len(batch)
         start += len(batch)
         limited = 0
+        last_limited = None
         if start < len(pending):
             await asyncio.sleep(RAG_EMBED_PACE_S)
     report.queued = 0
@@ -415,14 +482,15 @@ async def embed_destinations(
         )
     except ProviderError as exc:
         report.provider_failed = True
-        logger.warning(
-            "embeddings incomplete (%s): embedded=%d queued=%d",
-            exc.failure_reason,
-            report.embedded,
-            report.queued,
-        )
+        if report.paused_until is None:
+            logger.warning(
+                "embeddings incomplete (%s): embedded=%d queued=%d",
+                exc.failure_reason,
+                report.embedded,
+                report.queued,
+            )
     else:
-        if report.queued:
+        if report.queued and report.paused_until is None:
             logger.warning(
                 "embeddings incomplete (budget): embedded=%d queued=%d",
                 report.embedded,
@@ -437,14 +505,19 @@ async def embed_queued(
     """The re-embed step (D3): fill the active chunks of any destination that have no vector.
 
     ``missing_only``, so a model change is left to ``make rag-index``. One budgeted run; the
-    scheduler calls it again until nothing is queued. Never raises for a provider failure.
+    scheduler calls it again until nothing is queued. Quota and exhausted repeated-429 retries
+    pause calls until Retry-After or the next UTC midnight, logging only when the pause starts.
+    Never raises for a provider failure.
     """
+    active = provider or get_provider()
+    if pause := _embedding_pause(active):
+        return IndexReport(queued=pause.queued, provider_failed=True, paused_until=pause.until)
     async with sessions() as session:
         destination_ids = await repository.destinations_with_unembedded_chunks(session)
     if not destination_ids:
         return IndexReport()
     return await embed_destinations(
-        destination_ids, provider=provider, sessions=sessions, missing_only=True
+        destination_ids, provider=active, sessions=sessions, missing_only=True
     )
 
 
