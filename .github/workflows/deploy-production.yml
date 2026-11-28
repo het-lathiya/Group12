@@ -105,6 +105,8 @@ jobs:
       PRODUCTION_SUPABASE_URL: ${{ vars.PRODUCTION_SUPABASE_URL }}
       PRODUCTION_SUPABASE_ANON_KEY: ${{ vars.PRODUCTION_SUPABASE_ANON_KEY }}
       PRODUCTION_FEATURES_DISABLED: ${{ vars.PRODUCTION_FEATURES_DISABLED }}
+      # May be unset or empty: the Gemini fallback model is then off (IMD-222).
+      PRODUCTION_GEMINI_FALLBACK_MODEL_ID: ${{ vars.PRODUCTION_GEMINI_FALLBACK_MODEL_ID }}
       SUPABASE_JWKS_URL: ${{ vars.PRODUCTION_SUPABASE_URL }}/auth/v1/.well-known/jwks.json
     steps:
       # The input is passed through env, never interpolated into the script.

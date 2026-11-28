@@ -26,7 +26,7 @@ Which secret values exist, who owns each, where it is stored and when it is rota
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes (bypasses row-level security) | Frontend and QA Engineer, E2E (Krrish) | TO BE FILLED BY KIRTAN | Local only: `apps/api/.env` for `make e2e` | Never set outside the local stack; if a hosted service-role key is ever exposed, rotate it in the Supabase dashboard at once |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No (public by design; row-level security protects data) | Frontend Engineer, Web App Lead (Manasvi), with the Integration Lead for hosted values | TO BE FILLED BY KIRTAN | Local: `apps/web/.env.local`. Staging, production: repository variable `<ENV>_SUPABASE_ANON_KEY`, a build argument of the web image | Rotate in the Supabase dashboard, then rebuild the web image |
 | `GEMINI_API_KEY` | Yes (billed; spending control in production) | AI Engineer, Provider Layer (Nidhi) | TO BE FILLED BY KIRTAN | Staging, production: SSM `/group12/<env>/GEMINI_API_KEY`, password manager. Local: only for `make live-smoke`, a personal key in `apps/api/.env` | Revoke and replace at once when exposed; replace when a member with access leaves; never in pull-request CI |
-| `GEMINI_FALLBACK_MODEL_ID` | No (a model identifier) | AI Engineer, Provider Layer (Nidhi) | No value recorded here | Staging, production: the API service template's plain environment, like `GEMINI_MODEL_ID`. Empty turns the fallback off (IMD-222) | Change it in the template; no rotation |
+| `GEMINI_FALLBACK_MODEL_ID` | No (a model identifier) | AI Engineer, Provider Layer (Nidhi) | No value recorded here | Staging, production: repository variable `<ENV>_GEMINI_FALLBACK_MODEL_ID`, rendered into the API service template's plain environment by the deploy workflow (set-up: `infra/aws/env.sh`). Unset or empty turns the fallback off (IMD-222) | Change the variable and redeploy; no rotation |
 | `ORS_API_KEY` | Yes | Backend and QA Engineer, Routing (Junaid) | TO BE FILLED BY KIRTAN | Staging, production: SSM `/group12/<env>/ORS_API_KEY`, password manager. Local: optional, `apps/api/.env` | Revoke and replace when exposed or when a member with access leaves |
 | RDS master password (not an environment variable) | Yes | DevOps Engineer and Integration Lead (Kirtan) | TO BE FILLED BY KIRTAN | Inside `DATABASE_URL` in SSM, password manager. Set by the owner, not managed by RDS | Change it on the instance and update `DATABASE_URL` when exposed or when a member with access leaves |
 | `E2E_STAGING_EMAIL`, `E2E_STAGING_PASSWORD` | Yes (sign in to the pre-created staging test account) | Frontend and QA Engineer, E2E (Krrish), with the Integration Lead (Kirtan), who creates the account and the two GitHub Actions secrets | TO BE FILLED BY KIRTAN | GitHub Actions secrets, read only by the manual `staging` job of `.github/workflows/e2e.yml` (IMP-414); password manager. Never in a file, a log or a Playwright report | Change the account password and both secrets when exposed or when a member with access leaves |
@@ -51,7 +51,8 @@ These are GitHub Actions **variables, not secrets**: none of them is a secret, s
 | `STAGING_API_URL`, `STAGING_WEB_ORIGIN` | The staging URLs |
 | `STAGING_SUPABASE_URL`, `STAGING_SUPABASE_ANON_KEY` | Public values of the auth-only Supabase project |
 | `STAGING_FEATURES_DISABLED` | Switched-off features; may be empty |
-| The seven `PRODUCTION_*` equivalents | Set in IMP-801 |
+| `STAGING_GEMINI_FALLBACK_MODEL_ID` | Gemini fallback model ID (IMD-222); may be unset or empty (fallback off) |
+| The eight `PRODUCTION_*` equivalents | Set in IMP-801 |
 
 ## Rules for every secret
 
