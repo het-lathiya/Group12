@@ -10,6 +10,7 @@ Offline only: live-data fakes, MOCK provider and embeddings. The app is built wi
 ``any_city_mode`` ON through a settings override; jobs run in savepoints of the test session.
 """
 
+import json
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -20,6 +21,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from fixtures.auth import AuthUser, auth_test_settings, client_for
+from fixtures.guide_citations import GuideCitationMock
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,7 +30,7 @@ from app.ai.providers.base import ModelProvider
 from app.ai.providers.mock import MockProvider
 from app.auth import deps
 from app.core.config import Settings
-from app.db.models import ItineraryItem, Place
+from app.db.models import AiGeneration, ItineraryItem, ItineraryVersion, Place
 from app.generation import jobs
 from app.livedata.factory import LiveProviders, get_geocoder
 from app.livedata.providers.fake import LIVETON, FakeGeocoder, FakeGuides, FakePlaces
@@ -206,6 +208,56 @@ async def test_live_generation_tc_479_mock_plan_uses_stored_live_places_only(
         done = await generate(client, auth_user, trip_id, "ai", submitted, sessions)
         assert (done["status"], done["outcome"]) == ("completed", "model"), done
         await check_live_plan(client, auth_user, db_session, trip_id, destination_id)
+
+
+async def test_n4_live_v2_guide_uuid_reaches_the_prompt_saved_plan_and_api(
+    live_app: FastAPI,
+    db_session: AsyncSession,
+    auth_user: AuthUser,
+    sessions: Sessions,
+    submitted: list[Job],
+) -> None:
+    provider = GuideCitationMock()
+    live_app.dependency_overrides[get_model_provider] = lambda: provider
+    destination_id = await live_destination(db_session, sessions)
+    async with client_for(live_app) as client:
+        trip_id = await live_trip(client, auth_user, destination_id)
+        done = await generate(client, auth_user, trip_id, "ai", submitted, sessions)
+        assert (done["status"], done["retrieval_mode"]) == ("completed", "vector"), done
+        plan = await check_live_plan(client, auth_user, db_session, trip_id, destination_id)
+
+    [request] = provider.requests
+    guide = next(p for p in request.context_passages if p.kind == "guide")
+    assert guide.place_id is None  # guide UUIDs are independent of shortlist place UUIDs
+    system, user = provider.prompts[0]
+    prompt = json.loads(user.split("<request_json>\n", 1)[1].split("\n</request_json>", 1)[0])
+    assert any(p["passage_id"] == str(guide.passage_id) for p in prompt["context_passages"])
+    assert "passage_id in source_ids" in system
+    assert provider.outputs[0].days[0].items[0].source_ids[0] == str(guide.passage_id)
+
+    items = [item for day in plan["days"] for item in day["items"]]
+    first = items[0]
+    [source] = first["sources"]
+    assert (source["chunk_id"], source["kind"], source["title"]) == (
+        str(guide.passage_id),
+        "guide",
+        guide.title,
+    )
+    assert (source["source_name"], source["licence"]) == ("Wikivoyage", "CC BY-SA 4.0")
+    assert source["attribution_text"]
+    assert source["url"]
+    assert source["retrieved_on"]
+    stored = await db_session.get(ItineraryItem, uuid.UUID(first["id"]), populate_existing=True)
+    assert stored is not None
+    assert stored.source_chunk_ids == [guide.passage_id]
+    version = await db_session.scalar(
+        select(ItineraryVersion).where(ItineraryVersion.trip_id == uuid.UUID(trip_id))
+    )
+    assert version is not None
+    assert version.snapshot["days"][0]["items"][0]["source_chunk_ids"] == [str(guide.passage_id)]
+    record = await db_session.get(AiGeneration, uuid.UUID(done["id"]), populate_existing=True)
+    assert record is not None
+    assert record.validation_summary["unknown_source_ids"] == 2
 
 
 async def test_live_generation_tc_479_rule_based_plan_for_a_live_city(
