@@ -210,9 +210,13 @@ async def _import(
     # The embedding budget ends before the import's timeout, so a stored import is never failed.
     left = deadline - asyncio.get_running_loop().time() - EMBED_CALL_MARGIN_S
     queued = await _embed(destination.id, sessions, embedder, min(RAG_EMBED_BUDGET_S, left))
+    completed_at = datetime.now(UTC)  # N2: imported_at is the completion time, after embedding
     async with sessions() as session:
         if not await places_service.complete_live_import(
-            session, destination.id, now=now, expires_at=expires_at
+            session,
+            destination.id,
+            now=completed_at,
+            expires_at=completed_at + timedelta(days=settings.live_data_ttl_days),
         ):
             raise _NoLongerRunningError
     logger.info(

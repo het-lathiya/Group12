@@ -248,3 +248,53 @@ async def test_nearby_nodes_without_coordinates_are_not_suggestions() -> None:
     with respx.mock() as router:
         router.post(OVERPASS).respond(200, json={"elements": [node]})
         assert await OverpassPlaces(OVERPASS, 90, USER_AGENT).largest_city_near(0, 0, 150) is None
+
+
+class Sleeps:
+    def __init__(self) -> None:
+        self.waits: list[float] = []
+
+    async def __call__(self, seconds: float) -> None:
+        self.waits.append(seconds)
+
+
+@pytest.mark.parametrize("status", [502, 503])
+async def test_busy_overpass_is_retried_after_a_short_wait(status: int) -> None:
+    sleeps = Sleeps()
+    with respx.mock() as router:
+        route = router.post(OVERPASS)
+        route.side_effect = [
+            respx.MockResponse(status, text="at capacity"),
+            respx.MockResponse(200, json={"elements": []}),
+        ]
+        assert await OverpassPlaces(OVERPASS, 90, USER_AGENT, sleep=sleeps).fetch(BBOX) == []
+    assert route.call_count == 2
+    assert sleeps.waits == [5.0]
+
+
+async def test_busy_overpass_fails_after_two_retries_with_bounded_waits(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    sleeps = Sleeps()
+    with respx.mock() as router, caplog.at_level(logging.WARNING, logger="app.livedata"):
+        route = router.post(OVERPASS).respond(502, text="Server at capacity")
+        with pytest.raises(LiveDataUnavailable, match="http 502"):
+            await OverpassPlaces(OVERPASS, 90, USER_AGENT, sleep=sleeps).fetch(BBOX)
+    assert route.call_count == 3
+    assert sleeps.waits == [5.0, 15.0]
+    messages = [r.getMessage() for r in caplog.records if r.name == "app.livedata.providers.osm"]
+    assert len(messages) == 3
+    assert all("status=502" in m and "at capacity" in m for m in messages)
+
+
+@pytest.mark.parametrize(("header", "wait"), [("7", 7.0), ("3600", 30.0)])
+async def test_busy_overpass_honours_a_capped_retry_after(header: str, wait: float) -> None:
+    sleeps = Sleeps()
+    with respx.mock() as router:
+        route = router.post(OVERPASS)
+        route.side_effect = [
+            respx.MockResponse(503, headers={"Retry-After": header}),
+            respx.MockResponse(200, json={"elements": []}),
+        ]
+        await OverpassPlaces(OVERPASS, 90, USER_AGENT, sleep=sleeps).fetch(BBOX)
+    assert sleeps.waits == [wait]
