@@ -1201,6 +1201,7 @@ Variable names are fixed in `.env.example` below; each environment differs only 
 | `ORS_DAILY_ALLOWANCE` | Routing client daily call counter (WARNING at 80 percent, IMD-132) | `2000` | Not secret; the key's daily allowance |
 | `AI_PROVIDER`, `PROMPT_TEMPLATE_VERSION`, `MOCK_PROVIDER_SCENARIO` | Provider factory, prompt registry, mock (IMD-27) | `MOCK`, `v1`, `ok` | `GEMINI` in production (MOCK refused); scenarios ignored in production |
 | `GEMINI_API_KEY`, `GEMINI_MODEL_ID`, `GEMINI_TIMEOUT_S`, `GEMINI_MAX_RETRIES` | Gemini adapter | Empty, empty, `35`, `1` | Secret key; start-up refuses empty or `<` values and timeout × (retries + 1) > 70 |
+| `GEMINI_FALLBACK_MODEL_ID` | Gemini adapter (IMD-222) | Empty (off) | Not secret; a second model in the same project, called once when `GEMINI_MODEL_ID` ends in 429 or 503 after the retries, inside the 70 s allowance and never for a repair call; its ID is recorded as the generation's `model_id`; the breaker still counts the first failure |
 | `AI_TEMPERATURE`, `AI_MAX_INPUT_TOKENS`, `AI_MAX_OUTPUT_TOKENS`, `AI_DAILY_GENERATIONS_PER_USER`, `AI_DAILY_GENERATIONS_GLOBAL` | Limits and caps | `0.4`, empty, empty, `10`, `200` | Caps and token limits required (NFR-037) |
 | `AI_DAILY_ASSIST_CALLS_PER_USER` | Assist-call cap (EXT: intake, day explanation, packing refinement) | `30` (Proposed) | Required; 429 `AI_QUOTA_REACHED` when reached |
 | `WEATHER_TIMEOUT_S` | Open-Meteo client (EXT) | `8` | No key exists (free non-commercial use) |

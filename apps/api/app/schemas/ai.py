@@ -394,6 +394,9 @@ class ProviderResult[T](StrictModel):
     latency_ms: int = Field(ge=0)
     provider_request_id: str | None
     notes: list[str] = Field(default_factory=list)
+    # IMD-222: set only when GEMINI_FALLBACK_MODEL_ID answered after the configured model failed.
+    model_id: str | None = None
+    fallback_from: Literal["provider_rate_limited", "provider_unavailable"] | None = None
 
 
 EmbeddingPurpose = Literal["document", "query"]

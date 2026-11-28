@@ -75,6 +75,8 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr = SecretStr("")
     gemini_model_id: str = ""
     gemini_embedding_model_id: str = ""
+    # IMD-222: one call with this model when the configured one ends in 429 or 503; empty = off.
+    gemini_fallback_model_id: str = ""
     gemini_timeout_s: float = Field(default=35, gt=0)
     gemini_max_retries: int = Field(default=1, ge=0)
     ai_temperature: float = 0.4

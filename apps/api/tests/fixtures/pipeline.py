@@ -53,6 +53,7 @@ class Journal:
         self.failed: str | None = None
         self.failed_with: dict[str, Any] = {}
         self.inactive: set[UUID] = set()
+        self.recorded_model: str | None = None
         self.model_id = "mock-v1"  # rule_based_planner_v1 runs the job as mode rule_based
         self.transactions = 0
         self.open = 0
@@ -90,6 +91,9 @@ class Journal:
         async def record_retrieval(session: object, generation_id: UUID, **kwargs: Any) -> None:
             self.steps.append("retrieval")
             self.retrieval = kwargs
+
+        async def record_model(session: object, generation_id: UUID, model_id: str) -> None:
+            self.recorded_model = model_id
 
         async def mark_validating(session: object, generation_id: UUID) -> None:
             self.steps.append("validating")
@@ -134,6 +138,7 @@ class Journal:
         monkeypatch.setattr(repository, "mark_running", mark_running)
         monkeypatch.setattr(repository, "record_settings", record_settings)
         monkeypatch.setattr(repository, "record_retrieval", record_retrieval)
+        monkeypatch.setattr(repository, "record_model", record_model)
         monkeypatch.setattr(repository, "mark_validating", mark_validating)
         monkeypatch.setattr(repository, "mark_repairing", mark_repairing)
         monkeypatch.setattr(repository, "complete", complete)

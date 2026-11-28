@@ -38,6 +38,8 @@ left of the job's 120 s (the 15 s reserve of §8.2 and any unused time); an unex
 it, as anywhere in the job, ends ``failed`` / ``internal`` through the job runner, and a failed
 generation writes nothing to the itinerary tables. Each generation's provider result is
 recorded on the breaker once, after the adapter's retries; retrieval's embeddings never are.
+An answer of GEMINI_FALLBACK_MODEL_ID records the configured model's failure on the breaker and
+that model's ID on the record (IMD-222).
 
 Never logged: the request built for the provider, its raw output, notes or prompt text (FR-125).
 """
@@ -55,7 +57,13 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import factory, limits
-from app.ai.errors import InvalidOutputKind, ProviderError, ProviderInvalidOutput
+from app.ai.errors import (
+    InvalidOutputKind,
+    ProviderError,
+    ProviderInvalidOutput,
+    ProviderRateLimited,
+    ProviderUnavailable,
+)
 from app.ai.providers.base import ModelProvider
 from app.budget import engine
 from app.core.config import REPAIR_TIME_ALLOWANCE_S, get_settings
@@ -100,6 +108,10 @@ BLOCKING: Final = frozenset({"UNKNOWN_PLACE", "OUTSIDE_TRIP_DATES", "OVERLAP", "
 # §8.14: the job's 120 s (jobs.PIPELINE_TIMEOUT_S; jobs imports this module) less the 15 s kept
 # for the fallback and the save; the repair call never runs into them.
 REPAIR_DEADLINE_S: Final = 120 - 15
+FALLBACK_CAUSES: Final = {
+    "provider_rate_limited": ProviderRateLimited,
+    "provider_unavailable": ProviderUnavailable,
+}
 
 
 @dataclass
@@ -705,7 +717,13 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
         await end_with(job, request, outcomes.resolve(exc), metadata)
         return
 
-    breaker.record_success()
+    if result.fallback_from is None:
+        breaker.record_success()
+    else:  # IMD-222: the configured model failed; the fallback's answer must not close the breaker
+        breaker.record_failure(FALLBACK_CAUSES[result.fallback_from]())
+    if result.model_id is not None:
+        async with sessions() as session:
+            await repository.record_model(session, generation_id, result.model_id)
     await job.mark_validating()
     first = await assess(job, request, result.output)
     await finish(job, request, provider, first, usage=result.usage, metadata=metadata)

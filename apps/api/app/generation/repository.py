@@ -125,6 +125,13 @@ async def record_settings(
     await session.flush()
 
 
+async def record_model(session: AsyncSession, generation_id: UUID, model_id: str) -> None:
+    """IMD-222: the model that answered, when GEMINI_FALLBACK_MODEL_ID did."""
+    row = await _locked(session, generation_id)
+    row.model_id = model_id
+    await session.flush()
+
+
 async def record_retrieval(
     session: AsyncSession,
     generation_id: UUID,

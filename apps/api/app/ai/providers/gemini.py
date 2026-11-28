@@ -8,6 +8,11 @@ each attempt bounded by the time left. Vendor error text is never read: it can e
 (NFR-024). The circuit breaker is recorded by the pipeline, once per generation; the adapter only
 reads it for ``health_check``.
 
+GEMINI_FALLBACK_MODEL_ID (IMD-222): when the retries end in a rate limit or an outage (429, 5xx),
+one more call goes to that model in the same project, with the same request, schema and limits and
+inside what is left of the allowance; never for a repair call. Its failure re-raises the first
+error. The result names the model and the first failure, so the pipeline records both.
+
 ``embed_texts`` (Amendment A1 §6.5, IMP-312) uses the models API instead, through
 ``_call_embed_vendor``, with the same retries. It leaves ``_last_state`` and the breaker alone:
 an embedding failure says nothing about generation (IMD-112). Texts and vectors are never logged.
@@ -314,6 +319,8 @@ class GeminiProvider:
     ) -> None:
         self._api_key = settings.gemini_api_key.get_secret_value()
         self._model_id = settings.gemini_model_id
+        fallback = settings.gemini_fallback_model_id
+        self._fallback_model_id = fallback if fallback != self._model_id else ""
         self.embedding_model_id = settings.gemini_embedding_model_id
         self._max_retries = settings.gemini_max_retries
         self._max_input_tokens = settings.ai_max_input_tokens
@@ -356,16 +363,22 @@ class GeminiProvider:
         return self._client
 
     async def _call_vendor(
-        self, system_text: str, user_text: str, schema: dict[str, Any], timeout_s: float
+        self,
+        system_text: str,
+        user_text: str,
+        schema: dict[str, Any],
+        timeout_s: float,
+        model_id: str | None = None,
     ) -> Interaction:
         """The only vendor call (§8.4). Raises shared errors only, with none of the vendor's text."""
-        config: dict[str, Any] = {"thinking_level": thinking_level(self._model_id)}
+        model_id = model_id or self._model_id
+        config: dict[str, Any] = {"thinking_level": thinking_level(model_id)}
         if self._max_output_tokens is not None:
             config["max_output_tokens"] = self._max_output_tokens
         try:
             async with asyncio.timeout(timeout_s):
                 answer = await self._vendor_client().aio.interactions.create(
-                    model=self._model_id,
+                    model=model_id,
                     system_instruction=system_text,
                     input=user_text,
                     store=False,
@@ -406,17 +419,40 @@ class GeminiProvider:
         output_model = OUTPUT_MODELS[template.meta.output_schema_version]
 
         started = time.perf_counter()
+        clock = self._clock or time.monotonic
+        deadline = clock() + GEMINI_TIME_ALLOWANCE_S
         schema = wire_schema(output_model)
+        repair = request.repair_context is not None
 
         async def attempt(timeout_s: float) -> tuple[Interaction, ItineraryOutput]:
             interaction = await self._call_vendor(system_text, user_text, schema, timeout_s)
             return interaction, parse_output(interaction, output_model)
 
+        used_model: str | None = None
+        fallback_from: Literal["provider_rate_limited", "provider_unavailable"] | None = None
         try:
-            # §8.13: the repair call has its own 25 s and no transport retry.
-            interaction, output = await self._with_retries(
-                attempt, repair=request.repair_context is not None
-            )
+            try:
+                # §8.13: the repair call has its own 25 s and no transport retry.
+                interaction, output = await self._with_retries(attempt, repair=repair)
+            except (ProviderRateLimited, ProviderUnavailable) as primary:
+                # IMD-222: one call with the fallback model, never for a repair, never looped.
+                left = deadline - clock()
+                if not self._fallback_model_id or repair or left <= 0:
+                    raise
+                try:
+                    interaction = await self._call_vendor(
+                        system_text,
+                        user_text,
+                        schema,
+                        min(self._timeout_s, left),
+                        model_id=self._fallback_model_id,
+                    )
+                    output = parse_output(interaction, output_model)
+                except ProviderError:
+                    raise primary from None  # the path of today continues (IMD-33)
+                used_model = self._fallback_model_id
+                rate_limited = isinstance(primary, ProviderRateLimited)
+                fallback_from = "provider_rate_limited" if rate_limited else "provider_unavailable"
         except ProviderAuthError:
             self._last_state = "down"
             raise
@@ -433,6 +469,8 @@ class GeminiProvider:
             finish_reason=interaction.status,
             latency_ms=round((time.perf_counter() - started) * 1000),
             provider_request_id=interaction.id or None,
+            model_id=used_model,
+            fallback_from=fallback_from,
         )
 
     async def modify_itinerary(
