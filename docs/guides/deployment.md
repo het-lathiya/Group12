@@ -154,6 +154,52 @@ Run by Kirtan. Every command here is **Not verified — run by Kirtan**; record 
 7. The fallback model. It triggers only when the primary's retries end in a rate limit or an outage (429, 500, 502, 503, connection failure; PD-RUN-100-1). An invalid primary model ID is a bad request and does **not** trigger it, so do not use that method: it only produces a labelled rule-based plan. There is no safe way to force a 429 or 503 on staging without a code change. So:
    - Check whether any staging generation in the window used it: a record whose `model_id` is the fallback model ID.
    - If none did, record "fallback not exercised on staging; covered by the provider unit tests" in the gate record. Do not change the primary model ID to force it.
+
+### Groq second provider (IMD-223, RUN-108)
+
+Kirtan creates the SSM SecureString **before** enabling `GROQ_MODEL_ID` or deploying with it.
+Nidhi supplies the single team key through the password manager; never put it in GitHub variables,
+plain ECS environment, a command argument, or a committed file. In Kirtan's terminal, the following
+command template reads the value without echoing it and supplies the AWS CLI through stdin:
+
+```bash
+set +x
+read -r -s -p 'Groq team key: ' groq_secret
+printf '\n'
+printf '%s' "$groq_secret" | python3 -c '
+import json, sys
+json.dump({"Name": "/group12/<env>/GROQ_API_KEY", "Type": "SecureString",
+           "Value": sys.stdin.read()}, sys.stdout)
+' | aws ssm put-parameter --region ap-south-1 --cli-input-json file:///dev/stdin --query Version --output text
+unset groq_secret
+```
+
+Replace `<env>` with `staging` or `production`; do not run it literally. The existing execution
+role can read the `/group12/<env>/` parameter path. The key remains an ECS `secrets` reference.
+No AWS command was run against the account for RUN-108.
+
+After the parameter exists, set the non-secret repository variables and deploy normally:
+
+```bash
+gh variable set STAGING_GROQ_MODEL_ID --body 'openai/gpt-oss-20b'
+gh variable set PRODUCTION_GROQ_MODEL_ID --body 'openai/gpt-oss-20b'
+```
+
+The production variable is ready for IMP-801's production service template, which must include
+plain `GROQ_MODEL_ID=${PRODUCTION_GROQ_MODEL_ID}` and secret
+`/group12/production/GROQ_API_KEY`, as in the staging template. Production templates do not yet
+exist in this repository. For first-time staging setup, `infra/aws/env.sh` has
+`STAGING_GROQ_MODEL_ID=`; old copies default to empty. Both workflow renderers and the setup
+renderer omit the optional secret reference when the model is empty, so an unset Groq configuration
+does not require an SSM parameter. Clear the model variable and redeploy to turn Groq off.
+
+The runtime order is Gemini → Gemini fallback → Groq → labelled rule-based plan. After a genuine
+Gemini outage, rate limit, quota exhaustion or timeout, check API-23 for `provider: GROQ` and the
+actual `model_id`; the one generation row counts once against both daily caps. If no such event
+occurs in the staging window, record "Groq not exercised on staging; covered by recorded provider
+and pipeline tests". Do not force an outage or change credentials to exercise the chain. Groq
+failures end in a labelled rule-based plan; malformed output shares the one existing repair call.
+Embeddings remain Gemini with lexical fallback (IMD-112).
 8. End to end on staging, demo cities Jaipur, Udaipur and Mumbai, plus the small town named for G14 ([any-city-readiness.md](../test-reports/any-city-readiness.md)), using the pre-import of [any-city-staging.md](any-city-staging.md) when `any_city_mode` is on: create the trip, generate, edit once, check the costs and warnings. Record each city's generation ID, `outcome` and `model_id`.
 9. Daily cost look: AWS Billing, Cost Explorer, daily granularity, the last 7 days. Note the day's total in the log's Note column.
 

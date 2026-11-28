@@ -107,6 +107,7 @@ jobs:
       PRODUCTION_FEATURES_DISABLED: ${{ vars.PRODUCTION_FEATURES_DISABLED }}
       # May be unset or empty: the Gemini fallback model is then off (IMD-222).
       PRODUCTION_GEMINI_FALLBACK_MODEL_ID: ${{ vars.PRODUCTION_GEMINI_FALLBACK_MODEL_ID }}
+      PRODUCTION_GROQ_MODEL_ID: ${{ vars.PRODUCTION_GROQ_MODEL_ID }}
       SUPABASE_JWKS_URL: ${{ vars.PRODUCTION_SUPABASE_URL }}/auth/v1/.well-known/jwks.json
     steps:
       # The input is passed through env, never interpolated into the script.
@@ -176,7 +177,12 @@ jobs:
             export IMAGE="$3"
             # The AWS CLI rejects --cli-input-json from file:///dev/stdin ("Invalid JSON received"), so it reads a file.
             envsubst < "$template" \
-              | jq --arg arn "$arn" 'del(.serviceName, .cluster, .infrastructureRoleArn) + {serviceArn: $arn}' > "$input"
+              | jq --arg arn "$arn" '
+                  del(.serviceName, .cluster, .infrastructureRoleArn) + {serviceArn: $arn}
+                  | if any(.primaryContainer.environment[]; .name == "GROQ_MODEL_ID" and .value != "")
+                    then . elif .primaryContainer.secrets
+                    then .primaryContainer.secrets |= map(select(.name != "GROQ_API_KEY")) else . end
+                ' > "$input"
             jq -e . "$input" > /dev/null || { echo "::error::$input is not valid JSON"; return 1; }
             jq -c 'keys' "$input" # keys only: the values hold the service environment
             aws ecs update-express-gateway-service --cli-input-json "file://$input" \

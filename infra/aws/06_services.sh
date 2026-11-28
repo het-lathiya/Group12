@@ -16,6 +16,7 @@ fi
 # shellcheck source=env.sh.example
 . "$here/env.sh"
 export STAGING_GEMINI_FALLBACK_MODEL_ID="${STAGING_GEMINI_FALLBACK_MODEL_ID:-}" # optional (IMD-222): an older env.sh lacks it
+export STAGING_GROQ_MODEL_ID="${STAGING_GROQ_MODEL_ID:-}" # optional (IMD-223)
 if [ "$(aws sts get-caller-identity --query Account --output text)" != "$AWS_ACCOUNT_ID" ]; then
   echo "these credentials are not for account AWS_ACCOUNT_ID of env.sh" >&2
   exit 1
@@ -39,7 +40,15 @@ render() { # template: stops on a placeholder without a variable, because envsub
   for name in $(grep -oE '\$\{[A-Z0-9_]+\}' "$1" | tr -d '${}' | sort -u); do
     [ -n "${!name+set}" ] || { echo "$1 needs $name" >&2; exit 1; }
   done
-  envsubst < "$1"
+  envsubst < "$1" | python3 -c '
+import json, sys
+config = json.load(sys.stdin)
+container = config["primaryContainer"]
+enabled = any(e["name"] == "GROQ_MODEL_ID" and e["value"] for e in container.get("environment", []))
+if not enabled and "secrets" in container:
+    container["secrets"] = [s for s in container["secrets"] if s["name"] != "GROQ_API_KEY"]
+json.dump(config, sys.stdout)
+'
 }
 
 require_image() { # repository, tag
