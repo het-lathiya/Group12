@@ -109,6 +109,78 @@
       ],
       "notes": "Target: 40 seconds, planned only. The PNG is rendered without editing the Mermaid flowchart in docs/course/01-requirements.md §4.3. Its UC IDs are local to that course document, not specification IDs. The full diagram is supplied as use-cases.png for zooming. The backlog by sprint is in the same source §5; original user-story sentences are not recorded, so do not invent them. Trace selected goals through FR IDs and the source sprint tables. Any-city mode is conditional on its switch and staging evidence; no live result is claimed. On-slide diagram: traveller-goal excerpt using only the same source node definitions and edges; use-cases.png preserves the complete diagram.",
       "target_seconds": 40
+    },
+    {
+      "title": "Lessons learnt",
+      "kind": "bullets",
+      "target_seconds": 30,
+      "lines": [
+        "Validate the measurement setup",
+        "Re-run a known mutant",
+        "Keep a clean control"
+      ],
+      "notes": "Target: 30 seconds, planned only. Draft lesson from a recorded event: an initial mutation setup used invalid external test node IDs and appeared to kill mutants. A direct survivor/control check exposed the configuration error; only corrected runs were reported. Source: git show b40b00a54011a5d2120341cd2d2d5569c4b6d0d9:docs/progress/parts/RUN-099-course-mutation.md and docs/test-reports/course/mutation-api-summary.txt. This lesson is inferred from the recorded correction, not participant feedback. Presentation slot and claims review still need human rehearsal/Junaid review."
+    },
+    {
+      "title": "Achievements",
+      "kind": "bullets",
+      "target_seconds": 35,
+      "lines": [
+        "Day-wise editable plans; labelled costs and sources",
+        "API / web line coverage: 93.71% / 88.62%",
+        "API / web mutation score: 92.22% / 93.18%"
+      ],
+      "notes": "Target: 35 seconds, planned only. Product behavior: docs/course/01-requirements.md and the SG-6 feature-freeze record in docs/progress/gates.md. Numeric source snapshot: b40b00a54011a5d2120341cd2d2d5569c4b6d0d9, docs/test-reports/course/coverage-summary.txt, mutation-api-summary.txt and mutation-web-summary.txt. Coverage run: https://github.com/het-lathiya/Group12/actions/runs/46124142747; measured b3248cf, before mutation regressions. API branch coverage 83.59%; web branch coverage 84.54%. Mutation values are bounded LOCAL experiments, not Actions mutation jobs. Counts include survivors/no coverage; no full-coverage or live reliability claim. The source summaries preserve actual counts and result lines. Course batch B is unmerged at this draft baseline."
+    },
+    {
+      "title": "Mistakes",
+      "kind": "bullets",
+      "target_seconds": 30,
+      "lines": [
+        "Token issuer validation needed a regression",
+        "Review approvals missed in gate audits",
+        "Staging evidence stayed open"
+      ],
+      "notes": "Target: 30 seconds, planned only. Drafted from actual recorded events: F-1 accepted a correctly signed token with the wrong issuer, fixed with a regression (docs/test-reports/security-sprint7.md, Findings and RUN-081b correction evidence; docs/progress/parts/IMP-702-auth-fixes.md). Gate working-agreement audits record merged PRs without approval, including SG-7 (docs/progress/gates.md, SG-7 working-agreement audit). SG-7 is provisional and SG-8 not run because release/staging/human evidence is still pending. These are specific historic records, not a claim that no PR was ever reviewed and not an invented retrospective survey."
+    },
+    {
+      "title": "Rating of software artefacts (0–5)",
+      "kind": "ratings",
+      "target_seconds": 25,
+      "lines": [
+        "Requirements · [team to fill]",
+        "Design · [team to fill]",
+        "Code · [team to fill]",
+        "Tests · [team to fill]",
+        "Documentation · [team to fill]"
+      ],
+      "notes": "Target: 25 seconds, planned only. Source: RUN-102 course rules, captured in docs/course/14-slides/README.md. The scale is the course scale; no rating has been assigned. The team must rate the actual artefacts together and record the agreed values. Coverage, commit counts and proposed thresholds do not automatically determine these ratings."
+    },
+    {
+      "title": "Overall project rating (out of 10)",
+      "kind": "rating",
+      "target_seconds": 20,
+      "lines": [
+        "[team to fill]",
+        "Agree the rating together; sign the contribution sheet."
+      ],
+      "notes": "Target: 20 seconds, planned only. Source: RUN-102 course rules, captured in docs/course/14-slides/README.md. Leave the overall rating blank until agreed by the team. docs/course/15-contribution.md carries the proposed marks placeholder and unsigned signature lines. Release/staging evidence and a timed rehearsal remain pending. Stage 2 is conditional and not done; no trained-model result is claimed (docs/final-report.md, Stage 2 position)."
     }
-  ]
+  ],
+  "testing_evidence": {
+    "git_ref": "b40b00a54011a5d2120341cd2d2d5569c4b6d0d9",
+    "coverage_run": "https://github.com/het-lathiya/Group12/actions/runs/46124142747",
+    "api_line": "93.71%",
+    "api_branch": "83.59%",
+    "web_line": "88.62%",
+    "web_branch": "84.54%",
+    "api_mutation": "92.22%",
+    "web_mutation": "93.18%",
+    "result_lines": [
+      "API_TOTAL lines=9212/9830 (93.71%); branches=1620/1938 (83.59%)",
+      "WEB_TOTAL lines=1542/1740 (88.62%); branches=1487/1759 (84.54%)",
+      "API_TOTAL killed=569 survived=28 timeout=0 no_coverage=20 error=0 not_run=0 score=92.22%",
+      "WEB_TOTAL killed=41 survived=1 timeout=0 no_coverage=2 error=0 not_run=0 score=93.18%"
+    ]
+  }
 }

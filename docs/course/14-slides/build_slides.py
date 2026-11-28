@@ -27,6 +27,11 @@ TITLES = [
     "Objectives",
     "Milestones",
     "Use case diagram / user story backlog by sprint",
+    "Lessons learnt",
+    "Achievements",
+    "Mistakes",
+    "Rating of software artefacts (0–5)",
+    "Overall project rating (out of 10)",
 ]
 ASSIGNMENTS = [
     ("Nidhi · group leader", "Providers, pipeline, repair", "IMP-110 / 305 / 502"),
@@ -193,6 +198,9 @@ def definitions():
 
 def build(output: Path, diagram: Path):
     deck = Presentation()
+    deck.core_properties.author = "Group 12"
+    deck.core_properties.last_modified_by = "Group 12"
+    deck.core_properties.subject = "IT314 Software Engineering, Autumn 2026-27"
     deck.slide_width, deck.slide_height = Inches(13.333), Inches(7.5)
     for number, item in enumerate(definitions(), 1):
         slide = base_slide(deck, number, item["title"])
@@ -210,6 +218,9 @@ def build(output: Path, diagram: Path):
         elif kind == "diagram":
             slide.shapes.add_picture(str(diagram), Inches(0.6), Inches(1.6), height=Inches(5.2))
             text_box(slide, 7.3, 1.85, 5.2, 4.6, "\n\n".join(lines), 18)
+        elif kind == "rating":
+            text_box(slide, 0.85, 2.2, 11.6, 1.5, lines[0], 44, TEAL, True)
+            text_box(slide, 0.85, 4.4, 11.6, 1.0, lines[1], 24, MUTED)
         else:
             for i, line in enumerate(lines):
                 text_box(
@@ -222,12 +233,16 @@ def build(output: Path, diagram: Path):
                     27 if kind == "bullets" else 24,
                 )
         slide.notes_slide.notes_text_frame.text = item["notes"]
+    assert sum(item["target_seconds"] for item in definitions()) == 300
+    assert all("[team to fill]" in line for line in definitions()[8]["lines"])
+    assert definitions()[9]["lines"][0] == "[team to fill]"
     deck.save(output)
     reloaded = Presentation(output)
     titles = [slide.shapes.title.text for slide in reloaded.slides]
     assert titles == TITLES, titles
     assert all(slide.notes_slide.notes_text_frame.text for slide in reloaded.slides)
     print(f"PPTX reload: {len(titles)} slides; titles in order; speaker notes present")
+    print("Target slot: 300 seconds planned; rehearsal not run")
     print("Slide titles: " + " | ".join(titles))
 
 
@@ -250,11 +265,11 @@ def write_html(path: Path, diagram: Path):
                 + body
             )
         sections.append(
-            f"<section><small>GROUP 12 / IT314 / DRAFT · S{number}</small><h1>{html.escape(item['title'])}</h1><article>{body}</article><footer>Autumn 2026-27 · rehearsal pending</footer></section>"
+            f"<section data-kind='{item['kind']}'><small>GROUP 12 / IT314 / DRAFT · S{number}</small><h1>{html.escape(item['title'])}</h1><article>{body}</article><footer>Autumn 2026-27 · rehearsal pending</footer></section>"
         )
     path.write_text(
         """<!doctype html><meta charset="utf-8"><title>Group 12 course slides</title><style>
-@page {size:13.333in 7.5in;margin:0}*{box-sizing:border-box}body{margin:0;background:#FAFAF9;color:#16302E;font:24pt Arial,sans-serif}section{height:7.5in;width:13.333in;padding:.35in .6in;border-left:.16in solid #0F766E;position:relative;break-after:page}section:last-child{break-after:auto}small{font-size:10pt;color:#0F766E}h1{font-size:27pt;margin:.22in 0 .35in}article p{margin:.22in 0 .4in}table{border-collapse:collapse;width:100%;font-size:16pt}td{padding:.13in .04in;border-bottom:1px solid #deded9}td:first-child{color:#0F766E;font-weight:bold}td:last-child{font-size:15pt;color:#57534E}.diagram{height:5.05in;max-width:6.5in;object-fit:contain;float:left;margin-right:.35in}footer{position:absolute;bottom:.25in;font-size:10pt;color:#57534E}</style>"""
+@page {size:13.333in 7.5in;margin:0}*{box-sizing:border-box}body{margin:0;background:#FAFAF9;color:#16302E;font:24pt Arial,sans-serif}section{height:7.5in;width:13.333in;padding:.35in .6in;border-left:.16in solid #0F766E;position:relative;break-after:page}section:last-child{break-after:auto}small{font-size:10pt;color:#0F766E}h1{font-size:27pt;margin:.22in 0 .35in}article p{margin:.22in 0 .4in}table{border-collapse:collapse;width:100%;font-size:16pt}td{padding:.13in .04in;border-bottom:1px solid #deded9}td:first-child{color:#0F766E;font-weight:bold}td:last-child{font-size:15pt;color:#57534E}.diagram{height:5.05in;max-width:6.5in;object-fit:contain;float:left;margin-right:.35in}section[data-kind="diagram"] article p{font-size:18pt;margin:.12in 0 .25in}section[data-kind="title"] article p:first-child{font-size:56pt;color:#0F766E;font-weight:bold}section[data-kind="rating"] article p:first-child{font-size:44pt;color:#0F766E}footer{position:absolute;bottom:.25in;font-size:10pt;color:#57534E}</style>"""
         + "".join(sections)
     )
 
