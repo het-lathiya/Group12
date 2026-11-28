@@ -1,0 +1,114 @@
+{
+  "source_main": "bc2b606e504ba167c3c5fad9d992c7500dc9fb44",
+  "assignments": [
+    [
+      "Nidhi · group leader",
+      "Providers, pipeline, repair",
+      "IMP-110 / 305 / 502"
+    ],
+    [
+      "Kirtan",
+      "CI, deployment, limits",
+      "IMP-102 / 217 / 511"
+    ],
+    [
+      "Manal",
+      "Trips, budget, validation",
+      "IMP-203 / 308 / 404"
+    ],
+    [
+      "Het",
+      "Auth, generation jobs, edits",
+      "IMP-108 / 210 / 407"
+    ],
+    [
+      "Junaid",
+      "Routing, validation, security QA",
+      "IMP-307 / 501 / 702"
+    ],
+    [
+      "Malhar",
+      "Migrations, place data, fallback",
+      "IMP-106 / 205 / 402"
+    ],
+    [
+      "Jeel",
+      "ORM, retrieval, versions",
+      "IMP-106 / 315 / 610"
+    ],
+    [
+      "Manya",
+      "Prompts, constraints, evaluation",
+      "IMP-111 / 406 / 514"
+    ],
+    [
+      "Manasvi",
+      "Trip wizard, itinerary, map",
+      "IMP-212 / 309 / 508"
+    ],
+    [
+      "Krrish",
+      "Sign-in, keyboard, browser QA",
+      "IMP-109 / 513 / 701"
+    ]
+  ],
+  "slides": [
+    {
+      "title": "Title",
+      "kind": "title",
+      "lines": [
+        "AI Travel Planner",
+        "Day-wise. Costed. Editable.",
+        "Group 12 · IT314 Software Engineering",
+        "Autumn 2026-27"
+      ],
+      "notes": "Target: 15 seconds, planned only. Introduce a signed-in traveller describing a trip and receiving a day-wise, costed, editable itinerary. Source: docs/course/01-requirements.md; docs/srs.md §1. Stage 2 is conditional and not done. This course talk has a five-minute target from RUN-102; no rehearsal is claimed.",
+      "target_seconds": 15
+    },
+    {
+      "title": "Group leader and detailed task assignment",
+      "kind": "assignments",
+      "lines": [
+        "Nidhi is the course group leader."
+      ],
+      "notes": "Target: 45 seconds, planned only. Course group leader: Nidhi, as assigned by RUN-102. Product responsibilities and the detailed card/part assignment come from docs/spec/IMPLEMENTATION_SPEC.md team roles and docs/spec/TASK_REGISTER.md Owners and parts; the contribution document is the detailed ledger. Assignments: Nidhi · group leader — Providers, pipeline, repair — IMP-110 / 305 / 502; Kirtan — CI, deployment, limits — IMP-102 / 217 / 511; Manal — Trips, budget, validation — IMP-203 / 308 / 404; Het — Auth, generation jobs, edits — IMP-108 / 210 / 407; Junaid — Routing, validation, security QA — IMP-307 / 501 / 702; Malhar — Migrations, place data, fallback — IMP-106 / 205 / 402; Jeel — ORM, retrieval, versions — IMP-106 / 315 / 610; Manya — Prompts, constraints, evaluation — IMP-111 / 406 / 514; Manasvi — Trip wizard, itinerary, map — IMP-212 / 309 / 508; Krrish — Sign-in, keyboard, browser QA — IMP-109 / 513 / 701. Integration lead Kirtan and course group leader Nidhi are distinct roles. These are owned work areas, not a measured marks allocation.",
+      "target_seconds": 45
+    },
+    {
+      "title": "Objectives",
+      "kind": "bullets",
+      "lines": [
+        "Plan days around traveller preferences",
+        "Check time, travel and cost in code",
+        "Keep edits, labels and sources visible"
+      ],
+      "notes": "Target: 25 seconds, planned only. Objectives: capture preferences and constraints (FR-007–010), generate and validate an itinerary (FR-024–059), and retain traveller control through edits, budget labels and citations (FR-060–076, FR-136–139). Source: docs/course/01-requirements.md; docs/spec/IMPLEMENTATION_SPEC.md §1.6. Booking, payments and live prices are excluded by IMD-46.",
+      "target_seconds": 25
+    },
+    {
+      "title": "Milestones",
+      "kind": "milestones",
+      "lines": [
+        "Sprints 1–2 · foundation + walking skeleton",
+        "Sprints 3–4 · grounded planning + reliability",
+        "Sprints 5–6 · editing + feature freeze",
+        "Sprints 7–8 · hardening → release pending"
+      ],
+      "notes": "Target: 35 seconds, planned only. These are sprint themes, not a claim that every gate passed. Sources: docs/course/02-sprints/sprint-1.md through sprint-8.md; docs/progress/sprint-1.md through sprint-7.md; docs/progress/gates.md. SG-7 remains provisional: staging acceptance, release tag and human sessions are pending. SG-8 is not run. The diagram describes implemented milestones while keeping deployment evidence open.",
+      "target_seconds": 35
+    },
+    {
+      "title": "Use case diagram / user story backlog by sprint",
+      "kind": "diagram",
+      "lines": [
+        "Traveller: create → generate → edit → review",
+        "Sprints 1–2: accounts + trips",
+        "Sprints 3–4: planning + validation",
+        "Sprints 5–6: edits + versions",
+        "Sprints 7–8: regression + release work"
+      ],
+      "notes": "Target: 40 seconds, planned only. The PNG is rendered without editing the Mermaid flowchart in docs/course/01-requirements.md §4.3. Its UC IDs are local to that course document, not specification IDs. The full diagram is supplied as use-cases.png for zooming. The backlog by sprint is in the same source §5; original user-story sentences are not recorded, so do not invent them. Trace selected goals through FR IDs and the source sprint tables. Any-city mode is conditional on its switch and staging evidence; no live result is claimed. On-slide diagram: traveller-goal excerpt using only the same source node definitions and edges; use-cases.png preserves the complete diagram.",
+      "target_seconds": 40
+    }
+  ]
+}
