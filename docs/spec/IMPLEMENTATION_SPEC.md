@@ -290,7 +290,7 @@ This register is the only list of what the eight-week release implements. It reu
 | FR-040 | **Define the ModelProvider interface.** The backend shall define one provider interface with generate_itinerary, modify_itinerary, health_check and get_model_metadata operations, and all application code shall call the interface and never a vendor SDK. | Must | MVP | MOD-B05, MOD-P01 | FR-123, FR-124 | AC1: Given the codebase, when searched, then vendor SDK imports appear only inside adapter modules.<br>AC2: Given the interface, when a new adapter implements it, then the generation service runs unchanged.<br>AC3: Given a shared contract test suite, when run against each adapter, then all operations meet the same result and error contract. | Sprint 1 | IMP-110, IMP-512 | TC-001, TC-002, TC-003, TC-005 (+5) — Integration 4, Provider contract 3, Static check 2 |
 | FR-041 | **Implement the Gemini adapter.** The Gemini adapter shall authenticate with a backend-held key, format requests, request schema-constrained JSON, parse responses, translate errors, apply timeouts and bounded retries, and return usage metadata. | Must | MVP | MOD-B05 | FR-043, FR-045 | AC1: Given a valid key and request, when called, then it returns a parsed ItineraryOutput candidate and usage metadata.<br>AC2: Given HTTP 429, when received, then the adapter raises a rate-limit error after bounded backoff.<br>AC3: Given a blocked or empty response, when received, then it raises an invalid-output error with the reason. | Sprint 3 | IMP-301 | TC-004, TC-009, TC-013, TC-014 (+17) — Unit 16, Integration 4, Provider contract 1 |
 | FR-042 | **Implement the mock adapter.** A mock provider shall return deterministic fixture itineraries and support injected failures (timeout, rate limit, malformed JSON, invented ID) for development and automated tests. | Must | MVP | MOD-B05 | FR-040 | AC1: Given AI_PROVIDER=MOCK, when generation runs, then no network call is made.<br>AC2: Given a failure mode setting, when generation runs, then the matching shared error is raised. | Sprint 2 | IMP-207 | TC-033, TC-034, TC-035, TC-036 (+2) — Unit 3, Integration 3 |
-| FR-043 | **Select the active provider by configuration.** The backend shall choose the active provider from the AI_PROVIDER setting (GEMINI, MOCK, FINETUNED_MODEL), validate it at start-up, and refuse to start with an unknown or incomplete configuration. | Must | MVP | MOD-B01, MOD-B05 | FR-042, FR-123, FR-124 | AC1: Given AI_PROVIDER=GEMINI and no key, when the backend starts, then it exits with a clear configuration error.<br>AC2: Given an unknown value, when the backend starts, then it exits with a clear error.<br>AC3: Given FINETUNED_MODEL before Stage 2, when selected, then start-up is refused with a message that the adapter is not enabled. | Sprint 2 | IMP-208 | TC-013, TC-037, TC-042, TC-043 (+3) — Integration 6, Unit 1 |
+| FR-043 | **Select the active provider by configuration.** The backend shall choose the active provider from the AI_PROVIDER setting (GEMINI, GROQ, MOCK, FINETUNED_MODEL; IMD-223), validate it at start-up, and refuse to start with an unknown or incomplete configuration. | Must | MVP | MOD-B01, MOD-B05 | FR-042, FR-123, FR-124 | AC1: Given AI_PROVIDER=GEMINI and no key, when the backend starts, then it exits with a clear configuration error.<br>AC2: Given an unknown value, when the backend starts, then it exits with a clear error.<br>AC3: Given FINETUNED_MODEL before Stage 2, when selected, then start-up is refused with a message that the adapter is not enabled. | Sprint 2 | IMP-208 | TC-013, TC-037, TC-042, TC-043 (+3) — Integration 6, Unit 1 |
 | FR-044 | **Check provider health and expose metadata.** The backend shall run a provider health check at start-up and on the health endpoint, and shall expose the active provider name and model identifier without secrets. | Must | MVP | MOD-B01, MOD-B05 | FR-041, FR-123, FR-125 | AC1: Given the health endpoint, when called, then it returns provider name, model identifier and status.<br>AC2: Given a failing health check, when called, then the endpoint reports degraded and the app can still serve non-AI pages. | Sprint 3 | IMP-302 | TC-006, TC-007, TC-044, TC-167 (+1) — Provider contract 2, Integration 2, API 1 |
 | FR-045 | **Keep a versioned prompt-template registry.** Prompt templates shall be stored in the repository with explicit versions, and each generation shall record the template version used. | Must | MVP | MOD-B05 | FR-040 | AC1: Given a template change, when merged, then its version number changes.<br>AC2: Given a generation record, when read, then it names the template version. | Sprint 1 | IMP-111 | TC-026, TC-169, TC-170 — Integration 2, Unit 1 |
 | FR-046 | **Limit usage and cost.** The backend shall enforce per-user and global daily generation limits, maximum tokens per call, and a configurable stop when the daily budget is reached. | Must | MVP | MOD-B01, MOD-B05, MOD-B06 | FR-038, FR-123, FR-125 | AC1: Given a user at the daily limit, when they start generation, then the API returns 429 with the limit and the reset time.<br>AC2: Given the global limit is reached, when any user starts generation, then the rule-based option is offered.<br>AC3: Given usage, when reviewed, then daily counts are queryable by the team. | Sprint 5 | IMP-511 | TC-171, TC-172, TC-173, TC-310 (+2) — Integration 5, Review 1 |
@@ -1134,7 +1134,7 @@ Paths that must not be created in the MVP: `apps/api/app/sharing/`, `expenses/`,
 | Python modules, functions, variables | `snake_case`; classes `PascalCase`; constants `UPPER_SNAKE` | `build_request`, `GenerationRequest`, `MAX_ITEMS` |
 | TypeScript | `camelCase` values, `PascalCase` components and types; one component per file named like the component | `DayColumn.tsx`, `useTrip()` |
 | API JSON fields and query parameters | `snake_case`, identical to the Pydantic field names | `plan_revision`, `start_date` |
-| Enumerated values | Lower `snake_case` strings, except provider names (`GEMINI`, `MOCK`, `FINETUNED_MODEL`) and finding/error codes (`UPPER_SNAKE`) | `fallback_rule_based`, `STALE_PLAN` |
+| Enumerated values | Lower `snake_case` strings, except provider names (`GEMINI`, `GROQ`, `MOCK`, `FINETUNED_MODEL`) and finding/error codes (`UPPER_SNAKE`) | `fallback_rule_based`, `STALE_PLAN` |
 | Database | Tables plural `snake_case`; columns `snake_case`; PK `id` (UUID) except 1:1 tables keyed by `trip_id`; FK `<entity>_id`; indexes `ix_<table>_<cols>`; checks named where the SQL names them | `itinerary_items.day_id` |
 | URL paths | `/api/v1/` + plural nouns, kebab-case for multi-word segments, path ids named `{trip_id}` etc. | `/api/v1/trips/{trip_id}/saved-places/{place_id}` |
 | Web routes | Lower case, kebab-case, dynamic segments `[tripId]` | `/trips/[tripId]/itinerary` |
@@ -1167,7 +1167,7 @@ Paths that must not be created in the MVP: `apps/api/app/sharing/`, `expenses/`,
 | --- | --- |
 | Layers | For every module: `router` may import `service` and `schemas`; `service` may import domain, `repository`, `schemas`; domain and `repository` never import `service` or `router` |
 | Pure domain | EXT `itinerary.optimise`, `itinerary.swap`, `itinerary.today`, `budget.fit`, `prep.packing_rules` as well as `validation.rules`, `validation.validator`, `validation.repair`, `budget.engine`, `routing.estimate`, `generation.ranking`, `generation.grouping`, `generation.fallback_planner`, `trips.domain` must not import `fastapi`, `sqlalchemy`, `httpx`, `google.genai` or any `repository`/`service` |
-| Vendor isolation | `google.genai` is imported only by `app.ai.providers.gemini`; concrete adapters are imported only by `app.ai.factory` (NFR-031) |
+| Vendor isolation | `google.genai` is imported only by `app.ai.providers.gemini`; AI `httpx` is confined to the Gemini and Groq adapters (IMD-223); concrete adapters are imported only by `app.ai.factory` (NFR-031) |
 | Routing isolation | `httpx` calls to OpenRouteService only in `app.routing.client`; EXT: Open-Meteo only in `app.weather.client`, MediaWiki only in `app.context.client` |
 | Service order | Services import only services of a lower rank (§3.9): e.g. `app.itinerary` must not import `app.generation`, `app.budget.service` or `app.validation.router` |
 | Booking | No `app.booking` package and no booking, payment or partner SDK dependency (in-app booking is excluded, §1.3 and IMD-46) |
@@ -1202,6 +1202,7 @@ Variable names are fixed in `.env.example` below; each environment differs only 
 | `AI_PROVIDER`, `PROMPT_TEMPLATE_VERSION`, `MOCK_PROVIDER_SCENARIO` | Provider factory, prompt registry, mock (IMD-27) | `MOCK`, `v1`, `ok` | `GEMINI` in production (MOCK refused); scenarios ignored in production |
 | `GEMINI_API_KEY`, `GEMINI_MODEL_ID`, `GEMINI_TIMEOUT_S`, `GEMINI_MAX_RETRIES` | Gemini adapter | Empty, empty, `35`, `1` | Secret key; start-up refuses empty or `<` values and timeout × (retries + 1) > 70 |
 | `GEMINI_FALLBACK_MODEL_ID` | Gemini adapter (IMD-222) | Empty (off) | Not secret; a second model in the same project, called once when `GEMINI_MODEL_ID` ends in 429 or 503 after the retries, inside the 70 s allowance and never for a repair call; its ID is recorded as the generation's `model_id`; the breaker still counts the first failure |
+| `GROQ_API_KEY`, `GROQ_MODEL_ID` | Groq adapter and optional second provider (IMD-223) | Both empty (off); documented model choice `openai/gpt-oss-20b` | Key secret in SSM, model plain environment from `<ENV>_GROQ_MODEL_ID`; either unset disables the second provider. Explicit `AI_PROVIDER=GROQ` requires both in staging/production. Same Gemini timeout/retry and AI token settings; embeddings stay Gemini with lexical fallback |
 | `AI_TEMPERATURE`, `AI_MAX_INPUT_TOKENS`, `AI_MAX_OUTPUT_TOKENS`, `AI_DAILY_GENERATIONS_PER_USER`, `AI_DAILY_GENERATIONS_GLOBAL` | Limits and caps | `0.4`, empty, empty, `10`, `200` | Caps and token limits required (NFR-037) |
 | `AI_DAILY_ASSIST_CALLS_PER_USER` | Assist-call cap (EXT: intake, day explanation, packing refinement) | `30` (Proposed) | Required; 429 `AI_QUOTA_REACHED` when reached |
 | `WEATHER_TIMEOUT_S` | Open-Meteo client (EXT) | `8` | No key exists (free non-commercial use) |
@@ -1240,7 +1241,7 @@ NEXT_PUBLIC_FEATURES_DISABLED=
 ORS_API_KEY=<OpenRouteService key; leave empty to use the distance estimate>
 ORS_TIMEOUT_S=8
 # ---------- AI provider ----------
-# AI_PROVIDER is one of: GEMINI | MOCK | FINETUNED_MODEL (Stage 2 only)
+# AI_PROVIDER is one of: GEMINI | GROQ | MOCK | FINETUNED_MODEL (Stage 2 only)
 AI_PROVIDER=MOCK
 # MOCK_PROVIDER_SCENARIO is one of: ok | flawed | timeout | rate_limited | quota | invalid_json | unknown_place
 MOCK_PROVIDER_SCENARIO=ok
@@ -1248,6 +1249,9 @@ PROMPT_TEMPLATE_VERSION=v1
 # Do not set any other Google key variable: the SDK would prefer it to GEMINI_API_KEY.
 GEMINI_API_KEY=<Gemini API key>
 GEMINI_MODEL_ID=<model identifier from the provider's current model list>
+# Optional Groq second provider (IMD-223); either empty = off; model choice openai/gpt-oss-20b
+GROQ_API_KEY=
+GROQ_MODEL_ID=
 GEMINI_TIMEOUT_S=35
 GEMINI_MAX_RETRIES=1
 AI_TEMPERATURE=0.4
@@ -2783,7 +2787,7 @@ All code outside `app/ai/` imports only `app.ai.providers.base` (interface and t
 
 | Operation | Input | Output | Raises | Release |
 | --- | --- | --- | --- | --- |
-| `name` (attribute) | none | `GEMINI`, `MOCK` or `FINETUNED_MODEL` | none | MVP |
+| `name` (attribute) | none | `GEMINI`, `GROQ`, `MOCK` or `FINETUNED_MODEL` | none | MVP |
 | `generate_itinerary` (async) | `GenerationRequest` (gr-1) | `ProviderResult[ItineraryOutput]` (io-1) | `ProviderError` subclasses only | MVP |
 | `modify_itinerary` (async) | `ModificationRequest` | `ProviderResult[EditOperations]` | `ProviderError` subclasses | R2 (MOCK implements a stub; Gemini raises `ProviderBadRequest("not enabled")` in the MVP) |
 | `extract_trip_request` (async) | `TripIntakeRequest` | `ProviderResult[TripIntakeOutput]` (ti-1) | `ProviderError` subclasses | EXT (IMP-708; §8.20) |
@@ -2833,6 +2837,31 @@ On a completed fallback row `failure_reason` stays null; the cause is stored in 
 | Error mapping | Read the error code before classifying a 400: safety codes → `ProviderInvalidOutput(blocked)`; 429 quota → `ProviderQuotaExhausted`; 429 rate → `ProviderRateLimited`; 402 → `ProviderQuotaExhausted`; 403 → `ProviderAuthError`; 400 or 404 model → `ProviderBadRequest`; 500/503 → `ProviderUnavailable`; deadline → `ProviderTimeout`; finish `MAX_TOKENS` or `incomplete` → `ProviderInvalidOutput(truncated)` | Codes Verified (2026-10-25); finish list Partly |
 | Settings record | `generation_settings` = allow-listed names and values actually sent (`api_style`, `thinking_level`, `max_output_tokens`, `structured_output`, `timeout_s`); unknown keys dropped; values ≤ 64 characters | Proposed |
 
+**Groq adapter (`app/ai/providers/groq.py`, IMD-223).** Uses existing `httpx` with
+`https://api.groq.com/openai/v1/chat/completions`; no SDK dependency. Both `GROQ_API_KEY` (secret)
+and `GROQ_MODEL_ID` (plain setting) default empty. The documented choice is `openai/gpt-oss-20b`;
+its strict `json_schema` response format uses the output model of the unchanged versioned prompt.
+The adapter removes schema defaults, requires every property and closes every object; nullable
+fields keep their null union. Documented best-effort models use `strict: false`; other models use
+`json_object`. Original io-1/io-2 Pydantic limits and the validator remain authoritative. No prompt
+version or AI schema is changed. Usage counts and the actual response model are returned.
+HTTP 429 maps to `ProviderRateLimited` with bounded `retry-after`; 5xx/connection failures to
+`ProviderUnavailable`; timeout to `ProviderTimeout`; malformed JSON to `ProviderInvalidOutput`.
+No vendor error message is retained. At most one transport retry, no transport retry on repair.
+
+After the initial Gemini path ends in unavailable, rate-limited, quota-exhausted or timeout,
+the pipeline tries enabled Groq once, including while Gemini's matching breaker is open.
+Auth, bad-request and invalid-output Gemini paths do not trigger a vendor switch; repair never
+switches providers. Both vendors share step 7's remaining 70 s, keeping the existing repair/save
+reserves. Groq candidates use the same validation and at most one repair call; Groq failures
+(including quota/configuration) end in the labelled rule-based plan. With Groq off the existing
+outcome table, including quota/configuration failures, is unchanged. Each provider's breaker keeps
+its own result; a Groq success never closes Gemini's breaker. Provider/model/settings update the
+same generation row, counted once by the caps. Migration `0009_groq_provider` extends the provider
+CHECK and readiness head; downgrade refuses while GROQ history exists. Embeddings continue through
+Gemini with lexical fallback (IMD-112). Official sources, free-tier limits and data-use reading are
+in `docs/decisions/accounts.md` §4 (2026-11-28).
+
 **Mock adapter (`app/ai/providers/mock.py`, FR-042).** Default in `local` and `test`; model `mock-v1`; no network call (TC-035); deterministic: builds `io-1` from `day_hints` in fixed order, items start at `limits.day_start` and are spaced by the item's `typical_duration_min` + 30 min. The scenario comes from the constructor in tests and from `MOCK_PROVIDER_SCENARIO` (honoured when `APP_ENV` is `local`, `test` or `staging`, never in `production`; IMD-27) for manual runs, E2E and the staging failure demo (IMD-33).
 
 | `MOCK_PROVIDER_SCENARIO` | Behaviour | Exercises |
@@ -2849,12 +2878,13 @@ The environment variable accepts exactly these seven values (IMD-27). Unit tests
 
 **Fine-tuned adapter (`finetuned.py`, Stage 2 only).** Conforms to the interface; every call raises `ProviderBadRequest("FINETUNED_MODEL not enabled in Stage 1")`. Selecting it in Stage 1 stops start-up (FR-043 AC3).
 
-**Factory and start-up checks (`app/ai/factory.py`, `app/core/config.py`; FR-043, FR-124).** The factory reads `AI_PROVIDER` once and builds the one active provider; there is no per-request override and no automatic switch to another vendor. The evaluation harness builds providers by name from its `--provider` flag and never changes the default.
+**Factory and start-up checks (`app/ai/factory.py`, `app/core/config.py`; FR-043, FR-124).** The factory reads `AI_PROVIDER` once and builds the one active provider; there is no per-request override. IMD-223 adds the optional Groq second provider after the Gemini adapter has exhausted its IMD-222 path; MOCK never switches vendors. The evaluation harness builds providers by name from its `--provider` flag and never changes the default.
 
 | Check | Environments | On failure |
 | --- | --- | --- |
-| `AI_PROVIDER` in {GEMINI, MOCK, FINETUNED_MODEL} | all | exit, naming the allowed values (TC-042) |
+| `AI_PROVIDER` in {GEMINI, GROQ, MOCK, FINETUNED_MODEL} | all | exit, naming the allowed values (TC-042) |
 | For GEMINI: `GEMINI_API_KEY`, `GEMINI_MODEL_ID` non-empty, not starting with `<`; `GEMINI_TIMEOUT_S × (GEMINI_MAX_RETRIES + 1) ≤ 70` | staging, production | exit; message names the variable, never the value (TC-043) |
+| For GROQ: `GROQ_API_KEY`, `GROQ_MODEL_ID` non-empty, not placeholders | staging, production | exit naming variables; optional second-provider configuration does not require them |
 | Same, in local or test | local, test | start; provider health `down`; AI generations end `failed` with `config_error` and the page offers mode `rule_based` |
 | `AI_PROVIDER=MOCK` | production | exit |
 | `AI_PROVIDER=FINETUNED_MODEL` | all (Stage 1) | exit |
@@ -2988,7 +3018,7 @@ A plan is **usable** when it has at least one item and no `UNKNOWN_PLACE`, `OUTS
 | Steps | Allowance (Proposed) | Rule |
 | --- | --- | --- |
 | 1 to 6 | 5 s | database work and arithmetic |
-| 7 | 70 s | ≤ 2 attempts of ≤ 35 s each, waits included; no attempt starts once spent |
+| 7 | 70 s | Shared across Gemini primary/retries, its one fallback-model call and optional Groq (IMD-223); each adapter permits at most 2 transport attempts of ≤ 35 s, waits included; no attempt starts once spent |
 | 8 and 9 | 5 s | code only |
 | 10 | 25 s | deterministic repair plus ≤ 1 call of ≤ 25 s |
 | Fallback, save, reserve | 15 s | unused time flows here |
@@ -2998,7 +3028,7 @@ The client polls API-23 (2 s rising to 5 s) and treats a non-terminal status aft
 
 ## 8.15 Rule-based fallback planner (FR-036)
 
-`generation/fallback_planner.py` is pure, deterministic code (same input → identical plan, FR-036 AC2) that returns an `ItineraryOutput`, so it passes steps 8 to 11 like a model plan. Algorithm: take `day_hints` (must-visit first); order each day by nearest-neighbour path; start at `day_start`, each item after previous end + travel + buffer; insert one `food` place as a meal in the lunch window 12:00 to 14:00; stop at the pace limits; omit any place that would produce an error finding; report an unplaceable must-visit place as `MUST_VISIT_MISSING`; theme and note from fixed templates ("Day 2 around <first place>"), with `note_origin = 'none'`. Recorded as `outcome = fallback_rule_based` with `provider` = the active provider name (column constraint). `model_id = rule_based_planner_v1` only when mode `rule_based` was requested (set at insert; not counted against the AI cap); a fallback after an AI attempt keeps the configured `model_id` and counts against the cap (IMD-43). It is used when (a) mode `rule_based` is requested, (b) the breaker is open after transient errors, (c) the provider fails after retries, (d) the plan is not usable after repair. **Saved sample itineraries** (`generation/samples.py`, IMP-402): two fixed itineraries per demo destination, produced by the fallback planner from the seed data and stored as JSON fixtures, used only for the demo when no provider and no network are available; they are shown with the "Sample itinerary" label and never presented as AI output.
+`generation/fallback_planner.py` is pure, deterministic code (same input → identical plan, FR-036 AC2) that returns an `ItineraryOutput`, so it passes steps 8 to 11 like a model plan. Algorithm: take `day_hints` (must-visit first); order each day by nearest-neighbour path; start at `day_start`, each item after previous end + travel + buffer; insert one `food` place as a meal in the lunch window 12:00 to 14:00; stop at the pace limits; omit any place that would produce an error finding; report an unplaceable must-visit place as `MUST_VISIT_MISSING`; theme and note from fixed templates ("Day 2 around <first place>"), with `note_origin = 'none'`. Recorded as `outcome = fallback_rule_based` with `provider` = the provider actually attempted (column constraint, GROQ allowed by IMD-223). `model_id = rule_based_planner_v1` only when mode `rule_based` was requested (set at insert; not counted against the AI cap); a fallback after an AI attempt keeps the last attempted provider/model identity and counts once against the cap (IMD-43, IMD-222, IMD-223). It is used when (a) mode `rule_based` is requested, (b) the breaker is open after transient errors, (c) the provider fails after retries, (d) the plan is not usable after repair. **Saved sample itineraries** (`generation/samples.py`, IMP-402): two fixed itineraries per demo destination, produced by the fallback planner from the seed data and stored as JSON fixtures, used only for the demo when no provider and no network are available; they are shown with the "Sample itinerary" label and never presented as AI output.
 
 ## 8.16 Generation status and persistence (FR-025, FR-038)
 
