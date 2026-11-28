@@ -1,0 +1,190 @@
+Source: https://github.com/het-lathiya/Group12/actions/runs/46124142747
+Commit measured: b3248cffa380fffb88f1020dc20f7751b8903d5f
+Artifacts: coverage-api, coverage-web (downloaded outside the repository)
+Percentages = covered / total * 100; n/a = no instrumented branches.
+
+API
+
+| Package | Lines covered/total (%) | Branches covered/total (%) |
+| --- | --- | --- |
+| app | 93/115 (80.87%) | 6/12 (50.00%) |
+| app/ai | 847/852 (99.41%) | 235/238 (98.74%) |
+| app/auth | 200/211 (94.79%) | 27/34 (79.41%) |
+| app/budget | 263/274 (95.99%) | 30/36 (83.33%) |
+| app/core | 466/470 (99.15%) | 85/90 (94.44%) |
+| app/db | 455/486 (93.62%) | 17/24 (70.83%) |
+| app/evaluation | 289/364 (79.40%) | 46/56 (82.14%) |
+| app/generation | 1217/1267 (96.05%) | 200/246 (81.30%) |
+| app/itinerary | 968/1113 (86.97%) | 147/226 (65.04%) |
+| app/livedata | 889/912 (97.48%) | 215/232 (92.67%) |
+| app/places | 1391/1536 (90.56%) | 246/316 (77.85%) |
+| app/rag | 713/740 (96.35%) | 160/170 (94.12%) |
+| app/routing | 153/153 (100.00%) | 12/12 (100.00%) |
+| app/schemas | 321/326 (98.47%) | 19/24 (79.17%) |
+| app/trips | 534/590 (90.51%) | 58/98 (59.18%) |
+| app/validation | 413/421 (98.10%) | 117/124 (94.35%) |
+| TOTAL | 9212/9830 (93.71%) | 1620/1938 (83.59%) |
+API_TOTAL lines=9212/9830 (93.71%); branches=1620/1938 (83.59%)
+
+API uncovered modules (executable lines or branches):
+app/ai/prompts/registry.py: missing_lines=2; missing_branches=0
+app/ai/providers/finetuned.py: missing_lines=2; missing_branches=0
+app/ai/providers/gemini.py: missing_lines=0; missing_branches=2
+app/ai/providers/mock.py: missing_lines=1; missing_branches=1
+app/auth/deps.py: missing_lines=1; missing_branches=0
+app/auth/repository.py: missing_lines=5; missing_branches=3
+app/auth/service.py: missing_lines=5; missing_branches=4
+app/budget/service.py: missing_lines=11; missing_branches=6
+app/core/errors.py: missing_lines=1; missing_branches=2
+app/core/health.py: missing_lines=2; missing_branches=2
+app/core/rate_limit.py: missing_lines=1; missing_branches=1
+app/db/admin.py: missing_lines=6; missing_branches=2
+app/db/auth_stub.py: missing_lines=3; missing_branches=2
+app/db/reset.py: missing_lines=22; missing_branches=3
+app/evaluation/manifest.py: missing_lines=3; missing_branches=1
+app/evaluation/run.py: missing_lines=72; missing_branches=9
+app/generation/jobs.py: missing_lines=9; missing_branches=8
+app/generation/pipeline.py: missing_lines=4; missing_branches=5
+app/generation/repository.py: missing_lines=1; missing_branches=0
+app/generation/request_builder.py: missing_lines=0; missing_branches=1
+app/generation/retrieval.py: missing_lines=1; missing_branches=1
+app/generation/router.py: missing_lines=9; missing_branches=6
+app/generation/service.py: missing_lines=26; missing_branches=25
+app/itinerary/edits.py: missing_lines=67; missing_branches=29
+app/itinerary/repository.py: missing_lines=4; missing_branches=2
+app/itinerary/service.py: missing_lines=40; missing_branches=27
+app/itinerary/versions.py: missing_lines=34; missing_branches=21
+app/livedata/normalise.py: missing_lines=5; missing_branches=3
+app/livedata/providers/base.py: missing_lines=2; missing_branches=2
+app/livedata/providers/osm.py: missing_lines=13; missing_branches=8
+app/livedata/providers/wiki.py: missing_lines=3; missing_branches=3
+app/livedata/throttle.py: missing_lines=0; missing_branches=1
+app/main.py: missing_lines=9; missing_branches=3
+app/openapi_export.py: missing_lines=13; missing_branches=3
+app/places/import_pipeline.py: missing_lines=37; missing_branches=21
+app/places/live_import.py: missing_lines=26; missing_branches=16
+app/places/live_jobs.py: missing_lines=14; missing_branches=4
+app/places/live_router.py: missing_lines=3; missing_branches=2
+app/places/live_service.py: missing_lines=43; missing_branches=17
+app/places/quality_gate.py: missing_lines=8; missing_branches=2
+app/places/repository.py: missing_lines=9; missing_branches=5
+app/places/seed.py: missing_lines=1; missing_branches=1
+app/places/service.py: missing_lines=4; missing_branches=2
+app/rag/chunker.py: missing_lines=2; missing_branches=1
+app/rag/guides.py: missing_lines=1; missing_branches=1
+app/rag/index.py: missing_lines=12; missing_branches=2
+app/rag/repository.py: missing_lines=4; missing_branches=3
+app/rag/service.py: missing_lines=8; missing_branches=3
+app/schemas/ai.py: missing_lines=1; missing_branches=1
+app/schemas/ai_export.py: missing_lines=4; missing_branches=4
+app/trips/repository.py: missing_lines=6; missing_branches=3
+app/trips/service.py: missing_lines=50; missing_branches=37
+app/validation/repair.py: missing_lines=5; missing_branches=5
+app/validation/rules.py: missing_lines=3; missing_branches=2
+
+WEB
+
+| Package | Lines covered/total (%) | Branches covered/total (%) |
+| --- | --- | --- |
+| app | 0/3 (0.00%) | 0/0 (n/a) |
+| app/(app) | 207/276 (75.00%) | 224/297 (75.42%) |
+| app/(public) | 3/12 (25.00%) | 2/6 (33.33%) |
+| app/auth | 0/15 (0.00%) | 0/4 (0.00%) |
+| components/auth | 58/66 (87.88%) | 63/73 (86.30%) |
+| components/costs | 55/57 (96.49%) | 59/69 (85.51%) |
+| components/generation | 58/62 (93.55%) | 82/88 (93.18%) |
+| components/itinerary | 217/230 (94.35%) | 216/251 (86.06%) |
+| components/labels | 37/38 (97.37%) | 50/52 (96.15%) |
+| components/map | 59/62 (95.16%) | 9/10 (90.00%) |
+| components/places | 76/80 (95.00%) | 108/130 (83.08%) |
+| components/profile | 23/23 (100.00%) | 17/24 (70.83%) |
+| components/shell | 38/43 (88.37%) | 51/55 (92.73%) |
+| components/states | 20/21 (95.24%) | 48/48 (100.00%) |
+| components/trips | 316/334 (94.61%) | 357/406 (87.93%) |
+| components/ui | 37/49 (75.51%) | 14/15 (93.33%) |
+| components/versions | 28/28 (100.00%) | 42/43 (97.67%) |
+| lib | 16/16 (100.00%) | 6/6 (100.00%) |
+| lib/api | 212/229 (92.58%) | 98/127 (77.17%) |
+| lib/auth | 32/46 (69.57%) | 20/33 (60.61%) |
+| lib/validation | 50/50 (100.00%) | 21/22 (95.45%) |
+| TOTAL | 1542/1740 (88.62%) | 1487/1759 (84.54%) |
+WEB_TOTAL lines=1542/1740 (88.62%); branches=1487/1759 (84.54%)
+
+Web uncovered modules (executable lines or branches):
+app/(app)/dashboard/page.tsx: missing_lines=2; missing_branches=3
+app/(app)/layout.tsx: missing_lines=1; missing_branches=0
+app/(app)/profile/page.tsx: missing_lines=13; missing_branches=12
+app/(app)/trips/[tripId]/costs/page.tsx: missing_lines=1; missing_branches=2
+app/(app)/trips/[tripId]/edit/page.tsx: missing_lines=3; missing_branches=0
+app/(app)/trips/[tripId]/explore/page.tsx: missing_lines=5; missing_branches=3
+app/(app)/trips/[tripId]/generate/page.tsx: missing_lines=4; missing_branches=4
+app/(app)/trips/[tripId]/itinerary/page.tsx: missing_lines=26; missing_branches=30
+app/(app)/trips/[tripId]/summary/page.tsx: missing_lines=1; missing_branches=1
+app/(app)/trips/[tripId]/versions/page.tsx: missing_lines=10; missing_branches=16
+app/(app)/trips/new/page.tsx: missing_lines=3; missing_branches=2
+app/(public)/sign-in/page.tsx: missing_lines=5; missing_branches=2
+app/(public)/sign-up/page.tsx: missing_lines=4; missing_branches=2
+app/auth/callback/route.ts: missing_lines=15; missing_branches=4
+app/layout.tsx: missing_lines=3; missing_branches=0
+components/auth/SignInForm.tsx: missing_lines=0; missing_branches=5
+components/auth/SignUpForm.tsx: missing_lines=6; missing_branches=3
+components/auth/messages.ts: missing_lines=2; missing_branches=2
+components/costs/BudgetSettingsForm.tsx: missing_lines=2; missing_branches=9
+components/costs/CostBreakdown.tsx: missing_lines=0; missing_branches=1
+components/generation/GenerationProgress.tsx: missing_lines=4; missing_branches=5
+components/generation/PrivacyNotice.tsx: missing_lines=0; missing_branches=1
+components/itinerary/AlternativesDialog.tsx: missing_lines=1; missing_branches=6
+components/itinerary/ItemEditor.tsx: missing_lines=6; missing_branches=11
+components/itinerary/ItineraryItemCard.tsx: missing_lines=0; missing_branches=2
+components/itinerary/MoveControls.tsx: missing_lines=5; missing_branches=10
+components/itinerary/PlacePicker.tsx: missing_lines=1; missing_branches=3
+components/itinerary/WarningsPanel.tsx: missing_lines=0; missing_branches=3
+components/labels/LiveAttribution.tsx: missing_lines=1; missing_branches=2
+components/map/MapPanel.tsx: missing_lines=3; missing_branches=1
+components/places/PlaceCard.tsx: missing_lines=0; missing_branches=2
+components/places/PlaceDetailDrawer.tsx: missing_lines=2; missing_branches=12
+components/places/PlaceFilterBar.tsx: missing_lines=2; missing_branches=6
+components/places/SavedPlacesPanel.tsx: missing_lines=0; missing_branches=2
+components/profile/ProfileForm.tsx: missing_lines=0; missing_branches=7
+components/shell/AppShell.tsx: missing_lines=1; missing_branches=3
+components/shell/AuthGuard.tsx: missing_lines=0; missing_branches=1
+components/shell/Providers.tsx: missing_lines=4; missing_branches=0
+components/states/ErrorState.tsx: missing_lines=1; missing_branches=0
+components/trips/ChipMultiSelect.tsx: missing_lines=1; missing_branches=1
+components/trips/CitySearch.tsx: missing_lines=2; missing_branches=5
+components/trips/ImportProgress.tsx: missing_lines=0; missing_branches=7
+components/trips/PlacesStep.tsx: missing_lines=3; missing_branches=5
+components/trips/PreferenceForm.tsx: missing_lines=1; missing_branches=3
+components/trips/ReviewStep.tsx: missing_lines=2; missing_branches=5
+components/trips/TripActionsMenu.tsx: missing_lines=6; missing_branches=6
+components/trips/TripCard.tsx: missing_lines=0; missing_branches=1
+components/trips/TripDetailsStep.tsx: missing_lines=2; missing_branches=8
+components/trips/TripWizard.tsx: missing_lines=1; missing_branches=8
+components/ui/card.tsx: missing_lines=1; missing_branches=0
+components/ui/dialog.tsx: missing_lines=0; missing_branches=1
+components/ui/dropdown-menu.tsx: missing_lines=11; missing_branches=0
+components/versions/PrintLayout.tsx: missing_lines=0; missing_branches=1
+lib/api/client.ts: missing_lines=1; missing_branches=6
+lib/api/errors.ts: missing_lines=0; missing_branches=1
+lib/api/queries.ts: missing_lines=16; missing_branches=22
+lib/auth/redirect.ts: missing_lines=2; missing_branches=1
+lib/auth/supabase.ts: missing_lines=9; missing_branches=6
+lib/auth/useSession.ts: missing_lines=3; missing_branches=6
+lib/validation/trip.ts: missing_lines=0; missing_branches=1
+
+Original terminal summary: coverage-api/pytest-summary.txt
+
+TOTAL                                  9830   1849   1938    297    78%
+================== 688 passed, 1 warning in 255.26s (0:04:15) ==================
+TOTAL                                  9830   1846   1938    296    78%
+================== 91 passed, 14 skipped, 1 warning in 52.39s ==================
+TOTAL                                  9830    652   1938    162    92%
+================ 1877 passed, 2 deselected, 1 warning in 31.08s ================
+TOTAL                                  9830    618   1938    156    92%
+================= 99 passed, 2 deselected, 1 warning in 29.28s =================
+
+Original terminal summary: coverage-web/vitest-summary.txt
+
+ Test Files  51 passed (51)
+      Tests  372 passed (372)
+All files          |   88.13 |    84.53 |   85.02 |   88.62 |
