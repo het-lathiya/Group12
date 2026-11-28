@@ -208,8 +208,9 @@ Set these as **Actions variables, not secrets**, in `het-lathiya/Group12`. None 
 | `STAGING_WEB_SERVICE_ARN`, `STAGING_WEB_ORIGIN` | From `env.sh` |
 | `STAGING_SUPABASE_URL`, `STAGING_SUPABASE_ANON_KEY` | From `env.sh` |
 | `STAGING_FEATURES_DISABLED` | From `env.sh`; may be empty |
+| `STAGING_GEMINI_FALLBACK_MODEL_ID` | Fallback model ID from Nidhi (IMD-222); optional: unset or empty turns the fallback off |
 
-The seven `PRODUCTION_*` equivalents are set in IMP-801. For example:
+The eight `PRODUCTION_*` equivalents are set in IMP-801. For example:
 
 ```sh
 . infra/aws/env.sh

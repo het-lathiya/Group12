@@ -15,6 +15,7 @@ if grep -vE '^[[:space:]]*(#|$)' "$here/env.sh" | grep -q '<'; then
 fi
 # shellcheck source=env.sh.example
 . "$here/env.sh"
+export STAGING_GEMINI_FALLBACK_MODEL_ID="${STAGING_GEMINI_FALLBACK_MODEL_ID:-}" # optional (IMD-222): an older env.sh lacks it
 if [ "$(aws sts get-caller-identity --query Account --output text)" != "$AWS_ACCOUNT_ID" ]; then
   echo "these credentials are not for account AWS_ACCOUNT_ID of env.sh" >&2
   exit 1

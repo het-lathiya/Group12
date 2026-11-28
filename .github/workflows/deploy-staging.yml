@@ -112,6 +112,8 @@ jobs:
       STAGING_SUPABASE_URL: ${{ vars.STAGING_SUPABASE_URL }}
       STAGING_SUPABASE_ANON_KEY: ${{ vars.STAGING_SUPABASE_ANON_KEY }}
       STAGING_FEATURES_DISABLED: ${{ vars.STAGING_FEATURES_DISABLED }}
+      # May be unset or empty: the Gemini fallback model is then off (IMD-222).
+      STAGING_GEMINI_FALLBACK_MODEL_ID: ${{ vars.STAGING_GEMINI_FALLBACK_MODEL_ID }}
       SUPABASE_JWKS_URL: ${{ vars.STAGING_SUPABASE_URL }}/auth/v1/.well-known/jwks.json
     steps:
       - uses: actions/checkout@v7

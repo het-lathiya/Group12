@@ -107,7 +107,7 @@ The web image receives the project URL and anon key as build arguments (both pub
 | Kind | Variables and values |
 | --- | --- |
 | Plain environment | `APP_ENV=staging`, `LOG_LEVEL=INFO`, `ALLOWED_ORIGINS=${STAGING_WEB_ORIGIN}`, `RATE_LIMIT_PER_MIN=60`, `FEATURES_DISABLED=${STAGING_FEATURES_DISABLED}`, `SUPABASE_URL=${STAGING_SUPABASE_URL}`, `SUPABASE_JWKS_URL=${SUPABASE_JWKS_URL}`, `DB_AUTH_STUB=true` |
-| AI | `AI_PROVIDER=GEMINI`, `GEMINI_MODEL_ID=gemini-3.5-flash-lite`, `GEMINI_EMBEDDING_MODEL_ID=gemini-embedding-2`, `GEMINI_TIMEOUT_S=35`, `GEMINI_MAX_RETRIES=1`, `PROMPT_TEMPLATE_VERSION=v2`, `AI_MAX_INPUT_TOKENS` and `AI_MAX_OUTPUT_TOKENS` empty (treated as unset), `AI_DAILY_GENERATIONS_PER_USER=10`, `AI_DAILY_GENERATIONS_GLOBAL=200`, `AI_DAILY_ASSIST_CALLS_PER_USER=30` |
+| AI | `AI_PROVIDER=GEMINI`, `GEMINI_MODEL_ID=gemini-3.5-flash-lite`, `GEMINI_FALLBACK_MODEL_ID=${STAGING_GEMINI_FALLBACK_MODEL_ID}` (may be empty: fallback off, IMD-222), `GEMINI_EMBEDDING_MODEL_ID=gemini-embedding-2`, `GEMINI_TIMEOUT_S=35`, `GEMINI_MAX_RETRIES=1`, `PROMPT_TEMPLATE_VERSION=v2`, `AI_MAX_INPUT_TOKENS` and `AI_MAX_OUTPUT_TOKENS` empty (treated as unset), `AI_DAILY_GENERATIONS_PER_USER=10`, `AI_DAILY_GENERATIONS_GLOBAL=200`, `AI_DAILY_ASSIST_CALLS_PER_USER=30` |
 | Other | `ORS_TIMEOUT_S=8`, `SEED_DIRS=data/places/ahmedabad`, `PORT=8000` |
 | Secrets (SSM ARNs only) | `DATABASE_URL`, `GEMINI_API_KEY`, `ORS_API_KEY` |
 | Baked into the image | `BUILD_VERSION` = the commit SHA (IMD-103) |
@@ -217,7 +217,7 @@ Staging is off between planned windows. Kirtan starts RDS and the services for a
 - **Logs:** 7 days of retention; ECR keeps the newest 10 images.
 - **Staging windows:** staging is off outside windows (section 7.3).
 - **Estimate:** the monthly cost table in [aws-setup.md](aws-setup.md) §14 is still "TO BE FILLED BY KIRTAN" from the AWS Pricing Calculator.
-- **Production:** created only in Sprint 8 (IMP-801), and scaled down or deleted after the course demo, with the decision recorded.
+- **Production:** created only in Sprint 8 (IMP-801), then kept up and reachable until the course evaluation ends (IMD-221; [deployment.md](deployment.md) §8.1); torn down only after that, with the decision recorded.
 - **Free plan:** if it refuses a needed service, stop and record a decision (IMD-104).
 - **Pause or tear down:** `aws rds stop-db-instance`, `aws ecs delete-express-gateway-service`, the final snapshot and the deletions of [aws-setup.md](aws-setup.md) §15. **Not verified — run by Kirtan.**
 
