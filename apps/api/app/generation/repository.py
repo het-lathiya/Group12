@@ -27,7 +27,7 @@ from app.generation.records import (
     GenerationStatus,
     TokenUsage,
 )
-from app.schemas.ai import INPUT_SCHEMA_VERSION, OUTPUT_SCHEMA_VERSION, ProviderName
+from app.schemas.ai import INPUT_SCHEMA_VERSION, OUTPUT_SCHEMA_VERSION, ModelMetadata, ProviderName
 
 
 async def create_queued(
@@ -129,6 +129,24 @@ async def record_model(session: AsyncSession, generation_id: UUID, model_id: str
     """IMD-222: the model that answered, when GEMINI_FALLBACK_MODEL_ID did."""
     row = await _locked(session, generation_id)
     row.model_id = model_id
+    await session.flush()
+
+
+async def record_provider(
+    session: AsyncSession,
+    generation_id: UUID,
+    metadata: ModelMetadata,
+    settings: Mapping[str, Any] | None = None,
+) -> None:
+    """IMD-223: update the same generation to the provider actually attempted; no new cap entry."""
+    row = await _locked(session, generation_id)
+    row.provider = metadata.provider
+    row.model_id = metadata.model_id
+    row.adapter_version = metadata.adapter_version
+    row.model_version = metadata.model_version
+    row.generation_settings = records.clean_generation_settings(
+        {**row.generation_settings, **(settings or {})}
+    )
     await session.flush()
 
 

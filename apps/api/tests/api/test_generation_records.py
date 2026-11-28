@@ -5,7 +5,7 @@ back. The request below is SAMPLE data (tests/fixtures/ai.py).
 
 import json
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, get_args
 
@@ -22,7 +22,7 @@ from app.db.models import AiGeneration, Destination, Profile, Trip
 from app.generation import records, repository
 from app.generation.records import IllegalTransitionError, InvalidGenerationRecordError
 from app.places import seed
-from app.schemas.ai import UsageMetadata
+from app.schemas.ai import ModelMetadata, UsageMetadata
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SAMPLETON = REPO_ROOT / "data" / "fixtures" / "sampleton"
@@ -524,3 +524,42 @@ async def test_get_for_user_is_owner_scoped(db_session: AsyncSession, owner: Own
 async def test_a_transition_on_a_missing_generation_is_not_found(db_session: AsyncSession) -> None:
     with pytest.raises(NotFound):
         await repository.mark_running(db_session, uuid.uuid4())
+
+
+@pytest.mark.asyncio
+async def test_groq_switch_updates_one_generation_and_counts_the_caps_once(
+    db_session: AsyncSession, owner: Owner
+) -> None:
+    generation_id = await queued(db_session, owner, provider="GEMINI", model_id="primary")
+    await repository.mark_running(db_session, generation_id)
+    await repository.record_model(db_session, generation_id, "gemini-fallback")
+    await repository.record_provider(
+        db_session,
+        generation_id,
+        ModelMetadata(
+            provider="GROQ",
+            model_id="openai/gpt-oss-20b",
+            adapter_version="groq-chat-1",
+            supports_structured_output=True,
+            max_input_tokens=None,
+            max_output_tokens=None,
+        ),
+        {"api_style": "chat_completions"},
+    )
+    await repository.mark_validating(db_session, generation_id)
+    await repository.complete(
+        db_session,
+        generation_id,
+        outcome="model",
+        usage=UsageMetadata(),
+        latency_ms=10,
+        adapter_version="groq-chat-1",
+    )
+    row = await reload(db_session, generation_id)
+    assert (row.provider, row.model_id) == ("GROQ", "openai/gpt-oss-20b")
+    assert row.generation_settings["api_style"] == "chat_completions"
+    assert row.adapter_version == "groq-chat-1"
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    assert await repository.daily_usage(
+        db_session, owner.user_id, today, today + timedelta(days=1)
+    ) == (1, 1)

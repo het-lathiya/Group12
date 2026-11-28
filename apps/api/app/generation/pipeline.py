@@ -41,6 +41,11 @@ recorded on the breaker once, after the adapter's retries; retrieval's embedding
 An answer of GEMINI_FALLBACK_MODEL_ID records the configured model's failure on the breaker and
 that model's ID on the record (IMD-222).
 
+IMD-223: after an initial Gemini transient/quota failure, the optional Groq provider runs once
+within step 7's remaining allowance. It uses the same validation and one repair call. Its errors
+end in the labelled rule-based plan, including quota/configuration errors. Groq off preserves the
+existing Gemini outcomes. Embeddings still use Gemini, with lexical fallback (IMD-112).
+
 Never logged: the request built for the provider, its raw output, notes or prompt text (FR-125).
 """
 
@@ -61,12 +66,14 @@ from app.ai.errors import (
     InvalidOutputKind,
     ProviderError,
     ProviderInvalidOutput,
+    ProviderQuotaExhausted,
     ProviderRateLimited,
+    ProviderTimeout,
     ProviderUnavailable,
 )
 from app.ai.providers.base import ModelProvider
 from app.budget import engine
-from app.core.config import REPAIR_TIME_ALLOWANCE_S, get_settings
+from app.core.config import GEMINI_TIME_ALLOWANCE_S, REPAIR_TIME_ALLOWANCE_S, get_settings
 from app.core.errors import StalePlan
 from app.generation import (
     fallback_planner,
@@ -89,6 +96,7 @@ from app.schemas.ai import (
     GenerationRequest,
     ItineraryOutput,
     ModelMetadata,
+    ProviderResult,
     RepairContext,
     Scope,
     UsageMetadata,
@@ -112,6 +120,12 @@ FALLBACK_CAUSES: Final = {
     "provider_rate_limited": ProviderRateLimited,
     "provider_unavailable": ProviderUnavailable,
 }
+GROQ_TRIGGERS: Final = (
+    ProviderUnavailable,
+    ProviderRateLimited,
+    ProviderQuotaExhausted,
+    ProviderTimeout,
+)
 
 
 @dataclass
@@ -343,7 +357,7 @@ async def repair_call(
     except (ProviderError, TimeoutError) as exc:
         outcome = outcomes.resolve(exc) if isinstance(exc, ProviderError) else None
         logger.warning("generation %s repair call failed", job.generation_id)
-        if outcome is not None and outcome.kind == "failed":
+        if outcome is not None and outcome.kind == "failed" and provider.name != "GROQ":
             await job.fail(outcome.reason, usage=usage)
             return
         step8 = first.step8
@@ -360,6 +374,11 @@ async def repair_call(
         )
         return
 
+    used_model = result.model_id or provider.get_model_metadata().model_id
+    if used_model != metadata.model_id:
+        metadata = metadata.model_copy(update={"model_id": used_model})
+        async with job.sessions() as session:
+            await repository.record_model(session, job.generation_id, used_model)
     usage = add_usage(usage, result.usage)
     second = await assess(job, request, result.output)
     attempts["deterministic_repairs"] += second.fixes
@@ -574,6 +593,72 @@ def routing_for(session: AsyncSession) -> schedule.Routing:
     return RoutingService(RouteCacheRepository(session), get_client())
 
 
+async def accept_result(
+    job: Job,
+    request: GenerationRequest,
+    provider: ModelProvider,
+    result: ProviderResult[ItineraryOutput],
+    metadata: ModelMetadata,
+) -> None:
+    """The shared validation and single repair path for either provider's candidate."""
+    if result.model_id is not None:
+        metadata = metadata.model_copy(update={"model_id": result.model_id})
+        async with job.sessions() as session:
+            await repository.record_model(session, job.generation_id, result.model_id)
+    await job.mark_validating()
+    first = await assess(job, request, result.output)
+    await finish(job, request, provider, first, usage=result.usage, metadata=metadata)
+
+
+async def try_groq(
+    job: Job, request: GenerationRequest, provider_started: float, primary_metadata: ModelMetadata
+) -> bool:
+    """Try the optional second provider once, after Gemini's entire initial attempt failed.
+
+    Its adapter may retry transport once. Both calls share step 7's original 70 s, preserving
+    the repair and save reserves; there is never another provider switch during repair.
+    """
+    provider = factory.get_groq_provider()
+    allowance = min(
+        GEMINI_TIME_ALLOWANCE_S - (time.perf_counter() - provider_started),
+        REPAIR_DEADLINE_S - job.elapsed_ms() / 1000,
+    )
+    if provider is None or allowance <= 0:
+        return False
+    metadata = provider.get_model_metadata()
+    breaker = factory.breaker_for(provider)
+    if breaker.state == "open" and breaker.open_reason is not None:
+        # No Groq request was made; keep the identity of the last attempted provider.
+        await run_fallback(job, request, breaker.open_reason, metadata=primary_metadata)
+        return True
+    async with job.sessions() as session:
+        await repository.record_provider(
+            session, job.generation_id, metadata, getattr(provider, "generation_settings", {})
+        )
+    try:
+        async with asyncio.timeout(allowance):
+            result = await provider.generate_itinerary(request)
+    except ProviderInvalidOutput as exc:
+        breaker.record_success()
+        await job.mark_validating()
+        await end_invalid_output(
+            job,
+            request,
+            output_check.summary(kind=exc.kind),
+            provider=provider,
+            usage=None,
+            metadata=metadata,
+        )
+    except (ProviderError, TimeoutError) as exc:
+        failure = exc if isinstance(exc, ProviderError) else ProviderTimeout()
+        breaker.record_failure(failure)
+        await run_fallback(job, request, failure.failure_reason, metadata=metadata)
+    else:
+        breaker.record_success()
+        await accept_result(job, request, provider, result, metadata)
+    return True
+
+
 async def add_costs(
     session: AsyncSession, days: Sequence[PlannedDay], trip_id: UUID, user_id: UUID
 ) -> list[PlannedDay]:
@@ -673,8 +758,15 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
 
     metadata = provider.get_model_metadata()
     breaker = factory.breaker_for(provider)
+    provider_started = time.perf_counter()
     if breaker.state == "open" and breaker.open_reason is not None:
         logger.warning("generation %s skips the provider: breaker open", generation_id)
+        if (
+            provider.name == "GEMINI"
+            and breaker.open_reason != "config_error"
+            and await try_groq(job, request, provider_started, metadata)
+        ):
+            return
         await end_with(job, request, outcomes.resolve_open_breaker(breaker.open_reason), metadata)
         return
     try:
@@ -714,6 +806,12 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
     except ProviderError as exc:
         breaker.record_failure(exc)
         logger.warning("generation %s provider error %s", generation_id, exc.failure_reason)
+        if (
+            provider.name == "GEMINI"
+            and isinstance(exc, GROQ_TRIGGERS)
+            and await try_groq(job, request, provider_started, metadata)
+        ):
+            return
         await end_with(job, request, outcomes.resolve(exc), metadata)
         return
 
@@ -721,9 +819,4 @@ async def run(generation_id: UUID, provider: ModelProvider, sessions: Sessions) 
         breaker.record_success()
     else:  # IMD-222: the configured model failed; the fallback's answer must not close the breaker
         breaker.record_failure(FALLBACK_CAUSES[result.fallback_from]())
-    if result.model_id is not None:
-        async with sessions() as session:
-            await repository.record_model(session, generation_id, result.model_id)
-    await job.mark_validating()
-    first = await assess(job, request, result.output)
-    await finish(job, request, provider, first, usage=result.usage, metadata=metadata)
+    await accept_result(job, request, provider, result, metadata)

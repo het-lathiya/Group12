@@ -18,7 +18,7 @@ from app.generation import pipeline
 from app.itinerary.schemas import PlannedDay
 from app.rag.service import RetrievalResult
 from app.routing.estimate import TravelEstimate, TravelMode
-from app.schemas.ai import GenerationRequest
+from app.schemas.ai import GenerationRequest, ModelMetadata
 
 RECORDINGS = Path(__file__).resolve().parent / "provider_recordings" / "gemini"
 MODEL = "gemini-3.5-flash-lite"
@@ -54,6 +54,7 @@ class Journal:
         self.failed_with: dict[str, Any] = {}
         self.inactive: set[UUID] = set()
         self.recorded_model: str | None = None
+        self.recorded_provider: str | None = None
         self.model_id = "mock-v1"  # rule_based_planner_v1 runs the job as mode rule_based
         self.transactions = 0
         self.open = 0
@@ -94,6 +95,16 @@ class Journal:
 
         async def record_model(session: object, generation_id: UUID, model_id: str) -> None:
             self.recorded_model = model_id
+
+        async def record_provider(
+            session: object,
+            generation_id: UUID,
+            metadata: ModelMetadata,
+            settings: dict[str, Any] | None = None,
+        ) -> None:
+            self.recorded_provider = metadata.provider
+            self.recorded_model = metadata.model_id
+            self.settings.update(settings or {})
 
         async def mark_validating(session: object, generation_id: UUID) -> None:
             self.steps.append("validating")
@@ -139,6 +150,7 @@ class Journal:
         monkeypatch.setattr(repository, "record_settings", record_settings)
         monkeypatch.setattr(repository, "record_retrieval", record_retrieval)
         monkeypatch.setattr(repository, "record_model", record_model)
+        monkeypatch.setattr(repository, "record_provider", record_provider)
         monkeypatch.setattr(repository, "mark_validating", mark_validating)
         monkeypatch.setattr(repository, "mark_repairing", mark_repairing)
         monkeypatch.setattr(repository, "complete", complete)
